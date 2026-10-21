@@ -109,7 +109,7 @@ function flag(code, w = 26) {
   return svg(`<svg class="flag" viewBox="0 0 26 18" width="${w}" height="${hgt}" style="width:${w}px;height:${hgt}px">${parts}</svg>`);
 }
 U.flag = flag;
-function lum(hex) { const c = hex.replace('#', ''); const v = c.length === 3 ? c.split('').map(x => parseInt(x + x, 16)) : [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16)); return (v[0] * .299 + v[1] * .587 + v[2] * .114) / 255; }
+function lum(hex) { if (!hex || typeof hex !== 'string') return .5; const c = hex.replace('#', ''); const v = c.length === 3 ? c.split('').map(x => parseInt(x + x, 16)) : [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16)); return (v[0] * .299 + v[1] * .587 + v[2] * .114) / 255; }
 U.lum = lum;
 function crest(c, size = 32) {
   const lg = c && C.logos && C.logos.club(c.id || c.club);
@@ -136,10 +136,10 @@ U.rt1 = rt1; U.rt2 = rt2;
 function ovrClass(o) { return o >= 85 ? 'o5' : o >= 75 ? 'o4' : o >= 65 ? 'o3' : o >= 55 ? 'o2' : 'o1'; }
 U.ovrClass = ovrClass;
 // 팀 색: 너무 어둡거나 너무 밝은 색은 다른 쪽 색을 쓰고, 그래도 안 되면 금색
-function hexRGB(hx) { const c = (hx || '#888').replace('#', ''); const v = c.length === 3 ? c.split('').map(x => parseInt(x + x, 16)) : [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16)); return v.every(n => !isNaN(n)) ? v : [136, 136, 136]; }
+function hexRGB(hx) { const c = (typeof hx === 'string' && hx ? hx : '#888888').replace('#', ''); const v = c.length === 3 ? c.split('').map(x => parseInt(x + x, 16)) : [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16)); return v.every(n => !isNaN(n)) ? v : [136, 136, 136]; }
 function teamTint(c) {
   if (!c) return { a: '#3a4252', b: '#1a1e26', rgb: [58, 66, 82] };
-  const ok = x => { const l = lum(x); return l > .1 && l < .85; };
+  const ok = x => { if (!x || typeof x !== 'string') return false; const l = lum(x); return l > .1 && l < .85; };
   const a = ok(c.c1) ? c.c1 : ok(c.c2) ? c.c2 : '#b8862b';
   const b = a === c.c1 ? (ok(c.c2) ? c.c2 : a) : c.c1;
   return { a, b, rgb: hexRGB(a) };
@@ -225,15 +225,21 @@ function render() {
 U.render = render;
 U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; render(); scrollTo(0, 0); };
 U.back = () => U.go(prevScr === 'settings' ? 'home' : prevScr);
-U.loadSave = async o => { S = o; await kvSet('save', JSON.stringify(o)); hasSave = true; U.go('game', 'career'); };
+U.loadSave = async o => { repairSave(o); S = o; await kvSet('save', JSON.stringify(o)); hasSave = true; U.go('game', 'career'); };
 U.clearSave = async () => { S = null; await kvDel('save'); hasSave = false; U.go('home'); };
 U.setTab = t => { tab = t; render(); scrollTo(0, 0); };
 
+// 예전 저장 파일 보정: 팀 색이 비어 있는 구단에 색을 채운다
+function repairSave(o) {
+  const ext = {}; for (const c of ((G.TC_EXT && G.TC_EXT.clubs) || [])) ext[c[0]] = c;
+  for (const id in o.w.clubs) { const c = o.w.clubs[id]; const e = ext[id]; if (!c.c1) c.c1 = (e && e[3]) || '#3a4252'; if (!c.c2) c.c2 = (e && e[4]) || '#e9eef5'; }
+  for (const r of o.hist || []) { if (!r.c1) r.c1 = (o.w.clubs[r.club] || {}).c1 || '#3a4252'; if (!r.c2) r.c2 = (o.w.clubs[r.club] || {}).c2 || '#e9eef5'; }
+}
 U.boot = async function () {
   await U.loadSettings();
   if (C.logos && C.logos.probe) C.logos.probe(() => render());
   const t = await kvGet('save');
-  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; } }
+  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; repairSave(S); } }
   U.hof = GM.parse(await kvGet('hof') || '[]') || [];
   render();
 };
