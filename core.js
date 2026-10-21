@@ -1,0 +1,294 @@
+// 터치라인 커리어 — 코어: 난수, 능력치, 포지션 OVR, 성장·노화, 시장 가치
+(function (G) {
+'use strict';
+const C = G.TC = G.TC || {};
+
+// ---------- 난수 ----------
+const R = () => Math.random();
+const rnd = (a, b) => a + (b - a) * R();
+const rint = (a, b) => Math.floor(rnd(a, b + 1));
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+function gauss() { let u = 0, v = 0; while (!u) u = R(); while (!v) v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+const N = (m, s) => m + s * gauss();
+function poisson(l) { if (!(l > 0)) return 0; if (l > 30) return Math.max(0, Math.round(N(l, Math.sqrt(l)))); const L = Math.exp(-l); let k = 0, p = 1; do { k++; p *= R(); } while (p > L); return k - 1; }
+const pick = a => a[Math.floor(R() * a.length)];
+function wpick(items, wf) { let t = 0; const ws = items.map(i => { const w = Math.max(0, wf(i) || 0); t += w; return w; }); if (t <= 0) return null; let r = R() * t; for (let i = 0; i < items.length; i++) { r -= ws[i]; if (r <= 0) return items[i]; } return items[items.length - 1]; }
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const bern = p => R() < p;
+Object.assign(C, { R, rnd, rint, clamp, gauss, N, poisson, pick, wpick, shuffle, bern });
+
+// ---------- 능력치 ----------
+const ATTRS = [
+  ['accel', '가속력', 'PAC'], ['sprint', '스프린트 속도', 'PAC'],
+  ['attPos', '공격 위치 선정', 'SHO'], ['finishing', '골 결정력', 'SHO'], ['shotPower', '슛 파워', 'SHO'], ['longShots', '중거리 슛', 'SHO'], ['volleys', '발리 슛', 'SHO'], ['penalties', '페널티 킥', 'SHO'],
+  ['vision', '시야', 'PAS'], ['crossing', '크로스', 'PAS'], ['fkAcc', '프리킥 정확도', 'PAS'], ['shortPass', '짧은 패스', 'PAS'], ['longPass', '긴 패스', 'PAS'], ['curve', '커브', 'PAS'],
+  ['agility', '민첩성', 'DRI'], ['balance', '밸런스', 'DRI'], ['reactions', '반응 속도', 'DRI'], ['ballControl', '볼 컨트롤', 'DRI'], ['dribbling', '드리블', 'DRI'], ['composure', '침착성', 'DRI'],
+  ['interceptions', '가로채기', 'DEF'], ['heading', '헤더 정확도', 'DEF'], ['defAware', '수비 이해도', 'DEF'], ['standTackle', '스탠딩 태클', 'DEF'], ['slideTackle', '슬라이딩 태클', 'DEF'],
+  ['jumping', '점프력', 'PHY'], ['stamina', '스태미너', 'PHY'], ['strength', '힘', 'PHY'], ['aggression', '적극성', 'PHY'],
+  ['gkDiving', '다이빙', 'GK'], ['gkHandling', '핸들링', 'GK'], ['gkKicking', '킥력', 'GK'], ['gkReflexes', '반사신경', 'GK'], ['gkSpeed', '스피드', 'GK'], ['gkPos', '위치 선정', 'GK']
+];
+const AK = ATTRS.map(a => a[0]);
+const ALABEL = Object.fromEntries(ATTRS.map(a => [a[0], a[1]]));
+const AGROUP = Object.fromEntries(ATTRS.map(a => [a[0], a[2]]));
+const GROUPS = [['PAC', '스피드'], ['SHO', '슈팅'], ['PAS', '패스'], ['DRI', '드리블'], ['DEF', '수비'], ['PHY', '피지컬']];
+const GKGROUPS = [['DIV', '다이빙', 'gkDiving'], ['HAN', '핸들링', 'gkHandling'], ['KIC', '킥력', 'gkKicking'], ['REF', '반사신경', 'gkReflexes'], ['SPD', '스피드', 'gkSpeed'], ['POS', '위치 선정', 'gkPos']];
+const FACE = {
+  PAC: { accel: .45, sprint: .55 },
+  SHO: { finishing: .45, shotPower: .20, longShots: .20, attPos: .05, penalties: .05, volleys: .05 },
+  PAS: { vision: .20, crossing: .20, fkAcc: .05, shortPass: .35, longPass: .15, curve: .05 },
+  DRI: { agility: .10, balance: .05, reactions: .05, ballControl: .35, dribbling: .40, composure: .05 },
+  DEF: { interceptions: .20, heading: .10, defAware: .30, standTackle: .30, slideTackle: .10 },
+  PHY: { jumping: .05, stamina: .25, strength: .50, aggression: .20 }
+};
+// 노화 범주: 1=신체, 2=기술, 3=정신
+const ACAT = { accel: 1, sprint: 1, agility: 1, balance: 1, stamina: 1, jumping: 1, gkSpeed: 1, strength: 1.5, reactions: 2.5, vision: 3, composure: 3, attPos: 3, defAware: 3, fkAcc: 3, penalties: 3, gkPos: 3, aggression: 3 };
+
+// ---------- 포지션 ----------
+const POS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
+const POSKO = { GK: '골키퍼', CB: '센터백', LB: '왼쪽 풀백', RB: '오른쪽 풀백', CDM: '수비형 미드필더', CM: '중앙 미드필더', CAM: '공격형 미드필더', LM: '왼쪽 미드필더', RM: '오른쪽 미드필더', LW: '왼쪽 윙어', RW: '오른쪽 윙어', ST: '스트라이커' };
+// 역할 분류 (기록·평점 계산용)
+const ROLE = { GK: 'GK', CB: 'CB', LB: 'FB', RB: 'FB', CDM: 'DM', CM: 'CM', CAM: 'AM', LM: 'W', RM: 'W', LW: 'W', RW: 'W', ST: 'ST' };
+// 스쿼드 경쟁 그룹 (같은 자리를 두고 다투는 포지션)
+const SLOT = { GK: 'GK', CB: 'CB', LB: 'LB', RB: 'RB', CDM: 'DM', CM: 'CM', CAM: 'AM', LM: 'LW', LW: 'LW', RM: 'RW', RW: 'RW', ST: 'ST' };
+const SLOTN = { GK: 1, CB: 2, LB: 1, RB: 1, DM: 1, CM: 2, AM: 1, LW: 1, RW: 1, ST: 1 };
+const SLOTALT = { GK: [], CB: ['DM'], LB: ['LW'], RB: ['RW'], DM: ['CM', 'CB'], CM: ['DM', 'AM'], AM: ['CM', 'ST'], LW: ['RW', 'AM'], RW: ['LW', 'AM'], ST: ['AM'] };
+const W = {
+  ST: { finishing: .18, attPos: .13, heading: .10, shotPower: .10, reactions: .08, dribbling: .07, ballControl: .10, volleys: .02, longShots: .03, accel: .04, sprint: .05, strength: .05, shortPass: .05 },
+  W: { crossing: .09, finishing: .10, shortPass: .09, dribbling: .16, ballControl: .14, longShots: .04, attPos: .09, accel: .07, sprint: .06, agility: .03, reactions: .07, vision: .06 },
+  M: { crossing: .10, shortPass: .11, dribbling: .15, ballControl: .13, accel: .07, sprint: .06, vision: .07, reactions: .07, stamina: .05, longShots: .05, attPos: .08, agility: .03, finishing: .03 },
+  CAM: { shortPass: .16, vision: .14, ballControl: .15, dribbling: .13, attPos: .09, finishing: .07, longShots: .05, reactions: .07, agility: .03, accel: .04, longPass: .04, composure: .03 },
+  CM: { shortPass: .17, longPass: .13, vision: .13, ballControl: .14, dribbling: .07, reactions: .08, interceptions: .05, standTackle: .05, attPos: .06, longShots: .04, stamina: .06, composure: .02 },
+  CDM: { shortPass: .14, longPass: .10, interceptions: .14, defAware: .14, standTackle: .12, slideTackle: .05, ballControl: .10, reactions: .07, vision: .04, stamina: .06, strength: .04 },
+  FB: { sprint: .07, accel: .05, crossing: .09, standTackle: .11, slideTackle: .14, interceptions: .12, defAware: .08, heading: .04, ballControl: .07, shortPass: .07, reactions: .08, stamina: .08 },
+  CB: { defAware: .17, standTackle: .17, slideTackle: .13, interceptions: .13, heading: .10, strength: .10, aggression: .03, reactions: .05, shortPass: .05, ballControl: .04, jumping: .03 },
+  GK: { gkDiving: .21, gkHandling: .21, gkKicking: .05, gkReflexes: .21, gkPos: .21, reactions: .11 }
+};
+const POSW = { ST: W.ST, LW: W.W, RW: W.W, LM: W.M, RM: W.M, CAM: W.CAM, CM: W.CM, CDM: W.CDM, LB: W.FB, RB: W.FB, CB: W.CB, GK: W.GK };
+function posOvr(a, pos) { const w = POSW[pos]; let s = 0; for (const k in w) s += w[k] * a[k]; return s; }
+function faceStats(a) { const o = {}; for (const g in FACE) { let s = 0; for (const k in FACE[g]) s += FACE[g][k] * a[k]; o[g] = Math.round(s); } return o; }
+Object.assign(C, { ATTRS, AK, ALABEL, AGROUP, GROUPS, GKGROUPS, FACE, POS, POSKO, ROLE, SLOT, SLOTN, SLOTALT, POSW, posOvr, faceStats });
+
+// ---------- 플레이 성향 (생성 시 선택) ----------
+const STYLES = {
+  ST: [['포처', '박스 안 마무리에 특화', { finishing: 6, attPos: 6, composure: 3, longPass: -4, strength: -3 }], ['타깃맨', '공중볼과 몸싸움으로 버팀', { heading: 7, strength: 7, jumping: 5, accel: -5, agility: -5 }], ['스피드형', '수비 뒷공간 침투', { accel: 7, sprint: 7, agility: 3, strength: -5, heading: -4 }], ['연계형', '내려와서 공을 받아 줌', { shortPass: 6, vision: 6, ballControl: 3, heading: -3, attPos: -2 }]],
+  W: [['드리블러', '1대1 돌파', { dribbling: 6, agility: 6, balance: 3, crossing: -3, strength: -4 }], ['인사이드 포워드', '안으로 파고들어 슈팅', { finishing: 5, curve: 5, longShots: 4, crossing: -4 }], ['크로서', '측면에서 올려 주는 패스', { crossing: 8, curve: 4, longPass: 3, finishing: -4, dribbling: -2 }], ['스피드형', '직선 속도로 승부', { accel: 7, sprint: 7, ballControl: -3, vision: -3 }]],
+  AM: [['플레이메이커', '찬스를 만드는 패스', { vision: 7, shortPass: 5, curve: 3, strength: -4, standTackle: -3 }], ['섀도 스트라이커', '2선에서 침투해 득점', { attPos: 6, finishing: 6, vision: -4 }], ['테크니션', '좁은 공간 탈압박', { ballControl: 6, dribbling: 5, agility: 4, strength: -5 }]],
+  CM: [['박스 투 박스', '공수 모두 많이 뛴다', { stamina: 8, standTackle: 4, attPos: 3, vision: -3, curve: -3 }], ['딥라잉 플레이메이커', '뒤에서 경기를 조율', { longPass: 7, vision: 6, shortPass: 3, accel: -4, sprint: -4 }], ['공격형', '득점에 가담', { longShots: 6, finishing: 5, attPos: 4, defAware: -5, interceptions: -3 }]],
+  DM: [['홀딩', '수비 앞에서 끊는 역할', { interceptions: 7, defAware: 6, standTackle: 4, dribbling: -4, finishing: -4 }], ['레지스타', '후방에서 빌드업', { longPass: 7, shortPass: 5, vision: 4, standTackle: -4, strength: -3 }], ['파이터', '거친 몸싸움', { aggression: 8, strength: 6, slideTackle: 4, composure: -4, vision: -4 }]],
+  FB: [['공격형 풀백', '오버래핑과 크로스', { crossing: 7, stamina: 5, sprint: 3, defAware: -4, heading: -3 }], ['수비형 풀백', '1대1 수비에 강함', { standTackle: 6, defAware: 6, slideTackle: 3, crossing: -5, dribbling: -3 }], ['인버티드 풀백', '중앙으로 좁혀 빌드업', { shortPass: 6, vision: 5, ballControl: 3, crossing: -4, sprint: -3 }]],
+  CB: [['스토퍼', '앞으로 나가서 끊는다', { standTackle: 6, aggression: 6, strength: 4, longPass: -4, composure: -3 }], ['볼 플레잉', '후방 빌드업', { shortPass: 7, longPass: 6, composure: 4, heading: -3, aggression: -4 }], ['공중볼 장악', '헤더와 점프', { heading: 7, jumping: 7, strength: 4, accel: -5, agility: -5 }]],
+  GK: [['스위퍼 키퍼', '나와서 공간 정리', { gkSpeed: 7, gkKicking: 6, gkPos: 2, gkHandling: -4 }], ['라인 키퍼', '반사신경과 다이빙', { gkReflexes: 6, gkDiving: 6, gkSpeed: -5, gkKicking: -3 }], ['안정형', '실수 없는 캐칭', { gkHandling: 7, gkPos: 6, gkDiving: -3, gkSpeed: -3 }]]
+};
+const styleKey = pos => ({ GK: 'GK', CB: 'CB', LB: 'FB', RB: 'FB', CDM: 'DM', CM: 'CM', CAM: 'AM', LM: 'W', RM: 'W', LW: 'W', RW: 'W', ST: 'ST' }[pos]);
+C.STYLES = STYLES; C.styleKey = styleKey;
+
+// 포지션별 능력치 그룹 오프셋 (기준 레벨 대비)
+const GOFF = {
+  ST: { PAC: -2, SHO: 2, PAS: -9, DRI: -3, DEF: -30, PHY: -3, GK: -46 },
+  W: { PAC: 4, SHO: -5, PAS: -3, DRI: 2, DEF: -28, PHY: -11, GK: -46 },
+  AM: { PAC: -4, SHO: -4, PAS: 1, DRI: 2, DEF: -24, PHY: -13, GK: -46 },
+  CM: { PAC: -6, SHO: -9, PAS: 1, DRI: -2, DEF: -10, PHY: -4, GK: -46 },
+  DM: { PAC: -8, SHO: -17, PAS: -3, DRI: -7, DEF: 1, PHY: 0, GK: -46 },
+  FB: { PAC: 2, SHO: -21, PAS: -6, DRI: -6, DEF: -2, PHY: -5, GK: -46 },
+  CB: { PAC: -9, SHO: -27, PAS: -14, DRI: -15, DEF: 2, PHY: 3, GK: -46 },
+  GK: { PAC: -30, SHO: -40, PAS: -24, DRI: -28, DEF: -36, PHY: -20, GK: 0 }
+};
+
+// ---------- 선수 생성 ----------
+function newPlayer(opt) {
+  const pos = opt.pos, sk = styleKey(pos);
+  const T = N(0, 1);
+  const p = {
+    name: opt.name, nat: opt.nat, num: opt.num, foot: opt.foot, pos, height: opt.height, style: opt.style || 0,
+    age: 16, born: opt.year - 16,
+    weak: clamp(Math.round(N(2.6, .8)), 1, 4), skill: clamp(Math.round(N(['W', 'AM'].includes(sk) ? 3 : 2.3, .7)), 1, 4),
+    hid: {
+      pot: clamp(Math.round(71.5 + 7.4 * T + N(0, 5)), 50, 95),
+      grow: clamp(N(1, .17), .62, 1.45), peak: clamp(Math.round(N(27.6, 1.5)), 24, 31),
+      lon: clamp(Math.exp(N(0, .3)), .45, 1.9), inj: clamp(Math.exp(N(0, .33)), .5, 2.2), T
+    },
+    a: {}, mods: [], morale: 60, rep: 5, money: 0
+  };
+  // 능력치 분포: 기준 레벨 + 그룹 오프셋 + 핵심 능력치 가중 + 키·성향 + 개인차
+  const w = POSW[pos], mw = Math.max(...Object.values(w));
+  const apt = {};
+  const hs = (opt.height - 180);
+  const st = (STYLES[sk][opt.style] || STYLES[sk][0])[2];
+  for (const k of AK) {
+    let o = GOFF[sk][AGROUP[k]] + (w[k] ? 6 * w[k] / mw : 0) + N(0, 4.5);
+    if (['heading', 'jumping', 'strength'].includes(k)) o += hs * .38;
+    if (['agility', 'balance', 'accel'].includes(k)) o -= hs * .32;
+    if (k === 'gkDiving' && pos === 'GK') o += (opt.height - 188) * .3;
+    if (st[k]) o += st[k];
+    if (k === 'composure' || k === 'reactions') o -= 4; // 어린 선수는 멘탈이 덜 여묾
+    apt[k] = o;
+  }
+  const target = clamp(Math.round(47.5 + 3.6 * T + N(0, 3)), 40, 61);
+  let lv = target;
+  for (let i = 0; i < 30; i++) { for (const k of AK) p.a[k] = clamp(lv + apt[k], 8, 99); const o = posOvr(p.a, pos); lv += (target - o) * .9; if (Math.abs(target - o) < .05) break; }
+  if (p.hid.pot < target + 8) p.hid.pot = target + 8 + rint(0, 3);
+  p.hid.startOvr = target;
+  return p;
+}
+C.newPlayer = newPlayer;
+const ovrOf = (p, pos) => Math.round(posOvr(p.a, pos || p.pos));
+const modSum = p => (p.mods || []).reduce((s, m) => s + (m.ovr || 0), 0);
+const effOvr = p => ovrOf(p) + modSum(p);
+Object.assign(C, { ovrOf, effOvr, modSum });
+
+// OVR을 d만큼 바꾸도록 능력치 분배 (focus: 추가로 키울 능력치 가중치)
+function applyOvrDelta(p, d, focus, posOverride) {
+  if (!d) return;
+  const pos = posOverride || p.pos, w = POSW[pos];
+  const mix = {}; let sw = 0;
+  for (const k of AK) {
+    let m = (w[k] ? 1 : .25) + (focus && focus[k] ? focus[k] : 0);
+    if (AGROUP[k] === 'GK' && pos !== 'GK') m = .02;
+    if (pos === 'GK' && AGROUP[k] !== 'GK' && k !== 'reactions') m = .15;
+    mix[k] = m; sw += (w[k] || 0) * m;
+  }
+  for (const k of AK) {
+    let inc = d * mix[k] / sw * N(1, .25);
+    if (inc > 0) inc *= clamp((99 - p.a[k]) / 22, .04, 1);
+    p.a[k] = clamp(p.a[k] + inc, 5, 99);
+  }
+}
+C.applyOvrDelta = applyOvrDelta;
+// 개별 능력치 변화
+function bump(p, k, v) { if (v > 0) v *= clamp((99 - p.a[k]) / 22, .04, 1); p.a[k] = clamp(p.a[k] + v, 5, 99); }
+C.bump = bump;
+
+// ---------- 시즌 성장·노화 ----------
+const FOCUS = {
+  balance: ['균형 훈련', '포지션 핵심 능력치를 고르게 올린다', {}],
+  shooting: ['슈팅 특훈', '결정력·슛 파워·중거리', { finishing: 1.2, shotPower: 1, longShots: 1, volleys: .8, attPos: .6 }],
+  passing: ['패스·플레이메이킹', '시야·짧은 패스·긴 패스', { vision: 1.2, shortPass: 1.2, longPass: 1, crossing: .7, curve: .5 }],
+  dribble: ['드리블·볼 키핑', '드리블·볼 컨트롤·민첩성', { dribbling: 1.2, ballControl: 1.2, agility: .8, balance: .7, composure: .5 }],
+  defense: ['수비 전술', '수비 이해도·태클·가로채기', { defAware: 1.2, standTackle: 1.1, slideTackle: .9, interceptions: 1.1, heading: .5 }],
+  physical: ['피지컬 강화', '힘·스태미너·점프', { strength: 1.3, stamina: 1.1, jumping: .9, aggression: .5 }],
+  speed: ['스피드 트레이닝', '가속력·스프린트', { accel: 1.4, sprint: 1.4, agility: .6 }],
+  setpiece: ['세트피스 전담', '프리킥·페널티·커브', { fkAcc: 1.5, penalties: 1.3, curve: 1.2, crossing: .5 }],
+  mental: ['영상 분석·멘탈', '침착성·반응 속도·위치 선정', { composure: 1.3, reactions: 1.2, attPos: .7, defAware: .7, vision: .5 }],
+  keeper: ['골키퍼 특훈', '다이빙·반사신경·핸들링', { gkDiving: 1.1, gkReflexes: 1.2, gkHandling: 1.1, gkPos: 1, gkKicking: .5 }],
+  care: ['몸 관리', '성장 폭은 줄지만 노쇠화와 부상을 늦춘다', {}]
+};
+const INTENSITY = { light: ['가볍게', .82, .7], normal: ['보통', 1, 1], hard: ['고강도', 1.2, 1.45] }; // [이름, 성장 배율, 부상 배율]
+C.FOCUS = FOCUS; C.INTENSITY = INTENSITY;
+
+// 나이별 한 시즌 최대 성장폭 (OVR). 잠재력과의 격차가 12 이상이면 전부, 작으면 비례해서 줄어듦
+function ageFactor(age, peak) {
+  const a = age - (peak - 27.5) * .6;
+  return a <= 18 ? 5.2 : a <= 20 ? 4.2 : a <= 22 ? 3.1 : a <= 24 ? 2.1 : a <= 26 ? 1.2 : a <= 28 ? .5 : .15;
+}
+// ctx: { minShare, rating, focus, intensity, clubLv }
+function seasonGrowth(p, ctx) {
+  const before = { ...p.a }, o0 = ovrOf(p);
+  const h = p.hid, age = p.age;
+  const gap = h.pot - o0;
+  const af = ageFactor(age, h.peak);
+  const play = clamp(.55 + .55 * clamp(ctx.minShare * 1.35, 0, 1) + ((ctx.rating || 6.6) - 6.8) * .22, .4, 1.15);
+  const it = INTENSITY[ctx.intensity || 'normal'];
+  const fac = .93 + clamp((ctx.clubLv || 65) - 60, -10, 28) / 240;
+  const care = ctx.focus === 'care';
+  const luck = Math.exp(N(0, C.diff().luck)); // 시즌별 운: 정체기도, 폭풍 성장도 있다
+  let g = gap > 0 ? af * clamp(gap / 12, .12, 1) * h.grow * play * it[1] * fac * (care ? .75 : 1) * luck : gap * .1;
+  g += N(0, .6);
+  if (age <= 23 && R() < .035 * h.grow) g += rnd(1.5, 3.5); // 깜짝 성장
+  if (age <= 24 && R() < .06) g -= rnd(1, 2.5); // 성장 정체
+  if (o0 + g > h.pot + 1.5) g = Math.max(0, h.pot + 1.5 - o0) + N(0, .4);
+  if (g > 0) g *= C.diff().g;
+  g = Math.min(g, af * 1.25 + .8); // 한 시즌 성장 상한 (16~18세 약 +7)
+  const foc = FOCUS[ctx.focus] ? FOCUS[ctx.focus][2] : {};
+  applyOvrDelta(p, g, foc);
+  // 집중 훈련 보너스 (나이 들수록 효과 감소)
+  if (Object.keys(foc).length) {
+    const fb = (age <= 23 ? .6 : age <= 29 ? .4 : .25) * it[1] * play;
+    for (const k in foc) bump(p, k, foc[k] * fb * rnd(.4, 1.2));
+  }
+  // 노쇠화
+  const dAge = h.peak + 3;
+  if (age >= dAge - 1) {
+    let dl = (age - dAge + 1.6) * .72 * h.lon * rnd(.55, 1.45);
+    if (care) dl *= .65;
+    if (ctx.intensity === 'light') dl *= .9;
+    if (dl > 0) for (const k of AK) {
+      const c = ACAT[k] || 2;
+      const amt = c === 1 ? dl * 1.55 : c === 1.5 ? dl * 1.1 : c === 2.5 ? dl * .75 : c === 3 ? -dl * .12 : dl * .55;
+      bump(p, k, -amt * rnd(.6, 1.4));
+    }
+  }
+  // 정신 능력치는 경험으로 소폭 상승
+  if (age <= 30) { bump(p, 'composure', rnd(.2, 1.2) * clamp(ctx.minShare * 1.5, .3, 1.2)); bump(p, 'reactions', rnd(0, .7)); }
+  // GK가 아닌 선수의 GK 능력치는 고정에 가깝게
+  if (p.pos !== 'GK') for (const k of ['gkDiving', 'gkHandling', 'gkKicking', 'gkReflexes', 'gkSpeed', 'gkPos']) p.a[k] = before[k];
+  return { before, o0, o1: ovrOf(p) };
+}
+C.seasonGrowth = seasonGrowth;
+
+// ---------- 시장 가치 ----------
+const VT = [[40, .01], [50, .05], [55, .12], [60, .35], [65, 1.0], [70, 3], [75, 9], [80, 25], [83, 45], [85, 65], [88, 105], [90, 145], [92, 185], [95, 230]];
+function interp(t, x) { if (x <= t[0][0]) return t[0][1]; for (let i = 1; i < t.length; i++) if (x <= t[i][0]) { const [x0, y0] = t[i - 1], [x1, y1] = t[i]; return y0 * Math.pow(y1 / y0, (x - x0) / (x1 - x0)); } return t[t.length - 1][1]; }
+const LGMULT = { ENG: 1.35, ESP: 1.05, ITA: 1.0, GER: 1.0, FRA: .92, POR: .75, NED: .75, BEL: .62, TUR: .6, SAU: .65, USA: .5, BRA: .7, ARG: .55, MEX: .45, SCO: .5, KOR: .3, CHN: .3, AUS: .3, IND: .2, IRL: .2 };
+function marketValue(p, ctx) {
+  const o = ovrOf(p) + modSum(p) * .5;
+  let v = interp(VT, o) * 1e6;
+  const a = p.age;
+  const af = a <= 18 ? 1.35 : a <= 21 ? 1.55 : a <= 24 ? 1.3 : a <= 27 ? 1.1 : a <= 29 ? .9 : a <= 30 ? .7 : a <= 31 ? .55 : a <= 32 ? .42 : a <= 33 ? .3 : a <= 34 ? .2 : .12;
+  v *= af;
+  if (a <= 23) { const pe = (ctx && ctx.potEst) || o; v *= 1 + clamp(pe - o, 0, 25) * .045; }
+  if (ctx) {
+    v *= LGMULT[ctx.nation] || .55;
+    if (ctx.rating) v *= clamp(1 + (ctx.rating - 6.9) * .45, .65, 1.6);
+    if (ctx.minShare != null) v *= clamp(.75 + ctx.minShare * .4, .75, 1.15);
+    if (ctx.contractYrs != null && ctx.contractYrs <= 1 && a >= 22) v *= .8;
+  }
+  return Math.max(10000, Math.round(v / 10000) * 10000);
+}
+C.marketValue = marketValue;
+// ---------- 설정 ----------
+const CFG_DEFAULT = {
+  currency: 'KRW', rates: { KRW: 1500, USD: 1.08, GBP: .85, JPY: 162 }, wageMode: 'week',
+  difficulty: 'real', moments: 'normal', events: 'normal', injuries: 'normal', showOdds: true,
+  anim: 'full', confetti: true, ceremonies: true, simSpeed: 1, autoSave: true
+};
+C.CFG_DEFAULT = CFG_DEFAULT;
+C.cfg = JSON.parse(JSON.stringify(CFG_DEFAULT));
+C.setCfg = o => { C.cfg = Object.assign(JSON.parse(JSON.stringify(CFG_DEFAULT)), o || {}); C.cfg.rates = Object.assign({}, CFG_DEFAULT.rates, (o && o.rates) || {}); };
+const DIFF = { easy: { g: 1.18, inj: .7, off: 1.25, luck: .36 }, real: { g: 1, inj: 1, off: 1, luck: .42 }, hard: { g: .88, inj: 1.25, off: .85, luck: .48 }, hardcore: { g: .78, inj: 1.5, off: .7, luck: .55 } };
+C.diff = () => DIFF[C.cfg.difficulty] || DIFF.real;
+const CUR = { KRW: '₩', EUR: '€', USD: '$', GBP: '£', JPY: '¥' };
+C.CUR = CUR;
+// 내부 금액은 모두 EUR. 표시할 때만 설정 통화로 바꾼다
+function fmtEUR(v) {
+  const cur = C.cfg.currency || 'EUR';
+  const neg = v < 0; v = Math.abs(v);
+  let out;
+  if (cur === 'KRW') {
+    const w = v * (C.cfg.rates.KRW || 1500);
+    if (w >= 1e12) out = (w / 1e12).toFixed(w >= 1e13 ? 0 : 1).replace(/\.0$/, '') + '조원';
+    else if (w >= 1e8) out = (w >= 1e10 ? Math.round(w / 1e8).toLocaleString() : (w / 1e8).toFixed(1).replace(/\.0$/, '')) + '억원';
+    else if (w >= 1e4) out = Math.round(w / 1e4).toLocaleString() + '만원';
+    else out = Math.round(w).toLocaleString() + '원';
+  } else if (cur === 'JPY') {
+    const y = v * (C.cfg.rates.JPY || 162);
+    out = y >= 1e8 ? '¥' + (y / 1e8).toFixed(1).replace(/\.0$/, '') + '억' : y >= 1e4 ? '¥' + Math.round(y / 1e4).toLocaleString() + '만' : '¥' + Math.round(y).toLocaleString();
+  } else {
+    const x = cur === 'EUR' ? v : v * (C.cfg.rates[cur] || 1), sym = CUR[cur] || '€';
+    out = x >= 1e8 ? sym + (x / 1e6).toFixed(0) + 'M' : x >= 1e6 ? sym + (x / 1e6).toFixed(1) + 'M' : x >= 1e3 ? sym + Math.round(x / 1e3) + 'K' : sym + Math.round(x);
+  }
+  return (neg ? '−' : '') + out;
+}
+const fmtKR = fmtEUR;
+// 주급 표시 (설정에 따라 주급·월급·연봉)
+C.fmtWage = v => C.cfg.wageMode === 'year' ? fmtEUR(v * 52) + ' /년' : C.cfg.wageMode === 'month' ? fmtEUR(v * 52 / 12) + ' /월' : fmtEUR(v) + ' /주';
+C.fmtEUR = fmtEUR; C.fmtKR = fmtKR;
+
+// 스카우트 잠재력 평가 (나이 들수록 정확해짐)
+function potEstimate(p) {
+  const o = ovrOf(p), err = clamp(10 - (p.age - 16) * 1.4, 1.5, 10);
+  if (!p.hid.potSeed) p.hid.potSeed = N(0, 1);
+  const est = Math.max(o, Math.round(p.hid.pot + p.hid.potSeed * err * .6));
+  return { lo: Math.max(o, Math.round(est - err)), hi: Math.min(99, Math.round(est + err)), est };
+}
+C.potEstimate = potEstimate;
+})(typeof window !== 'undefined' ? window : globalThis);
