@@ -474,6 +474,27 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .chap p { margin: 0; line-height: 1.75; }
 .epi { margin: 6px 0 0; font-size: 16px; font-style: italic; text-align: center; color: #ffe3a1; animation: fadeUp 1s both; }
 @media (max-width: 520px) { .chap { grid-template-columns: 1fr; gap: 2px; } .grade { width: 64px; height: 64px; font-size: 34px; } }
+
+.reqbox { display: grid; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--line); }
+.reqbtns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.reqbtns .btn { display: grid; gap: 2px; padding: 9px 6px; }
+.reqbtns small { font-size: 10.5px; color: var(--mute); font-weight: 500; }
+@media (max-width: 520px) { .reqbtns { grid-template-columns: 1fr; } }
+
+.trank { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--panel2); }
+.tlist { display: grid; gap: 3px; font-size: 12.5px; }
+.tlist > div { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; }
+.tlist > div.me { color: var(--gold); font-weight: 700; }
+@media (max-width: 520px) { .trank { grid-template-columns: 1fr; } }
+
+.cpt { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 5px; white-space: nowrap; color: #fff; vertical-align: 1px; }
+.cp-l { background: #2f6fd6; } .cp-c { background: #22a35a; } .cp-lc { background: #13958f; } .cp-e { background: #7a4fd8; } .cp-n { background: #d6453d; } .cp-ny { background: #d9822b; } .cp-y { background: #5d6675; }
+.tk { border-left: 3px solid transparent; }
+.tk.tkc-l { border-left-color: #2f6fd6; } .tk.tkc-c { border-left-color: #22a35a; } .tk.tkc-lc { border-left-color: #13958f; } .tk.tkc-e { border-left-color: #7a4fd8; } .tk.tkc-n { border-left-color: #d6453d; } .tk.tkc-ny { border-left-color: #d9822b; } .tk.tkc-y { border-left-color: #5d6675; }
+
+.archbar { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border: 1px solid rgba(242,193,78,.4); font-size: 13px; }
+.mlog.hof tr.click { cursor: pointer; }
+.mlog.hof tr.click:hover td { background: color-mix(in srgb, var(--gold) 7%, transparent); }
 </style>
 
 <div id="app"></div>

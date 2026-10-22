@@ -723,6 +723,14 @@ function genOffers(S, win) {
     const yrs = contractYears(age);
     out.push({ type: 'transfer', club: c.id, fee, wage: wageFor(c, ovr, nation), years: yrs, role: roleAt(S, c), free });
   }
+  // 아무 제안도 없으면: 은퇴 직전이 아닌 이상 낮은 수준 구단이 주급 삭감 조건으로라도 연락한다
+  const ovrN = C.ovrOf(p);
+  const needJob = car.status === 'free' || (car.contract < w.year && car.status !== 'youth') || (S.stance && (S.stance.release || (S.stance.expired && !S.stance.renew)));
+  if (win !== 'winter' && !out.some(o => o.type === 'transfer') && age <= 35 && ovrN >= 50 && (needJob || R() < .55)) {
+    const k = needJob ? rint(2, 3) : 1;
+    out.push(...fallbackOffers(S, k, pv));
+  }
+  for (const o of out) if (o.type === 'transfer' && car.wage && o.wage < car.wage * .85 && car.status !== 'youth') o.cut = Math.round((1 - o.wage / car.wage) * 100);
   // 임대 제안 (젊고 출전이 적을 때)
   const contractOK = car.status === 'youth' ? true : car.contract >= w.year;
   const st0 = S.stance || {};
@@ -735,6 +743,40 @@ function genOffers(S, win) {
   return out;
 }
 C.genOffers = genOffers;
+// 하위 레벨 구단 제안 (주급 삭감 포함)
+function fallbackOffers(S, k, pv, opt) {
+  const w = S.w, p = S.p, car = S.car, age = p.age, ovr = C.ovrOf(p);
+  opt = opt || {};
+  const lo = opt.lo != null ? opt.lo : pv - 9, hi = opt.hi != null ? opt.hi : pv - 1.5;
+  const cands = Object.values(w.clubs).filter(c => c.lg && c.id !== car.club && !(car.parent && c.id === car.parent) && c.str >= lo && c.str <= hi && !(S.offers || []).some(o => o.club === c.id));
+  const out = [], free = car.status === 'free' || (car.contract < w.year && car.status !== 'youth');
+  for (let i = 0; i < k && cands.length; i++) {
+    const c = wpick(cands, c => { const ln = w.lg[c.lg].nation; let x = 1; if (ln === p.nat) x *= 2; if (C.leagueOf(S) && ln === C.leagueOf(S).nation) x *= 1.6; if (age >= 30 && ['KSA', 'USA', 'QAT', 'CHN', 'AUS', 'JPN'].includes(ln)) x *= 1.8; if (w.lg[c.lg].tier >= 4) x *= .4; return x * Math.exp(N(0, .4)); });
+    if (!c) break; cands.splice(cands.indexOf(c), 1);
+    const nation = w.lg[c.lg].nation;
+    let wage = wageFor(c, ovr, nation);
+    // 하위 레벨로 가는 제안은 지금보다 적은 주급을 제시한다
+    const curStr = w.clubs[car.club] ? w.clubs[car.club].str : 99;
+    if (opt.cut !== false && car.wage && c.str < curStr - 1 && wage > car.wage * .9 && !free) wage = Math.round(car.wage * rnd(.55, .85));
+    const fee = free ? 0 : Math.round(curValue(S) * rnd(.45, .8) / 1e5) * 1e5;
+    out.push({ type: 'transfer', club: c.id, fee, wage, years: age >= 32 ? 1 : rint(1, 3), role: roleAt(S, c), free, low: 1 });
+  }
+  return out;
+}
+C.fallbackOffers = fallbackOffers;
+// 역제의: 에이전트에게 이적 추진을 맡긴다 (이적시장마다 1회)
+// mode: 'up' 상위 구단 도전 · 'same' 비슷한 수준 · 'down' 출전 우선(하부·주급 삭감 수용)
+function requestOffers(S, mode) {
+  const p = S.p, pv = perceived(S), last = S.hist[S.hist.length - 1];
+  const rating = last && last.total && last.total.rated >= 8 ? last.rating : 6.6;
+  let out = [];
+  if (mode === 'up') { const pr = clamp(.18 + (rating - 6.8) * .55 - Math.max(0, p.age - 29) * .06, .04, .75); if (R() < pr) out = fallbackOffers(S, R() < .3 ? 2 : 1, pv, { lo: pv + 1, hi: pv + 6, cut: false }); }
+  else if (mode === 'same') { const pr = clamp(.55 + (rating - 6.8) * .4 - Math.max(0, p.age - 31) * .08, .15, .9); if (R() < pr) out = fallbackOffers(S, rint(1, 2), pv, { lo: pv - 2.5, hi: pv + 1.5, cut: false }); }
+  else { const base = Math.min(pv, S.w.clubs[S.car.club] ? S.w.clubs[S.car.club].str : pv); out = fallbackOffers(S, rint(2, 3), pv, { lo: base - 12, hi: base - 2 }); }
+  out.forEach(o => { o.req = mode; if (S.car.wage && o.wage < S.car.wage * .85 && S.car.status !== 'youth') o.cut = Math.round((1 - o.wage / S.car.wage) * 100); });
+  return out;
+}
+C.requestOffers = requestOffers;
 function curValue(S) {
   const last = S.hist[S.hist.length - 1];
   return C.marketValue(S.p, { nation: (C.leagueOf(S) || {}).nation || 'ENG', rating: last && last.total && last.total.rated >= 8 ? last.rating : null, minShare: last ? last.minShare : .5, potEst: C.potEstimate(S.p).est, contractYrs: S.car.contract - S.w.year + 1 });
@@ -837,20 +879,27 @@ function ballonDor(S) {
   const lgF = lg ? (BIG5.includes(lg.nation) && lg.tier === 1 ? 1 : lg.tier === 1 && C.confOf(lg.nation) === 'UEFA' ? .8 : .55) : .5;
   const att = ['ST', 'W', 'AM'].includes(role);
   const ga = att ? tot.goals + tot.assists * .6 : role === 'GK' ? tot.cs * .8 : tot.goals * 1.5 + tot.assists + tot.cs * .3;
-  const myScore = (C.effOvr(p) * .55 + (r - 6.8) * 6 + ga * .14 * lgF + trophyPts(ss.trophies) * 1.4 + (w.clubs[ss.club].str - 80) * .2) * (tot.apps >= 20 ? 1 : .6) * (ss.status === 'youth' ? .3 : 1);
-  // AI 후보: 세계 상위 선수
+  // 점수: 능력치보다 그 시즌 활약(공격 포인트·평점·우승)이 더 크게 반영된다
+  const tpMe = trophyPts(ss.trophies);
+  const myScore = (C.ovrOf(p) * .3 + (r - 6.8) * 10 + ga * .32 * lgF + tpMe * 1.5 + (w.clubs[ss.club].str - 80) * .12) * (tot.apps >= 25 ? 1 : tot.apps >= 15 ? .82 : .55) * (ss.status === 'youth' ? .3 : 1);
+  // AI 후보: 세계 상위 선수 (이번 시즌 활약을 간단히 시뮬)
   const cands = [];
-  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg) continue; for (const e of c.sq) if (e[2] >= 84) cands.push([e, c]); }
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg || c.lite) continue; for (const e of c.sq) if (e[2] >= 82) cands.push([e, c]); }
   const champs = new Set(Object.values(ss.final || {}).map(t => t[0] && t[0].id));
   const ucl = ss.allCont && ss.allCont.UCL && ss.allCont.UCL.winner;
-  const list = cands.map(([e, c]) => {
-    const rr = 6.75 + (e[2] - 80) * .05 + N(0, .15);
+  const lgFOf = c => { const l = w.lg[c.lg]; return l ? (BIG5.includes(l.nation) && l.tier === 1 ? 1 : l.tier === 1 && C.confOf(l.nation) === 'UEFA' ? .8 : .55) : .5; };
+  let list = cands.map(([e, c]) => {
+    const rr = 6.75 + (e[2] - 80) * .055 + N(0, .28);
     const at = ['ST', 'LW', 'RW', 'CAM', 'LM', 'RM'].includes(e[1]);
-    const g = at ? Math.max(0, (e[2] - 74) * 2.3 + N(0, 6)) : e[1] === 'GK' ? 10 : 5;
+    const g = at ? Math.max(0, (e[2] - 75) * 1.9 + N(0, 7)) : ['CM', 'CDM'].includes(e[1]) ? Math.max(0, (e[2] - 75) * .9 + N(0, 4)) : e[1] === 'GK' ? 8 : Math.max(0, N(4, 3));
     const tp = (champs.has(c.id) && w.lg[c.lg].tier === 1 ? 3 : 0) + (ucl === c.id ? 6 : 0);
-    return { n: C.pName(w, e), club: c.name, ovr: e[2], age: e[3], s: (e[2] * .55 + (rr - 6.8) * 6 + g * .14 + tp * 1.4 + (c.str - 80) * .2) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .93 : 1) + N(0, 1.2) };
-  }).sort((a, b) => b.s - a.s).slice(0, 30);
-  const me = { n: p.name, club: w.clubs[ss.club].name, ovr: C.ovrOf(p), age: p.age, s: myScore, me: true };
+    return { n: C.pName(w, e), club: c.name, cid: c.id, ovr: e[2], age: e[3], s: (e[2] * .3 + (rr - 6.8) * 10 + g * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) + N(0, 1.6) };
+  }).sort((a, b) => b.s - a.s).slice(0, 60);
+  // 같은 팀 선수끼리는 표가 갈린다
+  const seen = {}; list.forEach(x => { const k = seen[x.cid] = (seen[x.cid] || 0) + 1; if (k > 1) x.s -= (k - 1) * 2.4; });
+  list = list.sort((a, b) => b.s - a.s).slice(0, 30);
+  const me = { n: p.name, club: w.clubs[ss.club].name, cid: ss.club, ovr: C.ovrOf(p), age: p.age, s: myScore, me: true };
+  const mates = list.filter(x => x.cid === ss.club).length; me.s -= mates * .8;
   const all = list.concat(me).sort((a, b) => b.s - a.s);
   const rank = all.indexOf(me) + 1;
   // 골든보이 (21세 이하)

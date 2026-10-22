@@ -118,9 +118,11 @@ function ageSquad(c) {
   const out = [];
   for (const e of c.sq) {
     const age = e[3] + 1; let o = e[2], pot = e[4];
-    if (age <= 20) o += pot > o ? (pot - o) * rnd(.15, .45) + N(.5, 1.2) : N(0, 1.2);
-    else if (age <= 23) o += pot > o ? (pot - o) * rnd(.15, .4) + N(0, 1.1) : N(.2, 1.2);
-    else if (age <= 28) o += N(.15, 1.2);
+    // 유망주가 모두 잠재력을 채우지는 못한다: 매년 잠재력이 조금씩 깎인다
+    if (age >= 19 && pot > o) pot = Math.max(o, pot - rnd(0, 1.8));
+    if (age <= 20) o += pot > o ? (pot - o) * rnd(.1, .38) + N(.3, 1.2) : N(0, 1.2);
+    else if (age <= 23) o += pot > o ? (pot - o) * rnd(.1, .33) + N(0, 1.1) : N(0, 1.2);
+    else if (age <= 28) o += N(0, 1.1);
     else if (age <= 30) o += N(-.6, 1.2);
     else o -= (age - 30) * rnd(.5, 1.4) + rnd(0, 1);
     o = clamp(Math.round(o), 40, 94);
@@ -144,11 +146,33 @@ function refillSquad(c, w) {
   for (let t = 0; t < 4; t++) {
     const s = xiStrength(c.sq); if (s >= c.pres - .8) break;
     const posList = ['GK', 'CB', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
-    const pos = pick(posList); sign(pos, c.pres + 2, false);
+    const pos = pick(posList); sign(pos, Math.min(c.pres + 2, 87), false);
   }
   // 정원 초과 시 약한 선수 정리
   while (c.sq.length > 30) { let mi = 0; c.sq.forEach((e, i) => { if (e[2] - (e[3] < 21 ? 6 : 0) < c.sq[mi][2] - (c.sq[mi][3] < 21 ? 6 : 0)) mi = i; }); c.sq.splice(mi, 1); }
 }
+// 세월이 지나도 세계 수준이 부풀지 않도록 상위권 분포를 처음 수준에 맞춘다
+function topAvgs(w) {
+  const o = []; for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lite) for (const e of c.sq) o.push(e[2]); }
+  o.sort((a, b) => b - a);
+  const avg = (a, b) => { const sl = o.slice(a, b); return sl.reduce((x, y) => x + y, 0) / Math.max(1, sl.length); };
+  return { t100: avg(0, 100), t1000: avg(100, 1000), t5000: avg(1000, 5000) };
+}
+function normalizeWorld(w) {
+  const cur = topAvgs(w);
+  if (!w.norm) { w.norm = { t100: Math.min(cur.t100, 86.8), t1000: Math.min(cur.t1000, 79.8), t5000: Math.min(cur.t5000, 73.5) }; }
+  const d100 = cur.t100 - w.norm.t100, d1000 = cur.t1000 - w.norm.t1000, d5000 = cur.t5000 - w.norm.t5000;
+  if (d100 <= .1 && d1000 <= .1 && d5000 <= .1) return;
+  for (const id in w.clubs) {
+    const c = w.clubs[id]; if (c.lite) continue;
+    for (const e of c.sq) {
+      const o = e[2];
+      const cut = o >= 84 ? Math.max(d100, d1000) : o >= 76 ? Math.max(0, d1000) * (.4 + (o - 76) / 13) : o >= 68 ? Math.max(0, d5000) * .8 : 0;
+      if (cut > 0) { const nv = o - cut; e[2] = clamp(Math.round(nv + (R() < (nv % 1) ? 0 : 0)), 40, 94); if (e[4] > e[2]) e[4] = Math.max(e[2], Math.round(e[4] - cut)); }
+    }
+  }
+}
+C.topAvgs = topAvgs;
 function advanceWorld(w, results) {
   for (const id in w.clubs) {
     const c = w.clubs[id];
@@ -156,8 +180,10 @@ function advanceWorld(w, results) {
     let d = (c.base - c.pres) * .1 + N(0, .45) + ((results && results[id]) || 0);
     c.pres = clamp(c.pres + d, 38, 90);
     if (c.lite) { c.str = Math.round((c.pres + N(0, .6)) * 10) / 10; continue; }
-    ageSquad(c); refillSquad(c, w); c.str = xiStrength(c.sq);
+    ageSquad(c); refillSquad(c, w);
   }
+  normalizeWorld(w);
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lite) c.str = xiStrength(c.sq); }
   w.year++;
 }
 C.advanceWorld = advanceWorld;
@@ -183,6 +209,44 @@ function roundRobin(ids) {
   return shuffle(rounds).concat(shuffle(second));
 }
 C.roundRobin = roundRobin;
+// 리그별 경기 방식: 팀 수와 실제 제도에 맞춘 라운드 수, 스플릿 라운드
+const LGFMT = {
+  KOR1: { legs: 3, split: [6, 1], note: '33라운드 + 파이널 라운드 5경기' }, SCO1: { legs: 3, split: [6, 1], note: '33라운드 + 스플릿 5경기' }, SUI1: { legs: 3, split: [6, 1], note: '33라운드 + 스플릿 5경기' },
+  AUT1: { legs: 2, split: [6, 2], note: '22라운드 + 상·하위 스플릿 10경기' }, DEN1: { legs: 2, split: [6, 2], note: '22라운드 + 상·하위 스플릿 10경기' }, ISL1: { legs: 2, split: [6, 1], note: '22라운드 + 스플릿 5경기' },
+  BEL1: { legs: 2, split: [6, 2, 1], note: '정규 30라운드 + 챔피언십 플레이오프 10경기' }, ROU1: { legs: 2, split: [6, 2, 1], note: '정규 30라운드 + 플레이오프 10경기' },
+  AUS1: { legs: 3, cap: 26, note: '26라운드' }, ARG1: { legs: 1, note: '단일 리그전' }, USA1: { legs: 1, cap: 34, note: '정규시즌 (승강 없음)' }, USA2: { legs: 1, note: '정규시즌' }
+};
+function lgFormat(lg) {
+  const f = LGFMT[lg.nation + lg.tier]; if (f) return f;
+  const n = lg.clubs.length;
+  return { legs: n >= 26 ? 1 : n <= 10 ? 4 : n <= 12 ? 3 : 2 };
+}
+C.lgFormat = lgFormat;
+function leagueRounds(lg) {
+  const f = lgFormat(lg), d = roundRobin(lg.clubs), half = d.length / 2;
+  let r = f.legs === 1 ? d.slice(0, half) : f.legs === 2 ? d : f.legs === 3 ? d.concat(shuffle(d.slice(0, half))) : d.concat(roundRobin(lg.clubs));
+  if (f.cap) r = r.slice(0, f.cap);
+  return r;
+}
+C.leagueRounds = leagueRounds;
+// 스플릿: 정규 라운드 순위로 상·하위 그룹을 나눠 그룹 안에서 다시 맞붙는다
+function splitRounds(order, f) {
+  const top = order.slice(0, f.split[0]), bot = order.slice(f.split[0]);
+  const gr = (g, legs) => { if (g.length < 2) return []; const d = roundRobin(g); return legs === 1 ? d.slice(0, d.length / 2) : d; };
+  const a = gr(top, f.split[1]), b = gr(bot, f.split[2] || f.split[1]), n = Math.max(a.length, b.length), out = [];
+  for (let i = 0; i < n; i++) out.push((a[i] || []).concat(b[i] || []));
+  return out;
+}
+C.splitRounds = splitRounds;
+C.splitCount = (lg) => { const f = lgFormat(lg); if (!f.split) return 0; const rr = (g, legs) => { const r = g % 2 ? g : g - 1; return legs === 1 ? r : r * 2; }; return Math.max(rr(f.split[0], f.split[1]), rr(lg.clubs.length - f.split[0], f.split[2] || f.split[1])); };
+// 사용자 리그가 아닌 리그를 한 번에 시뮬
+function simLeague(w, lg) {
+  const t = newTable(lg.clubs), f = lgFormat(lg);
+  for (const ms of leagueRounds(lg)) for (const [a, b] of ms) { const [x, y] = quickMatch(w.clubs[a].str, w.clubs[b].str, 1); addResult(t, a, b, x, y); }
+  if (f.split) for (const ms of splitRounds(sortTable(t).map(r => r.id), f)) for (const [a, b] of ms) { const [x, y] = quickMatch(w.clubs[a].str, w.clubs[b].str, 1); addResult(t, a, b, x, y); }
+  return t;
+}
+C.simLeague = simLeague;
 function newTable(ids) { const t = {}; for (const id of ids) t[id] = { id, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 }; return t; }
 function addResult(t, a, b, ga, gb) {
   const A = t[a], B = t[b]; if (!A || !B) return;
@@ -194,6 +258,10 @@ Object.assign(C, { newTable, addResult, sortTable });
 
 // 승강 규칙: 국가별 상·하위 리그
 function tiersOf(w, nation) { return Object.values(w.lg).filter(l => l.nation === nation).sort((a, b) => a.tier - b.tier); }
+// 승강이 없는 리그와 국가별 강등 팀 수
+const NOREL = new Set(['USA', 'AUS', 'IND', 'MEX']);
+const RELN = { KOR1: 1, SCO1: 1, AUT1: 1, SUI1: 1, DEN1: 2, FRA1: 2, NED1: 2, POR1: 2, BEL1: 2, TUR1: 4, ARG1: 2, BRA1: 4, JPN1: 3, KSA1: 3, CHN1: 2, GRE1: 2, ITA1: 3, ESP1: 3, ENG1: 3, ENG2: 3, ENG3: 4, BRA2: 4, JPN2: 2, KOR2: 1 };
+C.NOREL = NOREL;
 function applyPromotion(w, tables) {
   const nations = [...new Set(Object.values(w.lg).map(l => l.nation))];
   const moves = {};
@@ -204,7 +272,10 @@ function applyPromotion(w, tables) {
     for (let i = 0; i < tiers.length - 1; i++) {
       const ups = byT[tiers[i]], dns = byT[tiers[i + 1]];
       if (ups.some(l => !tables[l.id]) || dns.some(l => !tables[l.id])) continue;
-      const k = n === 'GER' && tiers[i] <= 2 ? 2 : ups.length > 1 ? 2 : 3;
+      if (NOREL.has(n) && tiers[i] === 1) continue;
+      const kk = RELN[n + tiers[i]];
+      const k = kk != null ? kk : n === 'GER' && tiers[i] <= 2 ? 2 : ups.length > 1 ? 2 : ups[0].clubs.length <= 12 ? 1 : 3;
+      if (!k) continue;
       // 위 티어 각 리그에서 하위 k팀 강등, 아래 티어 전체에서 같은 수만큼 승격(각 조 1위부터)
       const rel = []; for (const u of ups) rel.push(...tables[u.id].slice(-k).map(r => [r.id, u]));
       const cand = []; for (const d of dns) tables[d.id].forEach((r, pos) => cand.push([r.id, d, pos, r.pts / Math.max(1, r.p)]));

@@ -51,18 +51,20 @@ function playerMatch(p, o) {
   const poss = clamp(.5 + (o.sT - o.sO) * .012, .3, .72);
   const shots = [];
   // --- 슈팅 ---
-  const attQ = role === 'GK' ? 0 : Math.exp(((A('attPos') + A('finishing')) / 2 - 72) * .021);
+  const attQ = role === 'GK' ? 0 : Math.exp(((A('attPos') + A('finishing')) / 2 - 72) * .03);
   const share = sh[0] * attQ;
-  const myXGexp = o.lamT * share * f;
-  let nSh = poisson(myXGexp / sh[1]);
+  const myXGexp = Math.pow(o.lamT, .8) * Math.pow(1.36, .2) * share * f; // 강팀 소속이어도 개인 몫은 완만하게 증가
+  // 강팀일수록 슈팅 수보다 슈팅 질이 오른다 (슈팅당 xG 상승)
+  const xgK = clamp(Math.sqrt(o.lamT / 1.36), .78, 1.3);
+  let nSh = poisson(myXGexp / (sh[1] * xgK));
   let goals = 0;
   const kq = 1 - (o.sO - 70) * .006;
   for (let i = 0; i < nSh; i++) {
     const r = R();
     const type = r < sh[3] * (A('heading') / 70) ? 'head' : r < sh[3] * (A('heading') / 70) + sh[4] * (A('longShots') / 70) ? 'out' : 'in';
-    let xg = type === 'head' ? rnd(.03, .2) : type === 'out' ? rnd(.02, .08) : clamp(.04 + Math.exp(N(-2.35, .85)), .03, .78);
+    let xg = clamp((type === 'head' ? rnd(.03, .2) : type === 'out' ? rnd(.02, .08) : clamp(.04 + Math.exp(N(-2.35, .85)), .03, .78)) * xgK, .02, .85);
     const qual = type === 'head' ? A('heading') : type === 'out' ? (A('longShots') * .7 + A('shotPower') * .3) : (A('finishing') * .8 + A('composure') * .2);
-    const conv = clamp(.48 + (qual - 60) * .013, .4, 1.05) * kq;
+    const conv = clamp(.76 + (qual - 65) * .013, .45, 1.22) * kq;
     const goal = R() < xg * conv;
     const onT = goal || R() < clamp(.24 + (qual - 60) * .006, .15, .55);
     const sp = shotSpot(type, xg);
@@ -93,7 +95,7 @@ function playerMatch(p, o) {
   const aq = Math.exp((cre - 70) * .016);
   const ash = sh[2] * aq;
   let assists = 0; const othersOn = binom(others, f);
-  for (let i = 0; i < othersOn; i++) if (R() < ash * .95) assists++;
+  for (let i = 0; i < othersOn; i++) if (R() < ash * 1.08) assists++;
   st.assists = assists;
   st.xa = o.lamT * f * ash * N(1, .3) * .9 + assists * .12; if (st.xa < 0) st.xa = 0;
   st.chances = Math.max(assists, poisson(st.xa / .1));
@@ -218,13 +220,16 @@ function setupSeason(S) {
   const start = day(y, 8, 9), end = day(y + 1, 5, 24);
   // 리그
   if (lg) {
-    const rounds = C.roundRobin(lg.clubs);
+    const rounds = C.leagueRounds(lg);
     ss.rounds = rounds; ss.tables[lg.id] = C.newTable(lg.clubs);
-    rounds.forEach((ms, r) => {
-      const d = nextDow(start + Math.round(r * (end - start) / rounds.length), 6);
-      const m = ms.find(x => x[0] === club.id || x[1] === club.id);
+    const nSplit = C.splitCount(lg), total = rounds.length + nSplit;
+    ss.lgFmt = C.lgFormat(lg); ss.splitDone = false;
+    for (let r = 0; r < total; r++) {
+      const d = nextDow(start + Math.round(r * (end - start) / total), 6);
+      if (r >= rounds.length) { ss.fx.push({ d, k: 'L', r, split: true, opp: null, home: false }); continue; }
+      const ms = rounds[r], m = ms.find(x => x[0] === club.id || x[1] === club.id);
       ss.fx.push({ d, k: 'L', r, opp: m ? (m[0] === club.id ? m[1] : m[0]) : null, home: m ? m[0] === club.id : false });
-    });
+    }
   }
   // 유스 리그 (유스 선수, 또는 출전이 적은 21세 이하 1군 선수의 U21·B팀 경기)
   const sr0 = car.status !== 'youth' ? squadRole(S, club.id) : null;
@@ -471,6 +476,14 @@ C.userMatch = userMatch;
 async function doLeague(S, fx, hooks) {
   const ss = S.ss, lg = leagueOf(S, ss.club);
   const tb = ss.tables[lg.id];
+  // 스플릿 라운드: 정규 라운드가 끝난 시점의 순위로 대진 생성
+  if (fx.split) {
+    if (!ss.splitDone) { ss.splitDone = true; ss.rounds = ss.rounds.concat(C.splitRounds(C.sortTable(tb).map(r => r.id), ss.lgFmt)); if (C.news) C.news(S, `${lg.name} 스플릿 라운드 시작`, 'league', false); }
+    const ms = ss.rounds[fx.r] || [];
+    const m = ms.find(x => x[0] === ss.club || x[1] === ss.club);
+    fx.opp = m ? (m[0] === ss.club ? m[1] : m[0]) : null; fx.home = m ? m[0] === ss.club : false;
+    if (!ss.rounds[fx.r]) return;
+  }
   // 같은 라운드의 다른 경기
   for (const [a, b] of ss.rounds[fx.r]) {
     if (a === ss.club || b === ss.club) continue;
@@ -479,7 +492,7 @@ async function doLeague(S, fx, hooks) {
   if (!fx.opp) return;
   const oc = S.w.clubs[fx.opp];
   const sorted = C.sortTable(tb), myPos = sorted.findIndex(r => r.id === ss.club), opPos = sorted.findIndex(r => r.id === fx.opp);
-  const imp = (fx.r > ss.rounds.length * .75 ? 1 : 0) + (opPos < 4 && myPos < 6 ? 1 : 0) + (oc.str > S.w.clubs[ss.club].str + 3 ? 1 : 0);
+  const imp = (fx.r > (ss.rounds.length + C.splitCount(lg)) * .75 ? 1 : 0) + (fx.split ? 1 : 0) + (opPos < 4 && myPos < 6 ? 1 : 0) + (oc.str > S.w.clubs[ss.club].str + 3 ? 1 : 0);
   const rec = await userMatch(S, { d: fx.d, kind: 'L', compKey: 'league', compName: lg.name, opp: fx.opp, oppName: oc.name, oppStr: oc.str, home: fx.home, imp }, hooks);
   if (fx.home) C.addResult(tb, ss.club, fx.opp, rec.gf, rec.ga); else C.addResult(tb, fx.opp, ss.club, rec.ga, rec.gf);
 }
@@ -698,10 +711,7 @@ function finishSeason(S) {
   for (const id in w.lg) {
     const lg = w.lg[id];
     if (ss.tables[id]) { tables[id] = C.sortTable(ss.tables[id]); continue; }
-    const t = C.newTable(lg.clubs);
-    const ids = lg.clubs;
-    for (let i = 0; i < ids.length; i++) for (let j = 0; j < ids.length; j++) if (i !== j) { const [a, b] = C.quickMatch(w.clubs[ids[i]].str, w.clubs[ids[j]].str, 1); C.addResult(t, ids[i], ids[j], a, b); }
-    tables[id] = C.sortTable(t);
+    tables[id] = C.sortTable(C.simLeague(w, lg));
   }
   ss.final = tables;
   finishContAll(S);
@@ -737,4 +747,26 @@ function finishSeason(S) {
   return ss;
 }
 C.finishSeason = finishSeason;
+// 팀 내 평점 순위: 동료들의 시즌 평점은 능력치·팀 성적으로 추정 (시즌 동안 고정된 시드)
+function teamRank(S, ssArg) {
+  const ss = ssArg || S.ss, w = S.w, c = w.clubs[ss.club];
+  if (!c || !c.sq || !c.sq.length) return null;
+  const ms = ss.matches.filter(m => !['youth', 'nt', 'ntY'].includes(m.comp));
+  const mine = ms.filter(m => m.played && m.rating);
+  if (mine.length < 3) return null;
+  const myR = mine.reduce((a, m) => a + m.rating, 0) / mine.length;
+  const lg = leagueOf(S, ss.club), tb = lg && ss.tables[lg.id] ? ss.tables[lg.id][ss.club] : null;
+  const ppg = tb && tb.p ? tb.pts / tb.p : 1.4;
+  const sorted = c.sq.slice().sort((a, b) => b[2] - a[2]), top = sorted.slice(0, 18);
+  const avg = top.reduce((a, e) => a + e[2], 0) / top.length;
+  const r0 = C.seeded(c.id + '|tr|' + ss.year);
+  const list = top.map((e, i) => {
+    const r = r0(), r2 = r0();
+    const g = Math.sqrt(-2 * Math.log(r || 1e-9)) * Math.cos(2 * Math.PI * r2);
+    return { n: C.pName(w, e), pos: e[1], r: +(6.62 + (e[2] - avg) * .035 + (ppg - 1.4) * .28 + g * .2 - (i >= 13 ? .1 : 0)).toFixed(2) };
+  }).filter(x => x.pos !== 'GK' || true);
+  const all = list.concat({ n: S.p.name, pos: S.p.pos, r: +myR.toFixed(2), me: true }).sort((a, b) => b.r - a.r);
+  return { rank: all.findIndex(x => x.me) + 1, n: all.length, myR: +myR.toFixed(2), top: all.slice(0, 5) };
+}
+C.teamRank = teamRank;
 })(typeof window !== 'undefined' ? window : globalThis);

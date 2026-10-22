@@ -182,7 +182,7 @@ function matchLogSec(r) {
     tb.innerHTML = '';
     log.slice(page * per, page * per + per).forEach(m => {
       const res = m.gf > m.ga ? 'W' : m.gf < m.ga ? 'L' : (m.pen === 'W' ? 'W' : m.pen === 'L' ? 'L' : 'D');
-      tb.append(h('tr', null, h('td', { class: 'mute' }, C.fmtDate(m.d)), h('td', { class: 'o' }, h('div', null, h('b', { style: { fontWeight: 600 } }, m.o)), h('div', { class: 'dim', style: { fontSize: '11px' } }, `${m.cn}${m.s ? ' · ' + m.s : ''}${m.h === true ? ' · 홈' : m.h === false ? ' · 원정' : ''}`)),
+      tb.append(h('tr', null, h('td', { class: 'mute' }, C.fmtDate(m.d)), h('td', { class: 'o' }, h('div', null, h('b', { style: { fontWeight: 600 } }, m.o)), h('div', { class: 'dim', style: { fontSize: '11px', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' } }, U.compTag(m.c, m.cn, m.s), `${m.cn}${m.h === true ? ' · 홈' : m.h === false ? ' · 원정' : ''}`)),
         h('td', null, h('span', { class: 'res ' + res, style: { display: 'inline-block', minWidth: '56px', textAlign: 'center', borderRadius: '6px', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '15px' } }, `${({ W: '승', L: '패', D: '무' })[res]} ${m.gf}-${m.ga}`), m.pen ? h('span', { class: 'dim', style: { fontSize: '11px' } }, ' PK') : null),
         h('td', { class: 'num', style: { textAlign: 'right' } }, m.p ? `${m.mi}'` : h('span', { class: 'dim', style: { fontFamily: 'var(--font-body)', fontSize: '11px' } }, m.w || '-')),
         h('td', { class: 'num', style: { textAlign: 'right' } }, m.p ? m.g : ''), h('td', { class: 'num', style: { textAlign: 'right' } }, m.p ? m.a : ''),

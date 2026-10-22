@@ -181,8 +181,8 @@ U.pickSaveFile = function () {
   document.body.append(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
 };
 // 저장 파일 다운로드: claude.ai 안에서는 downloads 기능, 그 밖(Vercel 등)에서는 브라우저 다운로드
-U.exportSave = async function () {
-  const S = U.S(); if (!S) return;
+U.exportSave = async function (obj) {
+  const S = obj || U.S(); if (!S) return;
   const t = G.TCG.serialize(S) || G.TCG.serialize(Object.assign({}, S, { phase: 'window' }));
   const safe = (S.p.name || 'player').replace(/[^\w가-힣-]+/g, '_').slice(0, 24);
   const fn = `RoadToLegend_${safe}_${S.p.age}세_${S.w.year}.json`;

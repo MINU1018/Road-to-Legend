@@ -127,7 +127,7 @@ GM.winterMove = function (S, i) {
   ns.fx = ns.fx.filter(f => f.k !== 'E');
   // 새 리그 전반기 결과는 빠르게 시뮬
   const lg = C.leagueOf(S);
-  for (const f of ns.fx) if (f.d < ns.split && f.k === 'L') { for (const [a, b] of ns.rounds[f.r]) { const [x, y] = C.quickMatch(w.clubs[a].str, w.clubs[b].str, 1); C.addResult(ns.tables[lg.id], a, b, x, y); } }
+  for (const f of ns.fx) if (f.d < ns.split && f.k === 'L') { for (const [a, b] of (ns.rounds[f.r] || [])) { const [x, y] = C.quickMatch(w.clubs[a].str, w.clubs[b].str, 1); C.addResult(ns.tables[lg.id], a, b, x, y); } }
   // 이전 리그 테이블은 남은 경기를 빠르게 시뮬하도록 보관
   ns.oldTables = oldTables; ns.oldClub = prevClub;
   ns.fx = ns.fx.filter(f => f.d >= ns.split && !(f.k === 'C' || f.k === 'LC'));
@@ -143,12 +143,13 @@ GM.endSeason = function (S) {
   // 겨울 이적 시 이전 리그의 나머지 경기
   if (ss.oldTables) for (const id in ss.oldTables) if (!ss.tables[id]) {
     const lgO = w.lg[id]; const t = ss.oldTables[id];
-    const done = Object.values(t).reduce((a, r) => a + r.p, 0) / 2, total = lgO.clubs.length * (lgO.clubs.length - 1);
+    const done = Object.values(t).reduce((a, r) => a + r.p, 0) / 2, total = (C.leagueRounds(lgO).length + C.splitCount(lgO)) * Math.floor(lgO.clubs.length / 2);
     let k = 0; const ids = lgO.clubs;
     for (let i = 0; i < ids.length && k < total - done; i++) for (let j = 0; j < ids.length && k < total - done; j++) if (i !== j && R() < .55) { const [a, b] = C.quickMatch(w.clubs[ids[i]].str, w.clubs[ids[j]].str, 1); C.addResult(t, ids[i], ids[j], a, b); k++; }
     ss.tables[id] = t;
   }
   C.finishSeason(S);
+  try { ss.tr = C.teamRank(S, ss); } catch (e) { ss.tr = null; }
   ss.goalRes = null;
   // 1군 기록과 유스(U18·U21) 기록을 분리
   const club = ss.matches.filter(m => !['nt', 'ntY', 'youth'].includes(m.comp));
@@ -219,6 +220,14 @@ function pushValue(S) {
 }
 GM.pushValue = pushValue;
 // 리뷰 후 다음 시즌
+// 에이전트 역제의
+GM.requestMove = function (S, mode) {
+  if (S.phase !== 'window' || S.reqY === S.w.year) return null;
+  S.reqY = S.w.year;
+  const got = C.requestOffers(S, mode);
+  S.offers = (S.offers || []).concat(got);
+  return got;
+};
 GM.nextSeason = function (S) {
   const p = S.p, car = S.car;
   if (shouldForceRetire(S)) { GM.retire(S, true); return; }

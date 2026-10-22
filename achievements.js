@@ -126,6 +126,7 @@ function onMatch(S, m) {
     // 스트라이커 무득점 연속
     if (isST(S)) { st.drought = g ? 0 : (st.drought || 0) + 1; if (st.drought >= 40) unlock(S, 'drought40'); }
   }
+  if (m.comp === 'youth') return; // 유스 경기는 프로 기록 과제에 포함하지 않는다
   if (m.comp === 'nt') unlock(S, 'ntdebut');
   if (g >= 3) unlock(S, 'hat');
   if (g >= 4) unlock(S, 'poker');
@@ -164,7 +165,7 @@ function onSeason(S, r) {
   if ((t.yellow || 0) >= 12) unlock(S, 'yel12');
   if (t.apps >= 50) unlock(S, 'iron');
   const benched = (r.log || []).filter(m => !m.y && !m.p && m.w && /벤치|명단|미출전/.test(m.w)).length;
-  if (benched >= 30) unlock(S, 'bench30');
+  if (benched >= 30 && r.status !== 'youth') unlock(S, 'bench30');
   const injD = (r.injuries || []).reduce((a, x) => a + (x.days || 0), 0);
   if (injD >= 100) unlock(S, 'glass');
   // 통산
