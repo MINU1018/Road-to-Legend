@@ -249,7 +249,7 @@ C.marketValue = marketValue;
 const CFG_DEFAULT = {
   currency: 'KRW', rates: { KRW: 1500, USD: 1.08, GBP: .85, JPY: 162 }, wageMode: 'week',
   difficulty: 'real', moments: 'normal', events: 'normal', injuries: 'normal', showOdds: true,
-  anim: 'full', confetti: true, ceremonies: true, simSpeed: 1, autoSave: true
+  anim: 'full', confetti: true, ceremonies: true, simSpeed: 'auto', autoSave: true
 };
 C.CFG_DEFAULT = CFG_DEFAULT;
 C.cfg = JSON.parse(JSON.stringify(CFG_DEFAULT));

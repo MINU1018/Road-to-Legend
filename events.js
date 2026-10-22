@@ -233,12 +233,160 @@ const EVENTS = [
 ];
 
 C.EVENTS = EVENTS;
+// ---------- 이벤트 선택지 랜덤화 + 기대값 밸런스 ----------
+// 효과를 하나의 점수로 환산 (주급 8주치 ≈ 1점, OVR 1 ≈ 5점)
+function effValue(S, e) {
+  if (!e) return 0;
+  const wk = Math.max(3000, S.car.wage || 3000);
+  let v = 0;
+  v += (e.ovr || 0) * 5 + (e.form || 0) * 2.2 * (e.formSeasons || 1) + (e.trust || 0) * .3 + (e.morale || 0) * .12 + (e.rep || 0) * .35;
+  v += (e.money || 0) / (wk * 8) + (e.pot || 0) * 3 - (e.inj || 0) * .09 - (e.susp || 0) * .7 + (e.weak || 0) * 3 + (e.skill || 0) * 2.5;
+  if (e.lon) v += (1 - e.lon) * 25; if (e.injp) v += (1 - e.injp) * 15;
+  if (e.attrs) for (const k in e.attrs) v += e.attrs[k] * .6;
+  if (e.flag === 'superAgent') v += 4; else if (e.flag === 'raise') v += 6; else if (e.flag) v += 1.5;
+  return v;
+}
+C.effValue = effValue;
+const optEV = (S, o) => o.out.reduce((a, x) => a + x.p * effValue(S, x.eff), 0);
+// 수치 흔들기: 이득은 f배, 손해는 g배
+function scaleEff(e, f, g, wk) {
+  if (!e) return e;
+  const n = Object.assign({}, e);
+  const sc = (v, int) => { const k = v >= 0 ? f : g; let x = v * k; if (int) { x = Math.round(x); if (x === 0 && v !== 0) x = Math.sign(v); } return x; };
+  for (const key of ['trust', 'morale', 'rep', 'pot', 'form']) if (n[key]) n[key] = sc(n[key], true);
+  if (n.ovr) { let x = Math.round(sc(n.ovr) * 2) / 2; if (x === 0) x = Math.sign(n.ovr) * .5; n.ovr = x; }
+  if (n.money) n.money = Math.round(sc(n.money) / 1000) * 1000 || Math.sign(n.money) * 1000;
+  if (n.inj) n.inj = Math.max(3, Math.round(n.inj * g));
+  if (n.susp) n.susp = Math.max(1, Math.round(n.susp * g));
+  if (n.lon) n.lon = 1 - (1 - n.lon) * (n.lon < 1 ? f : g);
+  if (n.injp) n.injp = 1 - (1 - n.injp) * (n.injp < 1 ? f : g);
+  if (n.attrs) { const a = {}; for (const k in n.attrs) a[k] = sc(n.attrs[k], true); n.attrs = a; }
+  return n;
+}
+// 효과를 사람이 읽는 문구로
+function effText(S, e) {
+  if (!e) return '';
+  const parts = [], sg = v => (v > 0 ? '+' : '−') + Math.abs(v);
+  if (e.pos) parts.push(`${e.pos} 전향`);
+  if (e.ovr) parts.push(`${sg(e.ovr)} OVR`);
+  if (e.attrs) { const ks = Object.keys(e.attrs).filter(k => e.attrs[k]); if (ks.length) parts.push(ks.slice(0, 3).map(k => `${C.ALABEL[k]} ${sg(e.attrs[k])}`).join(' · ')); }
+  if (e.form) parts.push(e.form > 0 ? `컨디션 +${e.form} (${e.formSeasons || 1}시즌)` : `기량 저하 (${e.formSeasons || 1}시즌 −${-e.form})`);
+  if (e.weak) parts.push(`약발 ★${sg(e.weak)}`);
+  if (e.skill) parts.push(`개인기 ★${sg(e.skill)}`);
+  if (e.trust) parts.push(`신뢰 ${sg(e.trust)}`);
+  if (e.rep) parts.push(`명성 ${sg(e.rep)}`);
+  if (e.morale) parts.push(`사기 ${sg(e.morale)}`);
+  if (e.pot) parts.push(`잠재력 ${sg(e.pot)}`);
+  if (e.lon) parts.push(e.lon < 1 ? '노쇠화 지연' : '노쇠화 가속');
+  if (e.injp) parts.push(e.injp < 1 ? '부상 위험 감소' : '부상 위험 증가');
+  if (e.inj) parts.push(`부상 ${e.inj}일`);
+  if (e.susp) parts.push(`${e.susp}경기 정지`);
+  if (e.money) parts.push(e.money > 0 ? `수입 ${C.fmtEUR(e.money)}` : `지출 ${C.fmtEUR(-e.money)}`);
+  if (e.transferReq) parts.push('이적 제안 증가');
+  if (e.loanReq) parts.push('겨울 임대 제안');
+  return parts.join(' · ');
+}
+C.effText = effText;
+// 원래 문구에서 숫자 없는 설명 부분만 남긴다 (예: '도핑 적발 · 10경기 정지' → '도핑 적발')
+const descPart = chip => (chip || '').split(' · ').filter(x => !/[0-9+−\-★]/.test(x) && !/^(사기|신뢰|명성|노쇠화|부상 위험|컨디션)/.test(x)).join(' · ');
+const GENERIC = [
+  { label: '가족과 상의한다', desc: '서두르지 않는다', out: [{ p: 1, eff: { morale: 7 } }] },
+  { label: '에이전트에게 맡긴다', desc: '전문가의 판단', out: [{ p: .6, eff: { trust: 4, rep: 1 } }, { p: .4, eff: { trust: -4, money: -15000 } }] },
+  { label: '동료들 의견을 따른다', desc: '라커룸 분위기 우선', out: [{ p: .55, eff: { trust: 5, morale: 4 } }, { p: .45, eff: { morale: -5 } }] },
+  { label: '하루 더 생각해 본다', desc: '결정을 미룬다', out: [{ p: .5, eff: { morale: 4 } }, { p: .5, eff: { trust: -3 } }] },
+  { label: '코칭스태프에 맡긴다', desc: '구단의 판단을 따른다', out: [{ p: 1, eff: { trust: 4 } }] }
+];
+const NOBAL = new Set(['injrush']);
+function addBonus(out, need) {
+  const e = out.eff = Object.assign({}, out.eff || {});
+  const keys = [['morale', .12, 20], ['trust', .3, 12], ['rep', .35, 6]].filter(k => !(e[k[0]] < 0));
+  for (const [k, w, cap] of keys.sort(() => R() - .5)) { if (need <= .1) break; const add = Math.min(cap, Math.max(1, Math.round(need / w))); e[k] = (e[k] || 0) + add; need -= add * w; }
+}
+function balanceEvent(S, b) {
+  if (NOBAL.has(b.id)) return b;
+  const wk = Math.max(3000, S.car.wage || 3000);
+  // 공통 선택지 추가 (40%)
+  if (R() < .4 && b.opts.length < 4) { const g = pick(GENERIC); b.opts.push(JSON.parse(JSON.stringify(g))); b.opts[b.opts.length - 1].generic = true; }
+  // 1) 흔들기
+  for (const o of b.opts) {
+    if (o.out.length > 1) {
+      const d = (R() - .5) * .24; o.out[0].p = clamp(o.out[0].p + d, .1, .9);
+      const rest = o.out.slice(1), rs = rest.reduce((a, x) => a + x.p, 0) || 1, left = 1 - o.out[0].p;
+      rest.forEach(x => x.p = x.p / rs * left);
+    }
+    const f = .7 + R() * .65, g = .75 + R() * .55;
+    o.out.forEach(x => { x.eff = scaleEff(x.eff, f, g, wk); });
+  }
+  // 2) 기대값 맞추기: 선택지마다 목표값 = 평균 + 무작위 흔들림. 성공/실패가 있으면 확률로, 결과가 하나면 크기로 맞춘다
+  const ev0 = b.opts.map(o => optEV(S, o)), m = ev0.reduce((a, x) => a + x, 0) / ev0.length;
+  // 각 선택지가 끌어올릴 수 있는 최대 기대값 → 모두가 닿을 수 있는 높이를 기준으로 삼는다
+  const maxAch = b.opts.map((o, i) => {
+    const vals = o.out.map(x => effValue(S, x.eff)), hi = Math.max(...vals);
+    if (o.out.length > 1 && hi - Math.min(...vals) > .3) { const rest = vals.filter((v, j) => j !== vals.indexOf(hi)); return .88 * hi + .12 * (rest.reduce((a, x) => a + x, 0) / rest.length); }
+    return ev0[i] > 0 ? ev0[i] * 1.8 : ev0[i];
+  });
+  const reach = maxAch.filter(x => x > Math.max(m, .3) * .35).sort((a, b) => a - b);
+  const base = Math.max(.3, reach.length ? Math.min(Math.max(m, reach[0] * .75), reach[0] * .9) : m);
+  const spread = Math.max(.5, Math.abs(base) * .3);
+  b.opts.forEach(o => {
+    const target = base + N(0, spread);
+    const vals = o.out.map(x => effValue(S, x.eff));
+    const hi = vals.indexOf(Math.max(...vals)), lo = vals.indexOf(Math.min(...vals));
+    if (o.out.length > 1 && vals[hi] - vals[lo] > .3) {
+      // 비관 분포 D0(최고 결과 8%, 중간 결과 절반이 최악으로) ↔ 낙관 분포 D1(최고 결과 85%) 사이에서 목표 기대값을 맞춘다
+      const n = o.out.length, p0 = o.out.map(x => x.p);
+      const D0 = p0.map((p, j) => j === hi ? .08 : j === lo ? 0 : p * .5);
+      D0[lo] = 1 - D0.reduce((a, x) => a + x, 0);
+      const os = p0.reduce((a, p, j) => a + (j === hi ? 0 : p), 0) || 1;
+      const D1 = p0.map((p, j) => j === hi ? .85 : p / os * .15);
+      const e0 = D0.reduce((a, p, j) => a + p * vals[j], 0), e1 = D1.reduce((a, p, j) => a + p * vals[j], 0);
+      const t = clamp((target - e0) / ((e1 - e0) || 1), 0, 1);
+      o.out.forEach((x, j) => { x.p = D0[j] + (D1[j] - D0[j]) * t; });
+      void n;
+      // 낙관 분포로도 모자라면 손해는 줄이고 이득은 키운다
+      let gap = target - optEV(S, o);
+      if (gap > .3) {
+        const L = o.out[lo]; if (vals[lo] < 0) { const g = clamp(1 - gap / (-vals[lo] * L.p), .25, 1); L.eff = scaleEff(L.eff, 1, g, wk); }
+        gap = target - optEV(S, o);
+        const H = o.out[hi]; if (gap > .3 && vals[hi] > .2) { const f = clamp(1 + gap / (vals[hi] * H.p), 1, 2.5); H.eff = scaleEff(H.eff, f, 1, wk); }
+        gap = target - optEV(S, o);
+        if (gap > .3) addBonus(H, gap / (H.p || 1));
+      }
+    } else {
+      const ev = optEV(S, o);
+      if (ev > .2 && target > .2) { const k = clamp(target / ev, .5, 1.8); o.out.forEach(x => { x.eff = scaleEff(x.eff, k, 1, wk); }); }
+      // 낮은 선택지는 사기·신뢰·명성 보너스를 붙여 끌어올린다
+      let ev1 = optEV(S, o);
+      if (ev1 < target - .3) {
+        addBonus(o.out[0], (target - ev1) / (o.out[0].p || 1));
+      }
+      // 정수 반올림 탓에 여전히 높으면 '효과 미미' 결과를 섞어 확실한 이득을 없앤다
+      const ev2 = optEV(S, o);
+      if (o.out.length === 1 && ev2 > .3 && ev2 > target + .35) {
+        const ps = clamp(Math.max(target, .1) / ev2, .4, .85);
+        o.out[0].p = ps; o.out.push({ p: 1 - ps, eff: {}, chip: pick(['기대만큼 효과가 없었다', '별 차이 없음', '흐지부지 끝남']), good: 0 });
+      }
+    }
+  });
+  // 3) 확률은 5% 단위로, 문구 다시 쓰기
+  for (const o of b.opts) {
+    let tot = 0; o.out.forEach((x, j) => { x.p = j === o.out.length - 1 ? +(1 - tot).toFixed(2) : Math.max(.05, Math.round(x.p * 20) / 20); tot += x.p; });
+    o.out.forEach(x => {
+      const t = effText(S, x.eff), dsc = descPart(x.chip);
+      x.chip = [dsc, t].filter(Boolean).join(' · ') || '변화 없음';
+      const v = effValue(S, x.eff); x.good = v > .6 ? 1 : v < -.6 ? -1 : 0;
+    });
+    o.ev = +optEV(S, o).toFixed(1);
+  }
+  return b;
+}
+C.balanceEvent = balanceEvent;
 function drawEvents(S, when, n) {
   const pool = EVENTS.filter(e => e.when.includes(when) && !(S.recentEv || []).includes(e.id) && (!e.cond || e.cond(S)));
   const out = [];
   for (let i = 0; i < n && pool.length; i++) {
     const e = wpick(pool, x => x.w); pool.splice(pool.indexOf(e), 1);
-    const b = e.build(S); b.id = e.id; b.ev = e; out.push(b);
+    const b = e.build(S); b.id = e.id; b.ev = e; balanceEvent(S, b); out.push(b);
   }
   S.recentEv = (S.recentEv || []).concat(out.map(e => e.id)).slice(-8);
   return out;
@@ -571,7 +719,10 @@ function clubStance(S) {
     return { back: true, role: roleAt(S, par), club: car.parent };
   }
   if (car.status === 'youth') {
-    const ok = p.age >= 17 && (['key', 'starter', 'rotation', 'backup'].includes(r) || ovr >= c.str - 13);
+    const lr = S.hist[S.hist.length - 1];
+    const yGood = lr && lr.youth && lr.youth.apps >= 8 && lr.youthRating >= 7.15;
+    const pApps = lr && lr.total ? lr.total.apps : 0;
+    const ok = p.age >= 17 && (['key', 'starter', 'rotation'].includes(r) || ovr >= c.str - 13 || pApps >= 6 || (yGood && ovr >= c.str - 19) || (lr && lr.youthRating >= 7.6 && ovr >= c.str - 22));
     if (p.age >= 19 && !ok) return { release: ovr < c.str - 18, youthEnd: true, role: r };
     return { promote: ok, role: r };
   }

@@ -6,7 +6,7 @@ const { h, svg, toast } = U;
 
 U.applyCfg = function () {
   document.documentElement.classList.toggle('reduce', C.cfg.anim === 'reduced');
-  U.st.speed = C.cfg.simSpeed || 1;
+  U.st.speed = U.normSpeed(C.cfg.simSpeed);
 };
 async function saveCfg() { await U.kvSet('cfg', JSON.stringify(C.cfg)); U.applyCfg(); }
 async function saveLogos() { await U.kvSet('logos', JSON.stringify(C.logos.map)); C.logos.n = Object.keys(C.logos.map).length; }
@@ -54,7 +54,7 @@ U.viewSettings = function () {
     row('선택지 확률 표시', '이벤트 결과 옆에 확률(%)을 보여 줍니다', toggle('odds', cfg.showOdds, v => { cfg.showOdds = v; saveCfg(); }))));
   // 화면·연출
   root.append(card('화면·연출', null,
-    row('기본 진행 속도', '시즌을 진행할 때 경기 결과가 올라오는 속도', seg('spd', cfg.simSpeed, [[1, '보통'], [2, '빠르게'], [3, '즉시']], v => { cfg.simSpeed = v; saveCfg(); })),
+    row('기본 진행 속도', '단계별: 매 경기 결과 카드를 보고 다음으로 · 자동: 경기가 차례로 흘러감 · 즉시: 바로 결과', seg('spd', U.normSpeed(cfg.simSpeed), U.SPEEDS, v => { cfg.simSpeed = v; U.st.speed = v; saveCfg(); })),
     row('애니메이션', '줄이면 화면 전환·숫자 카운트 연출이 빨라집니다', seg('anim', cfg.anim, [['full', '전체'], ['reduced', '줄이기']], v => { cfg.anim = v; saveCfg(); })),
     row('꽃가루 효과', null, toggle('conf', cfg.confetti, v => { cfg.confetti = v; saveCfg(); })),
     row('우승·수상 연출', '끄면 시즌 결산 화면에 목록으로만 보입니다', toggle('cer', cfg.ceremonies, v => { cfg.ceremonies = v; saveCfg(); }))));

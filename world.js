@@ -8,7 +8,8 @@ const F = G.FC27, WD = G.FMWORLD;
 const POSMAP = { GK: 'GK', CB: 'CB', LB: 'LB', RB: 'RB', LWB: 'LB', RWB: 'RB', DM: 'CDM', CM: 'CM', AM: 'CAM', LM: 'LM', RM: 'RM', LW: 'LW', RW: 'RW', ST: 'ST' };
 const START_YEAR = 2026;
 const NAT = Object.assign({}, WD.NATIONS, F.nat || {});
-const natName = c => (NAT[c] || [c])[0];
+const NATX = { BHR: '바레인', VIE: '베트남', KUW: '쿠웨이트', KGZ: '키르기스스탄', TJK: '타지키스탄', MAS: '말레이시아', PHI: '필리핀', SIN: '싱가포르', HKG: '홍콩', YEM: '예멘', TKM: '투르크메니스탄' };
+const natName = c => (NAT[c] || [NATX[c] || c])[0];
 C.natName = natName; C.NAT = NAT; C.START_YEAR = START_YEAR;
 
 // 대륙 연맹
@@ -16,7 +17,8 @@ const UEFA = 'ENG SCO WAL NIR IRL ESP ITA GER AUT SUI FRA BEL NED POR TUR GRE CZ
 const CONMEBOL = 'ARG BRA URU COL ECU PAR CHI VEN PER BOL'.split(' ');
 const CONCACAF = 'USA CAN MEX JAM CRC HON PAN GUA SLV TRI GRN HAI SUR CUW MSR GLP MTQ GUF DOM CUB BER PUR'.split(' ');
 const AFC = 'JPN KOR AUS CHN KSA QAT IRN IRQ UZB UAE JOR PHI IDN AFG PRK PAK PLE HKG'.split(' ');
-function confOf(n) { if (UEFA.includes(n)) return 'UEFA'; if (CONMEBOL.includes(n)) return 'CONMEBOL'; if (CONCACAF.includes(n)) return 'CONCACAF'; if (AFC.includes(n)) return 'AFC'; if (n === 'NZL') return 'OFC'; return 'CAF'; }
+const AFC_X = ['OMA', 'BHR', 'THA', 'VIE', 'KUW', 'LBN', 'SYR', 'KGZ', 'TJK', 'MAS', 'IND', 'PHI', 'SIN', 'HKG', 'YEM', 'TKM', 'MYA', 'AFG', 'NEP', 'BAN', 'SRI', 'MDV', 'CAM', 'LAO', 'MNG', 'TPE', 'GUM', 'MAC', 'BRU', 'TLS', 'PAK', 'BHU'];
+function confOf(n) { if (AFC_X.includes(n)) return 'AFC'; if (UEFA.includes(n)) return 'UEFA'; if (CONMEBOL.includes(n)) return 'CONMEBOL'; if (CONCACAF.includes(n)) return 'CONCACAF'; if (AFC.includes(n)) return 'AFC'; if (n === 'NZL') return 'OFC'; return 'CAF'; }
 C.confOf = confOf;
 const CONT_TOURN = { UEFA: ['유로', 0], CONMEBOL: ['코파 아메리카', 0], AFC: ['AFC 아시안컵', 1], CAF: ['아프리카 네이션스컵', 1], CONCACAF: ['골드컵', 1], OFC: ['OFC 네이션스컵', 0] };
 
@@ -108,7 +110,7 @@ function genName(nat) {
 }
 const FOREIGN = WD.FOREIGN.default.split(',').map(s => { const [c, k] = s.split(':'); return [c, +k]; });
 function genNat(clubNat) { if (R() < .62) return clubNat; return wpick(FOREIGN, f => f[1])[0]; }
-C.genName = genName;
+C.genName = genName; C.seeded = seeded;
 
 // ---------- 시즌 경과 (AI 스쿼드) ----------
 const MINPOS = { GK: 3, CB: 4, LB: 2, RB: 2, CDM: 2, CM: 3, CAM: 2, LW: 1, RW: 1, LM: 1, RM: 1, ST: 3 };

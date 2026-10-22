@@ -8,6 +8,7 @@ const { R, rnd, rint, clamp, N, poisson, pick, wpick, shuffle, bern } = C;
 const D0 = Date.UTC(2000, 0, 1);
 const day = (y, m, d) => Math.round((Date.UTC(y, m - 1, d) - D0) / 864e5);
 const toDate = n => new Date(D0 + n * 864e5);
+C.day = day;
 const fmtDate = n => { const d = toDate(n); return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일`; };
 const fmtDateY = n => { const d = toDate(n); return `${d.getUTCFullYear()}.${d.getUTCMonth() + 1}.${d.getUTCDate()}`; };
 Object.assign(C, { day, toDate, fmtDate, fmtDateY });
@@ -44,7 +45,7 @@ function q(a, k) { return a[k] || 50; }
 function playerMatch(p, o) {
   const a = p.a, role = roleOf(p), rt = RT[role], sh = SH[role];
   const st = blankStats(), f = o.minutes / 90;
-  const mod = C.modSum(p) * .9; // 컨디션/일시 보정 (능력치 단위)
+  const mod = C.modSum(p) * .9 + (o.adj || 0); // 컨디션/일시 보정 (능력치 단위), 유스 리그는 리그 수준 보정
   const A = k => q(a, k) + mod;
   st.apps = 1; st.starts = o.start ? 1 : 0; st.min = o.minutes;
   const poss = clamp(.5 + (o.sT - o.sO) * .012, .3, .72);
@@ -191,6 +192,10 @@ function squadRole(S, clubId) {
   const rank = riv.filter(v => v > me + .5).length;
   const n = C.SLOTN[slot];
   let role = rank < n ? (me >= c.str + 3 ? 'key' : 'starter') : rank === n ? 'rotation' : rank === n + 1 ? 'backup' : 'reserve';
+  // 선수층이 얇아도 팀 수준에 한참 못 미치면 주전이 될 수 없다
+  const RK = ['reserve', 'backup', 'rotation', 'starter', 'key'], gap = me - c.str;
+  const cap = gap < -12 ? 0 : gap < -8 ? 1 : gap < -5 ? 2 : 4;
+  if (RK.indexOf(role) > cap) role = RK[cap];
   return { role, rank, n, rivals: riv.slice(0, n + 2), me };
 }
 C.squadRole = squadRole;
@@ -270,7 +275,9 @@ function updateRole(S) {
   if (S.car.status === 'youth') {
     const sr = squadRole(S, S.car.club);
     ss.role = 'youth'; ss.sr = sr;
-    ss.fteam = sr.rank <= sr.n + 1 ? .45 : sr.rank <= sr.n + 3 ? .18 : .04; // 1군 데뷔 확률
+    // 1군 데뷔 확률: 1군 언저리 수준(팀 전력 −10)과의 차이로 결정
+    const gap = sr.me - (S.w.clubs[S.car.club].str - 10);
+    ss.fteam = clamp(.25 * Math.exp(gap * .15), .01, .6);
   } else { const sr = squadRole(S, S.car.club); ss.role = sr.role; ss.sr = sr; }
 }
 C.updateRole = updateRole;
@@ -353,17 +360,37 @@ function teamStr(S, clubId, withMe) {
   if (!withMe) return c.str;
   return C.xiStrength(c.sq, ['me', S.p.pos, C.effOvr(S.p), S.p.age]);
 }
+// 이번 시즌 1군 출전 현황 (유스·대표팀 제외)
+function proForm(ss) {
+  const ms = ss.matches.filter(m => !['youth', 'nt', 'ntY'].includes(m.comp));
+  const pl = ms.filter(m => m.played), rated = pl.filter(m => m.rating);
+  const last = ms.slice(-5).filter(m => m.played).length;
+  const ym = ss.matches.filter(m => m.comp === 'youth' && m.played && m.rating);
+  ss.yth = { n: ym.length, avg: ym.length ? ym.reduce((a, m) => a + m.rating, 0) / ym.length : 0 };
+  return { apps: pl.length, avg: rated.length ? rated.reduce((a, m) => a + m.rating, 0) / rated.length : 0, recent: last };
+}
+C.proForm = proForm;
 function selection(S, kind, imp) {
   const ss = S.ss;
   if (ss.inj > 0 || ss.susp > 0) { if (ss.susp > 0 && kind !== 'N') ss.susp--; return null; }
   let ps, pb;
+  const pro = proForm(ss);
   if (ss.role === 'youth') {
-    if (kind === 'Y') { ps = .88; pb = .8; }
-    else { const f = ss.fteam * (kind === 'C' || kind === 'LC' ? 1.6 : 1); ps = f * .35; pb = f; }
+    if (kind === 'Y') {
+      // 1군에 자리 잡으면 유스 리그는 뛰지 않는다
+      if (pro.apps >= 12 || pro.recent >= 3) return null;
+      if (pro.apps >= 6) { ps = .2; pb = .1; } else { ps = .88; pb = .8; }
+    } else {
+      // 유스에서 잘하면 1군 기회가 늘고, 1군에서 잘하면 더 늘어난다
+      const yb = ss.yth.n >= 4 ? clamp((ss.yth.avg - 6.85) * 1.5, -.6, 1.6) : 0;
+      const pb2 = pro.apps >= 2 ? clamp((pro.avg - 6.6) * 1.2, -.5, 1.2) : 0;
+      const f = clamp(ss.fteam * (1 + yb + pb2) + (pro.apps >= 4 ? .1 : 0), 0, .9) * (kind === 'C' || kind === 'LC' ? 1.6 : 1);
+      ps = f * .3; pb = f * .6;
+    }
   } else {
     ps = STARTP[ss.role]; pb = SUBP[ss.role];
     if (kind === 'C' || kind === 'LC') { if (ss.role === 'key' || ss.role === 'starter') ps *= imp >= 2 ? 1 : .62; else ps = Math.min(.85, ps + .45); }
-    if (kind === 'Y') { if (!ss.reserve) return null; ps = ['backup', 'reserve'].includes(ss.role) ? .8 : .1; pb = .3; }
+    if (kind === 'Y') { if (!ss.reserve || pro.apps >= 10 || pro.recent >= 3) return null; ps = ['backup', 'reserve'].includes(ss.role) ? (pro.apps >= 5 ? .35 : .8) : .1; pb = .3; }
   }
   const form = clamp((S.car.formAdj || 0) * .03, -.12, .12);
   if (R() < clamp(ps + form, 0, .97)) { const full = R() < (S.p.a.stamina > 75 ? .72 : .58); return { start: true, minutes: full ? 90 : rint(58, 88) }; }
@@ -381,7 +408,7 @@ async function userMatch(S, o, hooks) {
   let [lamT, lamO] = C.lambdas(myStr, o.oppStr, home);
   let rec = { d: o.d, comp: o.compKey, compName: o.compName, stage: o.stage || '', opp: o.opp, oppName: o.oppName, home: o.home, gf: 0, ga: 0, played: false };
   if (sel) {
-    const r = playerMatch(p, { lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
+    const r = playerMatch(p, { adj: o.adj || 0, lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
     rec.gf = r.gf; rec.ga = r.ga; rec.st = r.st; rec.shots = r.shots; rec.played = true; rec.start = sel.start; rec.min = sel.minutes;
     // 결정적 순간
     if (hooks && ss.momentsLeft > 0 && sel.minutes >= 25) {
@@ -453,11 +480,12 @@ async function doLeague(S, fx, hooks) {
   if (fx.home) C.addResult(tb, ss.club, fx.opp, rec.gf, rec.ga); else C.addResult(tb, fx.opp, ss.club, rec.ga, rec.gf);
 }
 async function doYouth(S, fx, hooks) {
-  const ss = S.ss, lv = 47 + (S.w.clubs[ss.club].str - 70) * .5;
+  const u21 = !(S.ss.status === 'youth' && S.p.age <= 17);
+  const ss = S.ss, lv = 47 + (S.w.clubs[ss.club].str - 70) * .5 + (u21 ? 5 : 0);
   const oppName = pick(['U18', 'U21']) === 'U18' ? ['U18 리그'] : ['U21 리그'];
   const oppStr = N(lv, 3), myStr = lv + 2 + (C.effOvr(S.p) - lv) * .12;
   const opp = pick(Object.values(S.w.clubs).filter(c => c.nat === S.w.clubs[ss.club].nat && c.id !== ss.club)) || S.w.clubs[ss.club];
-  await userMatch(S, { d: fx.d, kind: 'Y', compKey: 'youth', compName: S.ss.status === 'youth' && S.p.age <= 17 ? 'U18 리그' : 'U21 리그', opp: opp.id, oppName: opp.name + (S.ss.status === 'youth' && S.p.age <= 17 ? ' U18' : ' U21'), oppStr, myStr, home: R() < .5, imp: 0 }, hooks);
+  await userMatch(S, { d: fx.d, kind: 'Y', compKey: 'youth', compName: S.ss.status === 'youth' && S.p.age <= 17 ? 'U18 리그' : 'U21 리그', opp: opp.id, oppName: opp.name + (S.ss.status === 'youth' && S.p.age <= 17 ? ' U18' : ' U21'), oppStr, myStr, adj: clamp(69 - lv, 0, 24), home: R() < .5, imp: 0 }, hooks);
 }
 async function doCup(S, fx, hooks, k) {
   const ss = S.ss, w = S.w;
@@ -674,7 +702,9 @@ function finishSeason(S) {
   ss.final = tables;
   finishContAll(S);
   // 여름 국제 대회
-  ss.tourn = summerTournament(S);
+  w.hist.nt = w.hist.nt || {}; w.hist.cup = w.hist.cup || {};
+  ss.tourn = C.simIntl ? C.simIntl(S) : summerTournament(S);
+  try { if (C.archiveSeason) C.archiveSeason(S, tables); } catch (e) { console.error('archive', e); }
   // 기록
   const lg = leagueOf(S, ss.club);
   ss.lgId = lg ? lg.id : null;
