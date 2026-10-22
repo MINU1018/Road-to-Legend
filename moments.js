@@ -74,7 +74,7 @@ function makeMoment(S, rec, o) {
   const T = TITLES[type];
   const tp = targetP(type, A, p, o.oppStr);
   const pT = clamp(tp.p + N(0, .03), .15, .62);
-  const n = clamp(Math.round(1 / pT), 2, 6);
+  const n = clamp(Math.round(1 / pT) - (S.flags && S.flags.analystY === S.w.year ? 1 : 0), 2, 6);
   const ctx = { type, minute, title: T[0], desc: T[1], ui: T[2], score: [rec.gf, rec.ga], opp: o.oppName, comp: o.compName, stage: o.stage, oppStr: o.oppStr, d: o.d, skill: Math.round(tp.skill), n, sub: `후반 ${minute}분 · ${rec.gf}-${rec.ga} · ${o.oppName}전` };
   ctx.assist = type === 'cross' || type === 'through';
   ctx.defend = ['tackle', 'block', 'gk1v1', 'pensave'].includes(type);

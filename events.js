@@ -18,7 +18,13 @@ function applyEffect(S, eff) {
   if (eff.morale) { p.morale = clamp(p.morale + eff.morale, 0, 100); }
   if (eff.rep) { p.rep = clamp(p.rep + eff.rep, 0, 100); out.push(['명성', eff.rep]); }
   if (eff.money) { p.money += eff.money; out.push(['재산', eff.money]); }
-  if (eff.pot) p.hid.pot = clamp(p.hid.pot + eff.pot, 40, 99);
+  if (eff.pot) { p.hid.pot = clamp(p.hid.pot + eff.pot, 40, 99); out.push(['성장세', eff.pot]); }
+  if (eff.peak) { p.hid.peak = clamp(p.hid.peak + eff.peak, 23, 33); out.push(['전성기', eff.peak > 0 ? '늦어짐' : '빨라짐']); }
+  if (eff.top || eff.low) {
+    const w = C.POSW[p.pos], ks = C.AK.filter(k => w[k] && (p.pos === 'GK' || C.AGROUP[k] !== 'GK')).sort((a, b) => p.a[b] - p.a[a]);
+    if (eff.top) ks.slice(0, 3).forEach(k => { const v0 = p.a[k]; C.bump(p, k, eff.top); out.push([C.ALABEL[k], Math.round(p.a[k]) - Math.round(v0)]); });
+    if (eff.low) ks.slice(-3).forEach(k => { const v0 = p.a[k]; C.bump(p, k, eff.low); out.push([C.ALABEL[k], Math.round(p.a[k]) - Math.round(v0)]); });
+  }
   if (eff.lon) p.hid.lon = clamp(p.hid.lon * eff.lon, .35, 2.2);
   if (eff.injp) p.hid.inj = clamp(p.hid.inj * eff.injp, .4, 2.5);
   if (eff.inj && S.ss) { S.ss.inj = Math.max(S.ss.inj, eff.inj); out.push(['부상', eff.inj + '일']); }
@@ -153,7 +159,7 @@ const EVENTS = [
     { label: '묵묵히 훈련', desc: '언젠가 기회는 온다', out: [O(.65, '+1 OVR', 1, { ovr: 1 }), O(.35, '의욕 저하 · 사기 −10', -1, { morale: -10 })] },
     ...(S.p.age <= 25 ? [{ label: '임대 요청', desc: '겨울 이적시장에서 임대', out: [O(1, '겨울 임대 제안', 0, { loanReq: 1 })] }] : [])] }) },
   { id: 'injrush', when: ['mid'], cond: S => S.ss && S.ss.inj >= 20, w: 6, build: S => ({ title: '부상 복귀 시점', desc: `${S.ss.inj}일 정도 더 쉬어야 한다는 진단입니다. 팀은 당신이 빨리 돌아오길 원합니다.`, icon: 'medic', opts: [
-    { label: '조기 복귀', desc: '진통제를 맞고 뛴다', out: [O(.6, '복귀 기간 절반 · 신뢰 +6', 1, { trust: 6 }), O(.4, '재발 · 기간 2배 · 잠재력 하락', -1, { pot: -2 })] },
+    { label: '조기 복귀', desc: '진통제를 맞고 뛴다', out: [O(.6, '복귀 기간 절반 · 신뢰 +6', 1, { trust: 6 }), O(.4, '재발 · 기간 2배 · 성장세 하락', -1, { pot: -2 })] },
     { label: '완전히 회복', desc: '서두르지 않는다', out: [O(1, '재발 위험 없음 · 신뢰 −3', 0, { trust: -3 })] },
     ...(S.p.money > 80000 ? [{ label: '해외 최신 치료', desc: `비용 ${eurK(80000)}`, out: [O(.55, '회복 기간 1/3', 1, { money: -80000 }), O(.45, '효과 없음', -1, { money: -80000 })] }] : [])] }), post3: (S, b, oi, out) => { const lab = out.chip; if (lab.startsWith('복귀 기간 절반')) S.ss.inj = Math.round(S.ss.inj / 2); else if (lab.startsWith('재발')) S.ss.inj *= 2; else if (lab.startsWith('회복 기간 1/3')) S.ss.inj = Math.round(S.ss.inj / 3); } },
   { id: 'gkdrill', when: ['pre'], cond: isGK, w: 1.2, build: S => ({ title: '골키퍼 코치의 특별 훈련', desc: '골키퍼 코치가 지옥 훈련을 제안합니다.', icon: 'glove', opts: [
@@ -276,7 +282,7 @@ function effText(S, e) {
   if (e.trust) parts.push(`신뢰 ${sg(e.trust)}`);
   if (e.rep) parts.push(`명성 ${sg(e.rep)}`);
   if (e.morale) parts.push(`사기 ${sg(e.morale)}`);
-  if (e.pot) parts.push(`잠재력 ${sg(e.pot)}`);
+  if (e.pot) parts.push(`성장세 ${sg(e.pot)}`);
   if (e.lon) parts.push(e.lon < 1 ? '노쇠화 지연' : '노쇠화 가속');
   if (e.injp) parts.push(e.injp < 1 ? '부상 위험 감소' : '부상 위험 증가');
   if (e.inj) parts.push(`부상 ${e.inj}일`);
@@ -288,7 +294,7 @@ function effText(S, e) {
 }
 C.effText = effText;
 // 원래 문구에서 숫자 없는 설명 부분만 남긴다 (예: '도핑 적발 · 10경기 정지' → '도핑 적발')
-const descPart = chip => (chip || '').split(' · ').filter(x => !/[0-9+−\-★]/.test(x) && !/^(사기|신뢰|명성|노쇠화|부상 위험|컨디션)/.test(x)).join(' · ');
+const descPart = chip => (chip || '').split(' · ').filter(x => !/[0-9+−\-★]/.test(x) && !/^(사기|신뢰|명성|노쇠화|부상 위험|컨디션|성장세)/.test(x)).join(' · ');
 const GENERIC = [
   { label: '가족과 상의한다', desc: '서두르지 않는다', out: [{ p: 1, eff: { morale: 7 } }] },
   { label: '에이전트에게 맡긴다', desc: '전문가의 판단', out: [{ p: .6, eff: { trust: 4, rep: 1 } }, { p: .4, eff: { trust: -4, money: -15000 } }] },
@@ -381,7 +387,57 @@ function balanceEvent(S, b) {
   return b;
 }
 C.balanceEvent = balanceEvent;
+// ================= 중요 분기점 =================
+// 나이별로 한 번씩 찾아오는 커리어의 갈림길. 성장세(성장 한계)·전성기 시기·몸 상태를 크게 바꾼다
+const CROSS = [
+  { id: 'x16', age: [16, 16], build: S => ({ title: '아카데미 첫해, 무엇에 집중할까', desc: '코치진이 당신만의 육성 방향을 정하라고 합니다. 이 선택이 앞으로 몇 년의 성장 곡선을 좌우합니다.', icon: 'whistle', opts: [
+    { label: '기본기에 미친다', desc: '볼 터치·패스·퍼스트 터치 반복', out: [O(.75, '기술 능력치 상승 · 성장세 +3', 1, { group: { DRI: 1.2, PAS: 1 }, pot: 3 }), O(.25, '지루함에 지침 · 성장세 +1 · 사기 −8', 0, { pot: 1, morale: -8 })] },
+    { label: '몸부터 만든다', desc: '웨이트·스프린트', out: [O(.7, '피지컬·스피드 상승 · 성장세 +2', 1, { group: { PHY: 1.5, PAC: 1.2 }, pot: 2 }), O(.3, '성장판 무리 · 부상 위험 증가 · 성장세 +1', 0, { pot: 1, injp: 1.15 })] },
+    { label: '아버지가 개인 코치를 붙인다', desc: '가족 빚을 내서 사설 레슨', out: [O(.5, '폭풍 성장 · 성장세 +5', 1, { pot: 5, ovr: 1 }), O(.5, '맞지 않는 코치 · 성장세 +1 · 사기 −10', -1, { pot: 1, morale: -10 })] },
+    { label: '학업과 병행한다', desc: '축구가 전부가 아니다', out: [O(1, '성장세 −1 · 사기 +10 · 선수 생명 연장', 0, { pot: -1, morale: 10, lon: .88 })] }] }) },
+  { id: 'x17', age: [17, 17], build: S => ({ title: '에이전트를 고를 시간', desc: '세 곳에서 계약하자는 연락이 왔습니다. 누가 당신의 커리어를 관리할까요?', icon: 'brief', opts: [
+    { label: '초대형 에이전시', desc: '빅클럽 인맥, 대신 나는 수많은 고객 중 하나', out: [O(.6, '명성 +6 · 이적 제안 증가', 1, { rep: 6, flag: 'bigAgency' }), O(.4, '관심 밖으로 밀림 · 사기 −8', -1, { morale: -8 })] },
+    { label: '가족이 직접 관리', desc: '돈보다 성장', out: [O(1, '사기 +10 · 감독 신뢰 +6 · 성장세 +1', 1, { morale: 10, trust: 6, pot: 1 })] },
+    { label: '해외 명문 트라이얼', desc: '2주간 유럽 빅클럽 연습 참가', out: [O(.4, '눈도장 · 성장세 +4 · 명성 +4', 1, { pot: 4, rep: 4, flag: 'trialStar' }, '빅클럽 스카우트가 당신 이름을 적어 갔습니다.'), O(.6, '높은 벽 체감 · 성장세 +1 · 사기 −10', 0, { pot: 1, morale: -10 })] }] }) },
+  { id: 'x19', age: [19, 19], build: S => ({ title: '롤모델을 정하다', desc: '프로의 문턱에서 누구의 길을 따를지 고민합니다.', icon: 'star', opts: [
+    { label: '베테랑 주장을 따라다닌다', desc: '프로의 습관과 멘탈', out: [O(1, '침착성·반응 속도 상승 · 성장세 +2 · 선수 생명 연장', 1, { attrs: { composure: 3, reactions: 2 }, pot: 2, lon: .92 })] },
+    { label: '팀의 슈퍼스타처럼', desc: '화려함과 자신감', out: [O(.55, '개인기 ★+1 · 명성 +5 · 성장세 +2', 1, { skill: 1, rep: 5, pot: 2 }), O(.45, '겉멋만 듦 · 감독 신뢰 −10 · 성장세 −1', -1, { trust: -10, pot: -1 })] },
+    { label: '개인 퍼포먼스 코치 고용', desc: '연봉의 상당 부분을 투자', out: [O(.7, '성장세 +4 · 피지컬 상승', 1, { pot: 4, group: { PHY: 1, PAC: .8 }, money: -Math.round(Math.max(20000, (S.car.wage || 2000) * 20) / 1000) * 1000 }), O(.3, '효과는 그럭저럭 · 성장세 +1', 0, { pot: 1, money: -Math.round(Math.max(20000, (S.car.wage || 2000) * 20) / 1000) * 1000 })] }] }) },
+  { id: 'x21', age: [21, 21], build: S => ({ title: '나는 어떤 선수인가', desc: '스물한 살. 이제는 색깔을 정해야 할 때라고 감독이 말합니다.', icon: 'target', opts: [
+    { label: '강점을 무기로 만든다', desc: '잘하는 것만 극한까지', out: [O(1, '상위 능력치 크게 상승 · 하위 능력치 소폭 하락 · 성장세 +2', 1, { top: 3, low: -1.5, pot: 2 })] },
+    { label: '빈틈없는 선수가 된다', desc: '약점을 지운다', out: [O(.8, '하위 능력치 크게 상승 · 성장세 +2', 1, { low: 4, pot: 2 }), O(.2, '어중간해짐 · 성장세 −1', -1, { low: 1.5, pot: -1 })] },
+    { label: '멀티 포지션 소화', desc: '감독이 좋아하는 선수', out: [O(1, '감독 신뢰 +12 · 성장세 +1', 1, { trust: 12, pot: 1, group: { PAS: .6, DEF: .6 } })] }] }) },
+  { id: 'x23', age: [23, 23], build: S => ({ title: '야망과 삶의 균형', desc: '주변에서는 지금이 가장 중요한 시기라고 말합니다. 하지만 지쳐 가는 것도 사실입니다.', icon: 'fire', opts: [
+    { label: '모든 것을 축구에', desc: '새벽 훈련·식단·수면 관리', out: [O(.7, '성장세 +4 · 전성기 늦어짐', 1, { pot: 4, peak: 1 }), O(.3, '번아웃 · 성장세 +1 · 사기 −15', -1, { pot: 1, morale: -15 })] },
+    { label: '균형 잡힌 삶', desc: '가족·취미·휴식', out: [O(1, '사기 +12 · 선수 생명 연장 · 성장세 +1', 1, { morale: 12, lon: .85, pot: 1 })] },
+    { label: '개인 브랜드 구축', desc: '광고·SNS·사업', out: [O(1, '수입 대폭 증가 · 명성 +8 · 성장세 −2', 0, { money: Math.round(Math.max(40000, (S.car.wage || 3000) * 40) / 1000) * 1000, rep: 8, pot: -2 })] }] }) },
+  { id: 'x26', age: [26, 26], build: S => ({ title: '전성기의 문턱', desc: '몸이 가장 좋을 때입니다. 이 시기를 어떻게 쓸지 결정해야 합니다.', icon: 'star', opts: [
+    { label: '최첨단 스포츠 과학', desc: '수면 클리닉·혈액 분석·크라이오', out: [O(1, '전성기 늦어짐 · 노쇠화 지연 · 부상 위험 감소', 1, { peak: 1, lon: .85, injp: .85 })] },
+    { label: '기술의 완성', desc: '남은 성장 여지를 쥐어짠다', out: [O(.65, '성장세 +4 · 기술 상승', 1, { pot: 4, group: { SHO: .8, PAS: .8, DRI: .8 } }), O(.35, '정체기 · 성장세 +1', 0, { pot: 1 })] },
+    { label: '리더가 된다', desc: '라커룸의 중심', out: [O(1, '감독 신뢰 +15 · 명성 +5 · 침착성 +3', 1, { trust: 15, rep: 5, attrs: { composure: 3 } })] }] }) },
+  { id: 'x29', age: [29, 29], build: S => ({ title: '서른을 앞두고', desc: '처음으로 몸이 예전 같지 않다는 느낌이 듭니다.', icon: 'heart', opts: [
+    { label: '플레이 스타일을 바꾼다', desc: '속도 대신 위치 선정과 판단', out: [O(1, '정신 능력치 상승 · 스피드 소폭 하락 · 노쇠화 크게 지연', 1, { attrs: { attPos: 2, vision: 2, defAware: 2, composure: 2 }, group: { PAC: -1 }, lon: .78 })] },
+    { label: '시간을 거스른다', desc: '고강도 훈련으로 몸 유지', out: [O(.55, '성장세 +2 · 전성기 늦어짐', 1, { pot: 2, peak: 1 }), O(.45, '몸이 버티지 못함 · 부상 40일', -1, { inj: 40, injp: 1.15 })] },
+    { label: '은퇴 이후를 준비', desc: '지도자 자격증·사업', out: [O(1, '재산 증가 · 사기 +8 · 노쇠화 빨라짐', 0, { money: Math.round(Math.max(30000, (S.car.wage || 3000) * 25) / 1000) * 1000, morale: 8, lon: 1.12 })] }] }) },
+  { id: 'x32', age: [32, 32], build: S => ({ title: '마지막 불꽃', desc: '얼마나 더 뛸 수 있을까요. 커리어의 마지막 장을 어떻게 쓸지 정합니다.', icon: 'fire', opts: [
+    { label: '정상에서 끝까지', desc: '최고 무대를 놓지 않는다', out: [O(.5, '노쇠화 지연 · 성장세 +1', 1, { lon: .8, pot: 1 }), O(.5, '버거워짐 · 사기 −8', -1, { morale: -8 })] },
+    { label: '오래 뛰는 것이 목표', desc: '몸 관리 최우선', out: [O(1, '노쇠화 크게 지연 · 부상 위험 감소', 1, { lon: .72, injp: .85 })] },
+    { label: '돈과 여유', desc: '거액 제안에 귀를 연다', out: [O(1, '고액 제안 증가 · 사기 +10', 0, { flag: 'richOffers', morale: 10 })] }] }) }
+];
+C.CROSS = CROSS;
+function drawCross(S) {
+  const done = S.flags.crossDone = S.flags.crossDone || {};
+  const c = CROSS.find(x => !done[x.id] && S.p.age >= x.age[0] && S.p.age <= x.age[1]);
+  if (!c) return null;
+  if (S.p.pos === 'GK' && c.id === 'x21') { /* GK도 동일 적용 */ }
+  done[c.id] = 1;
+  const b = c.build(S); b.id = c.id; b.cross = true; b.ev = { pre2: null };
+  NOBAL.add(c.id);
+  return b;
+}
 function drawEvents(S, when, n) {
+  if (when === 'pre') { const x = drawCross(S); if (x) { const rest = drawEvents(S, 'pre2', Math.max(0, n - 1)); return [x].concat(rest); } }
+  if (when === 'pre2') when = 'pre';
   const pool = EVENTS.filter(e => e.when.includes(when) && !(S.recentEv || []).includes(e.id) && (!e.cond || e.cond(S)));
   const out = [];
   for (let i = 0; i < n && pool.length; i++) {
@@ -397,11 +453,12 @@ function resolveEvent(S, b, oi) {
   const e = b.ev || EVENTS.find(x => x.id === b.id);
   if (e && e.pre2) e.pre2(S);
   const o = rollOutcome(opt);
+  if (C.ach) C.ach.fire(S, "event", { good: o.good });
   const ch = applyEffect(S, o.eff);
   if (e && e.post && oi === 0) e.post(S, b);
   if (e && e.post2) e.post2(S);
   if (e && e.post3) e.post3(S, b, oi, o);
-  const log = { title: b.title, choice: opt.label, chip: o.chip, good: o.good, text: o.text || '', changes: ch, d: S.ss ? S.ss.lastDay : null };
+  const log = { title: b.title, choice: opt.label, cross: b.cross ? 1 : 0, chip: o.chip, good: o.good, text: o.text || '', changes: ch, d: S.ss ? S.ss.lastDay : null };
   (S.evLog = S.evLog || []).push(Object.assign({ y: S.w.year, age: S.p.age }, log));
   return log;
 }

@@ -207,6 +207,7 @@ GM.endSeason = function (S) {
   p.age++;
   pushValue(S);
   S.lastSeason = ss; // 리뷰 화면용
+  if (C.ach) C.ach.fire(S, 'season', rec);
   S.ss = null;
   S.phase = 'review';
   return rec;
@@ -229,6 +230,7 @@ GM.freeYear = function (S) {
   // 무소속 시즌: 개인 훈련만
   const p = S.p;
   S.freeYears = (S.freeYears || 0) + 1;
+  if (C.ach) C.ach.fire(S, 'free');
   const g = C.seasonGrowth(p, { minShare: 0, rating: 6.5, focus: S.car.focus, intensity: 'normal', clubLv: 55 });
   p.mods = p.mods.filter(m => --m.seasons > 0);
   S.hist.push({ y: S.w.year, label: `${S.w.year}/${String(S.w.year + 1).slice(2)}`, age: p.age, club: null, clubName: '무소속', short: 'FA', c1: '#555', c2: '#999', status: 'free', pos: p.pos, ovr0: g.o0, ovr1: C.ovrOf(p), total: C.blankStats(), agg: {}, nt: C.blankStats(), rating: 0, minShare: 0, trophies: [], awards: [], log: [], shots: [], moments: [], injuries: [] });
@@ -242,6 +244,7 @@ GM.retire = function (S, forced) {
   S.phase = 'retired'; S.retired = { y: S.w.year, age: S.p.age, forced: !!forced };
   const sum = GM.summary(S);
   S.retired.grade = sum.grade;
+  if (C.ach) C.ach.fire(S, 'retire');
 };
 GM.summary = function (S) {
   const t = C.blankStats(), nt = C.blankStats();

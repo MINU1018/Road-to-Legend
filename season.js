@@ -277,7 +277,10 @@ function updateRole(S) {
     ss.role = 'youth'; ss.sr = sr;
     // 1군 데뷔 확률: 1군 언저리 수준(팀 전력 −10)과의 차이로 결정
     const gap = sr.me - (S.w.clubs[S.car.club].str - 10);
-    ss.fteam = clamp(.25 * Math.exp(gap * .15), .01, .6);
+    ss.fteam = clamp(.36 * Math.exp(gap * .11), .035, .7);
+    // 가끔 감독이 유스를 과감하게 기용하는 시즌 (깜짝 신성)
+    if (ss.breakout == null) { ss.breakout = gap > -17 && R() < .22; if (ss.breakout) { S.p.mods.push({ ovr: 5, seasons: 1, why: '겁 없는 신예' }); if (C.news) C.news(S, `감독, "${S.p.name}은 이번 시즌 1군에서 기회를 받을 것"`, 'youth', true); } }
+    if (ss.breakout) ss.fteam = clamp(ss.fteam * 2.6 + .12, 0, .8);
   } else { const sr = squadRole(S, S.car.club); ss.role = sr.role; ss.sr = sr; }
 }
 C.updateRole = updateRole;
@@ -384,8 +387,8 @@ function selection(S, kind, imp) {
       // 유스에서 잘하면 1군 기회가 늘고, 1군에서 잘하면 더 늘어난다
       const yb = ss.yth.n >= 4 ? clamp((ss.yth.avg - 6.85) * 1.5, -.6, 1.6) : 0;
       const pb2 = pro.apps >= 2 ? clamp((pro.avg - 6.6) * 1.2, -.5, 1.2) : 0;
-      const f = clamp(ss.fteam * (1 + yb + pb2) + (pro.apps >= 4 ? .1 : 0), 0, .9) * (kind === 'C' || kind === 'LC' ? 1.6 : 1);
-      ps = f * .3; pb = f * .6;
+      const f = clamp(ss.fteam * (1 + yb + pb2) + (pro.apps >= 4 ? .12 : 0) + (pro.apps >= 3 && pro.avg >= 7 ? .15 : 0), 0, .92) * (kind === 'C' || kind === 'LC' ? 1.6 : 1);
+      ps = f * (ss.breakout ? .68 : .4); pb = f * .85;
     }
   } else {
     ps = STARTP[ss.role]; pb = SUBP[ss.role];
@@ -408,7 +411,7 @@ async function userMatch(S, o, hooks) {
   let [lamT, lamO] = C.lambdas(myStr, o.oppStr, home);
   let rec = { d: o.d, comp: o.compKey, compName: o.compName, stage: o.stage || '', opp: o.opp, oppName: o.oppName, home: o.home, gf: 0, ga: 0, played: false };
   if (sel) {
-    const r = playerMatch(p, { adj: o.adj || 0, lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
+    const r = playerMatch(p, { adj: o.adj || (ss.breakout && ss.role === 'youth' ? 4 : 0), lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
     rec.gf = r.gf; rec.ga = r.ga; rec.st = r.st; rec.shots = r.shots; rec.played = true; rec.start = sel.start; rec.min = sel.minutes;
     // 결정적 순간
     if (hooks && ss.momentsLeft > 0 && sel.minutes >= 25) {
@@ -421,6 +424,7 @@ async function userMatch(S, o, hooks) {
           const res = hooks.moment ? await hooks.moment(mc) : C.autoMoment(S, mc);
           C.applyMoment(S, rec, mc, res);
           ss.moments.push({ d: o.d, type: mc.type, title: mc.title, ok: res.ok, opp: o.oppName, comp: o.compName, text: res.text || '' });
+          if (C.ach) C.ach.fire(S, 'moment', { ok: res.ok, type: mc.type });
         }
       }
     }

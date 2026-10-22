@@ -26,6 +26,7 @@ const MS = {
 };
 const MSLABEL = { apps: n => n === 1 ? '프로 데뷔' : `통산 ${n}경기 출전`, goals: n => n === 1 ? '프로 데뷔골' : `통산 ${n}골`, assists: n => n === 1 ? '프로 첫 도움' : `통산 ${n}도움`, caps: n => n === 1 ? 'A매치 데뷔' : `A매치 ${n}경기`, ntGoals: n => n === 1 ? 'A매치 데뷔골' : `A매치 ${n}골`, cs: n => n === 1 ? '첫 클린시트' : `통산 클린시트 ${n}회` };
 X.onMatch = function (S, rec) {
+  if (C.ach) C.ach.fire(S, 'match', rec);
   if (!rec.played) return;
   if (!S.cnt) { const c = { apps: 0, goals: 0, assists: 0, caps: 0, ntGoals: 0, cs: 0 }; for (const h of S.hist || []) { c.apps += h.total.apps; c.goals += h.total.goals; c.assists += h.total.assists; c.cs += S.p.pos === 'GK' ? h.total.cs : 0; if (h.nt) { c.caps += h.nt.apps; c.ntGoals += h.nt.goals; } } S.cnt = c; }
   const cnt = S.cnt;

@@ -103,8 +103,8 @@ function newPlayer(opt) {
     age: 16, born: opt.year - 16,
     weak: clamp(Math.round(N(2.6, .8)), 1, 4), skill: clamp(Math.round(N(['W', 'AM'].includes(sk) ? 3 : 2.3, .7)), 1, 4),
     hid: {
-      pot: clamp(Math.round(71.5 + 7.4 * T + N(0, 5)), 50, 95),
-      grow: clamp(N(1, .17), .62, 1.45), peak: clamp(Math.round(N(27.6, 1.5)), 24, 31),
+      pot: 0, // 고정 잠재력 없음: 시작 후 성과·분기점 선택으로 계속 바뀌는 성장 한계
+      grow: clamp(N(1, .06), .85, 1.15), peak: clamp(Math.round(N(27.6, 1.5)), 24, 31),
       lon: clamp(Math.exp(N(0, .3)), .45, 1.9), inj: clamp(Math.exp(N(0, .33)), .5, 2.2), T
     },
     a: {}, mods: [], morale: 60, rep: 5, money: 0
@@ -123,11 +123,11 @@ function newPlayer(opt) {
     if (k === 'composure' || k === 'reactions') o -= 4; // 어린 선수는 멘탈이 덜 여묾
     apt[k] = o;
   }
-  const target = clamp(Math.round(47.5 + 3.6 * T + N(0, 3)), 40, 61);
+  const target = clamp(Math.round(50 + 4.2 * T + N(0, 2.5)), 42, 65);
   let lv = target;
   for (let i = 0; i < 30; i++) { for (const k of AK) p.a[k] = clamp(lv + apt[k], 8, 99); const o = posOvr(p.a, pos); lv += (target - o) * .9; if (Math.abs(target - o) < .05) break; }
-  if (p.hid.pot < target + 8) p.hid.pot = target + 8 + rint(0, 3);
-  p.hid.startOvr = target;
+  p.hid.pot = target + 21 + Math.round(N(0, 1.5));
+  p.hid.startOvr = target; p.hid.dyn = 1;
   return p;
 }
 C.newPlayer = newPlayer;
@@ -145,8 +145,13 @@ function applyOvrDelta(p, d, focus, posOverride) {
     let m = (w[k] ? 1 : .25) + (focus && focus[k] ? focus[k] : 0);
     if (AGROUP[k] === 'GK' && pos !== 'GK') m = .02;
     if (pos === 'GK' && AGROUP[k] !== 'GK' && k !== 'reactions') m = .15;
-    mix[k] = m; sw += (w[k] || 0) * m;
+    mix[k] = m;
   }
+  // 뒤처진 능력치 따라잡기: 포지션 평균보다 낮을수록 가중
+  let ws = 0, wn = 0; for (const k of AK) if (w[k]) { ws += p.a[k] * w[k]; wn += w[k]; }
+  const avg = wn ? ws / wn : 60;
+  for (const k of AK) { if (mix[k] < .1) continue; const lag = clamp((avg - p.a[k]) / 14, 0, 1.4); mix[k] *= 1 + lag * (w[k] ? .9 : .5); }
+  for (const k of AK) sw += (w[k] || 0) * mix[k];
   for (const k of AK) {
     let inc = d * mix[k] / sw * N(1, .25);
     if (inc > 0) inc *= clamp((99 - p.a[k]) / 22, .04, 1);
@@ -170,8 +175,25 @@ const FOCUS = {
   setpiece: ['세트피스 전담', '프리킥·페널티·커브', { fkAcc: 1.5, penalties: 1.3, curve: 1.2, crossing: .5 }],
   mental: ['영상 분석·멘탈', '침착성·반응 속도·위치 선정', { composure: 1.3, reactions: 1.2, attPos: .7, defAware: .7, vision: .5 }],
   keeper: ['골키퍼 특훈', '다이빙·반사신경·핸들링', { gkDiving: 1.1, gkReflexes: 1.2, gkHandling: 1.1, gkPos: 1, gkKicking: .5 }],
-  care: ['몸 관리', '성장 폭은 줄지만 노쇠화와 부상을 늦춘다', {}]
+  care: ['몸 관리', '성장 폭은 줄지만 노쇠화와 부상을 늦춘다', {}],
+  weak: ['약점 보완', '포지션에 필요한데 낮은 능력치를 집중적으로 끌어올린다', null],
+  strong: ['강점 극대화', '이미 좋은 능력치를 더 날카롭게 만든다', null],
+  tech: ['기술 특훈', '슈팅·패스·드리블 중 포지션에 맞는 기술', null],
+  athletic: ['피지컬·스피드', '가속·스프린트·힘·스태미너·점프', { accel: 1.1, sprint: 1.1, strength: 1, stamina: 1, jumping: .8, agility: .6 }]
 };
+const FOCUS_MENU = { field: ['balance', 'weak', 'strong', 'tech', 'athletic', 'care'], gk: ['balance', 'weak', 'keeper', 'athletic', 'care'] };
+C.FOCUS_MENU = FOCUS_MENU;
+// 동적 훈련 대상 계산
+function focusMap(p, key) {
+  const f = FOCUS[key]; if (!f) return {};
+  if (f[2]) return f[2];
+  const w = POSW[p.pos], ks = AK.filter(k => w[k] && (p.pos === 'GK' || AGROUP[k] !== 'GK'));
+  if (key === 'weak') { const sorted = ks.slice().sort((a, b) => p.a[a] - p.a[b]).slice(0, 5); const o = {}; sorted.forEach((k, i) => o[k] = 1.6 - i * .15); return o; }
+  if (key === 'strong') { const sorted = ks.slice().sort((a, b) => (p.a[b] * (1 + w[b] * .05)) - (p.a[a] * (1 + w[a] * .05))).slice(0, 4); const o = {}; sorted.forEach(k => o[k] = 1.15); return o; }
+  if (key === 'tech') { const T = ['finishing', 'shotPower', 'longShots', 'volleys', 'shortPass', 'longPass', 'vision', 'crossing', 'curve', 'dribbling', 'ballControl']; const o = {}; T.filter(k => w[k]).forEach(k => o[k] = .7 + w[k] * .15); if (!Object.keys(o).length) T.forEach(k => o[k] = .6); return o; }
+  return {};
+}
+C.focusMap = focusMap;
 const INTENSITY = { light: ['가볍게', .82, .7], normal: ['보통', 1, 1], hard: ['고강도', 1.2, 1.45] }; // [이름, 성장 배율, 부상 배율]
 C.FOCUS = FOCUS; C.INTENSITY = INTENSITY;
 
@@ -198,7 +220,7 @@ function seasonGrowth(p, ctx) {
   if (o0 + g > h.pot + 1.5) g = Math.max(0, h.pot + 1.5 - o0) + N(0, .4);
   if (g > 0) g *= C.diff().g;
   g = Math.min(g, af * 1.25 + .8); // 한 시즌 성장 상한 (16~18세 약 +7)
-  const foc = FOCUS[ctx.focus] ? FOCUS[ctx.focus][2] : {};
+  const foc = focusMap(p, ctx.focus);
   applyOvrDelta(p, g, foc);
   // 집중 훈련 보너스 (나이 들수록 효과 감소)
   if (Object.keys(foc).length) {
@@ -221,7 +243,15 @@ function seasonGrowth(p, ctx) {
   if (age <= 30) { bump(p, 'composure', rnd(.2, 1.2) * clamp(ctx.minShare * 1.5, .3, 1.2)); bump(p, 'reactions', rnd(0, .7)); }
   // GK가 아닌 선수의 GK 능력치는 고정에 가깝게
   if (p.pos !== 'GK') for (const k of ['gkDiving', 'gkHandling', 'gkKicking', 'gkReflexes', 'gkSpeed', 'gkPos']) p.a[k] = before[k];
-  return { before, o0, o1: ovrOf(p) };
+  // 성장 한계는 고정이 아니다: 출전·평점·운에 따라 매 시즌 움직인다 (분기점 선택은 이벤트로 별도 반영)
+  let drift = 0;
+  if (ctx.minShare != null) {
+    const youthBoost = age <= 21 ? 1.25 : age <= 25 ? 1 : .55;
+    drift = (clamp(((ctx.rating || 6.6) - 6.75) * 2.6, -2.2, 3) + clamp((ctx.minShare - .35) * 2.2, -1, 1.4)) * youthBoost + N(0, 1.1);
+    if (ctx.intensity === 'hard') drift += .35; if (ctx.intensity === 'light') drift -= .25;
+    h.pot = clamp(h.pot + drift, ovrOf(p) - 1, 99);
+  }
+  return { before, o0, o1: ovrOf(p), drift };
 }
 C.seasonGrowth = seasonGrowth;
 

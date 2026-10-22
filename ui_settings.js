@@ -148,18 +148,52 @@ function logoCard() {
 // ---------- 저장 관리 ----------
 function saveCard() {
   const S = U.S();
-  const ta = h('textarea', { id: 'saveText', rows: 4, style: { width: '100%', fontFamily: 'monospace', fontSize: '11px', background: 'var(--panel2)', color: 'var(--fg)', border: '1px solid var(--line)', borderRadius: '10px', padding: '8px', resize: 'vertical' }, placeholder: '내보낸 저장 데이터를 여기에 붙여 넣고 [불러오기]를 누르세요' });
-  const fin = h('input', { type: 'file', accept: '.json,.txt', style: { display: 'none' }, onchange: async e => { const f = e.target.files[0]; if (f) { ta.value = await f.text(); toast('파일 내용을 넣었습니다. [불러오기]를 누르세요.'); } } });
   const confirmBox = h('div');
   const ask = (msg, fn) => { confirmBox.innerHTML = ''; confirmBox.append(h('div', { class: 'result', style: { borderLeft: '3px solid var(--bad)' } }, h('b', null, msg), h('div', { style: { display: 'flex', gap: '8px' } }, h('button', { class: 'btn sm', style: { background: 'var(--bad)', color: '#fff' }, onclick: async () => { confirmBox.innerHTML = ''; await fn(); } }, '확인'), h('button', { class: 'btn ghost sm', onclick: () => { confirmBox.innerHTML = ''; } }, '취소')))); };
-  return card('저장 관리', '커리어는 단계가 바뀔 때마다 이 브라우저에 자동 저장됩니다. 다른 기기로 옮기려면 내보내기를 쓰세요.',
+  const fin = saveInput(o => ask(`${o.p.name} (${o.p.age}세 · ${(o.hist || []).length}시즌) 커리어를 불러옵니다. 지금 커리어는 덮어씁니다.`, async () => { await U.loadSave(o); toast('커리어를 불러왔습니다.'); }));
+  return card('저장 관리', '커리어는 단계가 바뀔 때마다 이 브라우저에 자동 저장됩니다. 다른 기기·브라우저로 옮기려면 저장 파일로 내보낸 뒤 불러오세요.',
     h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' } },
-      h('button', { class: 'btn sm', disabled: S ? null : true, onclick: () => { const t = G.TCG.serialize(S) || G.TCG.serialize(Object.assign({}, S, { phase: 'window' })); ta.value = t; ta.select(); try { navigator.clipboard.writeText(t).then(() => toast('저장 데이터를 복사했습니다.'), () => toast('텍스트를 선택했습니다. 복사하세요.')); } catch (e) { toast('텍스트를 선택했습니다. 복사하세요.'); } } }, '현재 커리어 내보내기'),
-      h('button', { class: 'btn ghost sm', onclick: () => fin.click() }, '파일에서 읽기'),
-      h('button', { class: 'btn ghost sm', onclick: () => { const o = G.TCG.parse(ta.value.trim()); if (!o || !o.w || !o.p) { toast('저장 데이터 형식이 맞지 않습니다.'); return; } ask(`${o.p.name} (${o.p.age}세) 커리어를 불러옵니다. 지금 커리어는 덮어씁니다.`, async () => { await U.loadSave(o); toast('커리어를 불러왔습니다.'); }); } }, '불러오기')),
-    ta, fin, confirmBox,
+      h('button', { class: 'btn sm', disabled: S ? null : true, onclick: () => U.exportSave() }, '저장 파일 내보내기 (.json)'),
+      h('button', { class: 'btn ghost sm', onclick: () => fin.click() }, '저장 파일 불러오기')),
+    fin, confirmBox,
     h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' } },
       h('button', { class: 'btn ghost sm', disabled: S ? null : true, onclick: () => ask('진행 중인 커리어를 삭제합니다. 되돌릴 수 없습니다.', async () => { await U.clearSave(); toast('커리어를 삭제했습니다.'); }) }, '커리어 삭제'),
       h('button', { class: 'btn ghost sm', onclick: () => ask('명예의 전당 기록을 모두 지웁니다.', async () => { U.hof = []; await U.kvSet('hof', '[]'); toast('명예의 전당을 비웠습니다.'); }) }, '명예의 전당 비우기')));
 }
+function saveInput(onOk) {
+  return h('input', { type: 'file', accept: '.json,.txt,application/json', style: { display: 'none' }, onchange: async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    const o = G.TCG.parse((await f.text()).trim());
+    if (!o || !o.w || !o.p) { toast('저장 파일 형식이 맞지 않습니다.'); return; }
+    onOk(o);
+  } });
+}
+// 처음 화면에서 바로 불러오기
+U.pickSaveFile = function () {
+  const inp = saveInput(async o => {
+    const cur = U.S();
+    if (cur && cur.phase !== 'retired') {
+      const ok = await U.overlay(close => [h('div', { class: 'head' }, h('h2', null, '저장 파일 불러오기'), h('span', { class: 'mute' }, `${o.p.name} (${o.p.age}세 · ${(o.hist || []).length}시즌)`)), h('div', { class: 'body' }, h('p', { class: 'mute' }, '진행 중인 커리어를 덮어씁니다.'), h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' } }, h('button', { class: 'btn ghost', onclick: () => close(false) }, '취소'), h('button', { class: 'btn gold', onclick: () => close(true) }, '불러오기')))]);
+      if (!ok) return;
+    }
+    await U.loadSave(o); toast('커리어를 불러왔습니다.');
+  });
+  document.body.append(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
+};
+// 저장 파일 다운로드: claude.ai 안에서는 downloads 기능, 그 밖(Vercel 등)에서는 브라우저 다운로드
+U.exportSave = async function () {
+  const S = U.S(); if (!S) return;
+  const t = G.TCG.serialize(S) || G.TCG.serialize(Object.assign({}, S, { phase: 'window' }));
+  const safe = (S.p.name || 'player').replace(/[^\w가-힣-]+/g, '_').slice(0, 24);
+  const fn = `RoadToLegend_${safe}_${S.p.age}세_${S.w.year}.json`;
+  try {
+    const dl = G.claude && G.claude.use ? await Promise.race([G.claude.use('downloads'), new Promise(r => setTimeout(() => r(null), 2500))]) : null;
+    if (dl) { try { await dl.save({ filename: fn, data: t }); toast('저장 파일을 내보냈습니다.'); } catch (e) { if (e && e.code !== 'declined') toast('파일 저장을 할 수 없는 환경입니다.'); } return; }
+  } catch (e) { /* 아래 방식으로 */ }
+  try {
+    const url = URL.createObjectURL(new Blob([t], { type: 'application/json' }));
+    const a = document.createElement('a'); a.href = url; a.download = fn; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000); toast('저장 파일을 내려받았습니다.');
+  } catch (e) { toast('파일 저장을 할 수 없는 환경입니다.'); }
+};
 })(window);

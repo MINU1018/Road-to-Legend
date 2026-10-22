@@ -1,4 +1,4 @@
-// 터치라인 커리어 — UI 기본: 유틸, 이펙트, 아이콘, 홈·생성·아카데미, 허브(커리어 탭)·진행 패널
+// Road to Legend — UI 기본: 유틸, 이펙트, 아이콘, 홈·생성·아카데미, 허브(커리어 탭)·진행 패널
 (function (G) {
 'use strict';
 const C = G.TC, GM = G.TCG;
@@ -104,6 +104,8 @@ const FSPECIAL = {
 };
 function flag(code, w = 26) {
   const hgt = Math.round(w * 18 / 26);
+  const fp = G.TC_FLAGS && G.TC_FLAGS[code];
+  if (fp) return h('img', { class: 'flag', src: fp, alt: '', width: w, height: hgt, style: { width: w + 'px', height: hgt + 'px', objectFit: 'cover' } });
   if (FSPECIAL[code]) return svg(`<svg class="flag" viewBox="0 0 26 18" width="${w}" height="${hgt}" style="width:${w}px;height:${hgt}px">${FSPECIAL[code]}</svg>`);
   const f = FLAGS[code] || 'h:#4a5160,#6b7383';
   const [t, cs] = f.split(':'); const cols = cs.split(',');
@@ -222,8 +224,10 @@ function render() {
   else if (scr === 'create') app.append(viewCreate());
   else if (scr === 'academy') app.append(viewAcademy());
   else if (scr === 'settings') { app.append(topbar(!!S && S.car && S.car.club)); app.append(U.viewSettings()); }
+  else if (scr === 'ach') { app.append(topbar(false)); app.append(U.pages.ach(true)); }
   else app.append(viewGame());
   if (scr !== 'game' && scr !== 'settings') setAtmo(null);
+  if (U.flushAch) U.flushAch();
 }
 U.render = render;
 U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; render(); scrollTo(0, 0); };
@@ -244,6 +248,7 @@ U.boot = async function () {
   const t = await kvGet('save');
   if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; repairSave(S); } }
   U.hof = GM.parse(await kvGet('hof') || '[]') || [];
+  if (U.loadAch) await U.loadAch();
   render();
 };
 U.saveHof = async function (entry) { U.hof = [entry].concat(U.hof || []).slice(0, 30); await kvSet('hof', JSON.stringify(U.hof)); };
@@ -252,37 +257,27 @@ U.saveHof = async function (entry) { U.hof = [entry].concat(U.hof || []).slice(0
 function viewHome() {
   const w = h('div', { class: 'screen' });
   w.append(topbar(false));
-  const hero = h('div', { class: 'wrap home' },
-    h('div', { class: 'hero' },
-      h('div', null,
-        h('div', { class: 'lbl', style: { marginBottom: '10px' } }, '선수 커리어 시뮬레이션'),
-        h('h1', { html: '16살,<br>U18에서 <em>시작</em>한다' }),
-        h('p', null, 'FC 시리즈 35개 세부 능력치로 움직이는 선수 한 명의 일생입니다. 매 시즌 분기점에서 확률을 걸고, 결정적인 순간에는 직접 골문을 노립니다. 같은 선택도 결과는 매번 다릅니다.'),
-        h('div', { class: 'acts' },
-          S && S.phase !== 'retired' ? h('button', { class: 'btn gold', onclick: () => U.go('game', 'career') }, `이어하기 · ${esc(S.p.name)} (${S.p.age}세)`) : null,
-          h('button', { class: S && S.phase !== 'retired' ? 'btn ghost' : 'btn gold', onclick: () => newCareer() }, '새 커리어 시작'))),
-      homeCard()),
-    h('div', { class: 'feat' },
-      ...[['40개국 200여 개 리그', 'FC27 실제 선수 데이터 34개 리그에 하부 리그까지 더해 구단 3,300여 곳. 5부 리그에서 시작해 올라갈 수도 있습니다.'], ['FotMob식 시즌 기록', '리그·컵·대륙 대회별 경기, 평점, xG, 패스, 경합, 수비까지 세부 기록이 남습니다.'], ['확률을 건 분기점', '불화, 보충제, 포지션 변경, 임대 요청 등 50여 개 이벤트. 선택지마다 이득과 대가가 함께 있습니다.'], ['직접 차는 결정적 순간', '페널티킥·프리킥은 방향을 고르고 타이밍 바를 멈춰 찹니다. 크로스·수비는 수비 배치를 보고 고릅니다.']].map(([a, b]) => h('div', { class: 'f' }, h('b', null, a), h('span', null, b)))),
+  const cont = S && S.phase !== 'retired';
+  const achN = U.achCount ? U.achCount() : null;
+  const hero = h('div', { class: 'wrap home2' },
+    h('div', { class: 'title' },
+      h('div', { class: 'tl1' }, 'ROAD TO'), h('div', { class: 'tl2' }, 'LEGEND')),
+    cont ? homeCard() : null,
+    h('div', { class: 'hacts' },
+      cont ? h('button', { class: 'btn gold big', onclick: () => U.go('game', 'career') }, `이어하기 · ${esc(S.p.name)} (${S.p.age}세)`) : null,
+      h('button', { class: cont ? 'btn ghost big' : 'btn gold big', onclick: () => newCareer() }, '새 커리어'),
+      h('button', { class: 'btn ghost', onclick: () => U.pickSaveFile && U.pickSaveFile() }, '저장 파일 불러오기'),
+      h('button', { class: 'btn ghost', onclick: () => U.go('ach') }, '도전과제', achN ? h('span', { class: 'mute', style: { marginLeft: '6px' } }, achN) : null)),
     hofBlock());
   w.append(hero);
   return w;
 }
 function homeCard() {
-  // 예시 카드: 진행 중인 커리어가 있으면 그 선수, 없으면 샘플
-  const box = h('div', { class: 'panel', style: { padding: '20px', display: 'grid', gap: '14px' } });
-  if (S && S.phase !== 'retired') {
-    const o = C.ovrOf(S.p), c = club(S.car.club);
-    box.append(h('div', { class: 'lbl' }, '진행 중인 커리어'),
-      h('div', { class: 'idrow' }, h('div', { class: 'ovr ' + gradeCls(o) }, h('div', { class: 'l' }, 'OVR'), h('div', { class: 'v' }, o)),
-        h('div', { class: 'idbox' }, h('div', { class: 'name' }, flag(S.p.nat), esc(S.p.name)), h('div', { class: 'mute', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, c ? crest(c, 22) : crest(null, 22), c ? c.name : '무소속', ' · ', S.p.pos, ' · ', `${S.p.age}세`), h('div', { class: 'num', style: { fontSize: '20px' } }, C.fmtEUR(S.value || 0)))),
-      h('div', { class: 'kv' }, ...kvTotals()));
-  } else {
-    box.append(h('div', { class: 'lbl' }, '이렇게 기록됩니다'));
-    const rows = [[16, 'U18', 50, 25, 4, 1, 6.6], [19, '임대', 63, 41, 17, 5, 7.0], [22, '1군', 72, 43, 28, 10, 7.4]];
-    rows.forEach(r => box.append(h('div', { style: { display: 'grid', gridTemplateColumns: '30px 1fr auto auto auto auto', gap: '10px', alignItems: 'center', padding: '8px 10px', background: 'var(--panel2)', borderRadius: '8px' } }, h('span', { class: 'agebadge', style: { background: '#2a6f8f' } }, r[0]), h('span', null, r[1]), ovrb(r[2]), h('span', { class: 'mute num' }, r[3] + '경기'), h('span', { class: 'num' }, r[4] + '골'), rt2(r[6]))));
-    box.append(h('p', { class: 'mute', style: { margin: 0, fontSize: '12px' } }, '예시 화면입니다. 실제 기록은 시즌마다 시뮬레이션으로 만들어집니다.'));
-  }
+  const box = h('div', { class: 'panel', style: { padding: '18px', display: 'grid', gap: '14px' } });
+  const o = C.ovrOf(S.p), c = club(S.car.club);
+  box.append(h('div', { class: 'idrow' }, h('div', { class: 'ovr ' + gradeCls(o) }, h('div', { class: 'l' }, 'OVR'), h('div', { class: 'v' }, o)),
+      h('div', { class: 'idbox' }, h('div', { class: 'name' }, flag(S.p.nat), esc(S.p.name)), h('div', { class: 'mute', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, c ? crest(c, 22) : crest(null, 22), c ? c.name : '무소속', ' · ', S.p.pos, ' · ', `${S.p.age}세`), h('div', { class: 'num', style: { fontSize: '20px' } }, C.fmtEUR(S.value || 0)))),
+    h('div', { class: 'kv' }, ...kvTotals()));
   return box;
 }
 function hofBlock() {
@@ -312,10 +307,10 @@ function dragTabs(nav) {
   return wrap;
 }
 function topbar(inGame) {
-  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['value', '이적·가치'], ['table', '리그·대회'], ['trophies', '트로피']];
+  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['value', '이적·가치'], ['table', '리그·대회'], ['trophies', '트로피'], ['shop', '상점'], ['ach', '도전과제']];
   const needs = S && ['window', 'training', 'preEvents', 'midEvents', 'mid', 'winter', 'h1', 'h2', 'review', 'reviewDone', 'freeYear'].includes(S.phase);
   return h('div', { class: 'top' }, h('div', { class: 'wrap' },
-    h('button', { class: 'brand', onclick: () => { if (!busy) U.go('home'); }, title: '처음 화면' }, h('span', { class: 'mk' }, 'T'), h('span', { class: 't' }, '터치라인 커리어')),
+    h('button', { class: 'brand', onclick: () => { if (!busy) U.go('home'); }, title: '처음 화면' }, h('span', { class: 'mk' }, 'R'), h('span', { class: 't' }, 'Road to Legend')),
     inGame ? dragTabs(h('nav', { class: 'tabs' }, ...tabs.map(([k, l]) => h('button', { class: tab === k ? 'on' : '', 'data-tab': k, onclick: () => { if (!busy) U.setTab(k); } }, l, k === 'career' && needs && tab !== 'career' ? h('span', { class: 'dot' }) : null)))) : h('div', { style: { flex: 1 } }),
     inGame && S ? h('div', { class: 'topinfo' }, h('span', { class: 'hide-s' }, '시즌 ', h('b', null, seasonLabel())), h('span', { class: 'hide-s' }, '재산 ', h('b', null, C.fmtEUR(Math.max(0, S.p.money))))) : null,
     h('button', { class: 'gear', title: '설정', 'aria-label': '설정', onclick: () => { if (!busy) U.go('settings'); } }, svg('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'))));
@@ -373,7 +368,7 @@ function viewCreate() {
   };
   drawPos();
   const s3 = h('section', null, h('h3', null, '포지션'), pitch, h('div', { class: 'lbl' }, '플레이 성향'), styles);
-  box.append(h('div', { class: 'ph' }, h('h2', { style: { fontSize: '22px' } }, '선수 만들기'), h('span', { class: 'mute' }, '시작 능력치와 잠재력은 숨겨진 재능에 따라 정해집니다')), h('div', { class: 'cgrid' }, s1, s2, s3),
+  box.append(h('div', { class: 'ph' }, h('h2', { style: { fontSize: '22px' } }, '선수 만들기'), h('span', { class: 'mute' }, '시작 능력치는 무작위, 성장은 당신의 선택과 활약에 달려 있습니다')), h('div', { class: 'cgrid' }, s1, s2, s3),
     h('div', { class: 'cfoot' }, h('button', { class: 'btn ghost', onclick: () => U.go('home') }, '뒤로'), h('button', { class: 'btn', onclick: () => {
       if (!d.name.trim()) { toast('이름을 입력하세요.'); nameIn.focus(); return; }
       S = GM.newGame({ name: d.name.trim(), num: d.num, foot: d.foot, nat: d.nat, pos: d.pos, height: d.height, style: d.style });
@@ -635,24 +630,25 @@ function trainingBlock() {
   const out = [];
   const ss = S.car;
   let focus = ss.focus || 'balance', inten = ss.intensity || 'normal';
-  const keys = Object.keys(C.FOCUS).filter(k => k !== 'keeper' || S.p.pos === 'GK').filter(k => !(S.p.pos === 'GK' && ['shooting', 'dribble', 'setpiece'].includes(k)));
+  const keys = C.FOCUS_MENU[S.p.pos === 'GK' ? 'gk' : 'field'];
+  if (!keys.includes(focus)) focus = 'balance';
+  const tgt = k => { const m = C.focusMap(S.p, k); const ks = Object.keys(m); return ks.length && ['weak', 'strong'].includes(k) ? '대상: ' + ks.map(x => `${C.ALABEL[x]} ${Math.round(S.p.a[x])}`).join(' · ') : ''; };
   const grid = h('div', { class: 'focusgrid' });
-  const draw = () => { grid.innerHTML = ''; keys.forEach(k => grid.append(h('button', { class: focus === k ? 'on' : '', onclick: () => { focus = k; draw(); } }, h('b', null, C.FOCUS[k][0]), h('span', null, C.FOCUS[k][1])))); };
+  const draw = () => { grid.innerHTML = ''; keys.forEach(k => grid.append(h('button', { class: focus === k ? 'on' : '', onclick: () => { focus = k; draw(); } }, h('b', null, C.FOCUS[k][0]), h('span', null, C.FOCUS[k][1]), tgt(k) ? h('span', { class: 'tg' }, tgt(k)) : null))); };
   draw();
   const seg = h('div', { class: 'seg' }, ...Object.entries(C.INTENSITY).map(([k, v]) => h('button', { class: inten === k ? 'on' : '', onclick: e => { inten = k; seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === e.currentTarget)); note.textContent = INOTE[k]; } }, v[0])));
   const INOTE = { light: '성장 82% · 부상 위험 70% · 노쇠화 소폭 지연', normal: '성장 100% · 부상 위험 100%', hard: '성장 120% · 부상 위험 145%' };
   const note = h('div', { class: 'mute', style: { fontSize: '12px', textAlign: 'center' } }, INOTE[inten]);
-  const pe = C.potEstimate(S.p);
   out.push(h('div', null, h('div', { class: 'lbl' }, `${seasonLabel()} 프리시즌`), h('h2', { style: { marginTop: '2px' } }, '이번 시즌 훈련 계획')),
-    h('div', { class: 'chg' }, h('span', { class: 'chip' }, `스카우트 잠재력 평가 ${pe.lo}–${pe.hi}`), S.car.status !== 'youth' ? h('span', { class: 'chip' }, `감독 신뢰 ${Math.round(S.car.trust)}`) : null),
+    h('div', { class: 'chg' }, S.car.status !== 'youth' ? h('span', { class: 'chip' }, `감독 신뢰 ${Math.round(S.car.trust)}`) : null),
     grid, h('div', { class: 'lbl' }, '훈련 강도'), seg, note,
     h('button', { class: 'btn', onclick: () => { GM.setTraining(S, focus, inten); render(); } }, '시즌 시작'));
   return out;
 }
 function eventBlock() {
   const b = S.pend[0];
-  const el = h('div', { class: 'ev' });
-  const head = h('div', { style: { display: 'flex', gap: '14px', alignItems: 'center' } }, h('div', { class: 'ico' }, icon(b.icon, 28)), h('div', null, h('div', { class: 'lbl' }, S.phase === 'preEvents' ? '프리시즌' : '시즌 중반'), h('h2', null, b.title)));
+  const el = h('div', { class: 'ev' + (b.cross ? ' cross' : '') });
+  const head = h('div', { style: { display: 'flex', gap: '14px', alignItems: 'center' } }, h('div', { class: 'ico' }, icon(b.icon, 28)), h('div', null, h('div', { class: 'lbl' }, b.cross ? h('span', { class: 'chip gold' }, `중요 분기점 · ${S.p.age}세`) : S.phase === 'preEvents' ? '프리시즌' : '시즌 중반'), h('h2', null, b.title)));
   el.append(head, h('p', { class: 'mute', style: { margin: 0 } }, b.desc));
   const opts = h('div', { class: 'opts' });
   b.opts.forEach((o, i) => {
@@ -878,6 +874,7 @@ function retiredBlock() {
   out.push(h('div', null, h('div', { class: 'lbl' }, `${S.w.year}년 · ${S.p.age}세 은퇴`), h('h2', { style: { fontFamily: 'var(--font-display)', fontSize: '34px', textTransform: 'uppercase' } }, sum.grade[0])), h('p', { class: 'mute', style: { margin: 0 } }, sum.grade[1]));
   out.push(h('div', { class: 'statline' }, ...[['경기', sum.total.apps], ['득점', sum.total.goals], ['도움', sum.total.assists], ['최고 OVR', sum.peak]].map(([l, v]) => h('div', null, h('div', { class: 'lbl' }, l), h('div', { class: 'v' }, v)))));
   out.push(h('div', { class: 'chg' }, h('span', { class: 'chip gold' }, `팀 트로피 ${sum.tp}`), h('span', { class: 'chip gold' }, `개인상 ${sum.aw}`), sum.bd ? h('span', { class: 'chip gold' }, `발롱도르 ${sum.bd}회`) : null, h('span', { class: 'chip' }, `A매치 ${sum.nt.apps}경기 ${sum.nt.goals}골`), h('span', { class: 'chip' }, `구단 ${sum.clubs}곳`), h('span', { class: 'chip' }, `최고 가치 ${C.fmtEUR(sum.maxV)}`)));
+  if (U.bioBlock) out.push(U.bioBlock(S));
   out.push(h('div', { style: { display: 'flex', gap: '8px' } }, h('button', { class: 'btn gold', onclick: () => newCareer() }, '새 커리어'), h('button', { class: 'btn ghost', onclick: () => U.setTab('records') }, '전체 기록 보기')));
   return out;
 }

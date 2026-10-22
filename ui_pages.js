@@ -340,11 +340,10 @@ U.pages.attrs = function () {
   root.append(h('div', { class: 'sec' }, h('h3', null, h('span', null, `${p.name} · ${C.POSKO[p.pos]}`), h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, 'OVR'), ovrb(o))),
     h('div', { class: 'sub' }, `${C.STYLES[C.styleKey(p.pos)][p.style] ? C.STYLES[C.styleKey(p.pos)][p.style][0] + ' · ' : ''}약발 ${'★'.repeat(p.weak)} · 개인기 ${'★'.repeat(p.skill)} · 키 ${p.height}cm`),
     h('div', { class: 'in' }, h('div', { class: 'face' }, ...face.map(([k, l, v]) => h('div', null, h('div', { class: 'lbl' }, k), h('div', { class: 'v', style: { color: U.barCol(v) } }, v), h('div', { class: 'mute', style: { fontSize: '11px' } }, l)))))));
-  const pe = C.potEstimate(p);
   const mods = p.mods || [];
   root.append(h('div', { class: 'two' },
     h('div', { class: 'sec' }, h('h3', null, '상태'), h('div', { class: 'in', style: { display: 'grid', gap: '8px' } },
-      row('스카우트 잠재력 평가', `${pe.lo} – ${pe.hi}`), row('현재 경기력 (컨디션 반영)', String(e)), row('감독 신뢰', s.car.status === 'free' ? '-' : String(Math.round(s.car.trust))), row('명성', String(Math.round(p.rep))),
+      row('현재 경기력 (컨디션 반영)', String(e)), row('감독 신뢰', s.car.status === 'free' ? '-' : String(Math.round(s.car.trust))), row('명성', String(Math.round(p.rep))),
       ...(mods.length ? mods.map(m => row(m.why, `${m.ovr > 0 ? '+' : ''}${m.ovr} · ${m.seasons}시즌 남음`)) : [row('일시적 효과', '없음')]))),
     h('div', { class: 'sec' }, h('h3', null, '포지션별 능력치'), h('div', { class: 'in' }, posMap(p)))));
   // 그룹별 세부
