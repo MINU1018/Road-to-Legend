@@ -324,7 +324,7 @@ function dragTabs(nav) {
   return wrap;
 }
 function topbar(inGame) {
-  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['value', '이적·가치'], ['table', '리그·대회'], ['trophies', '트로피'], ['shop', '상점'], ['ach', '도전과제']];
+  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['value', '이적·가치'], ['table', '리그·대회'], ['db', '선수·팀'], ['trophies', '트로피'], ['shop', '상점'], ['ach', '도전과제']];
   const needs = S && ['window', 'training', 'preEvents', 'midEvents', 'mid', 'winter', 'h1', 'h2', 'review', 'reviewDone', 'freeYear'].includes(S.phase);
   return h('div', { class: 'top' }, h('div', { class: 'wrap' },
     h('button', { class: 'brand', onclick: () => { if (!busy) U.go('home'); }, title: '처음 화면' }, h('span', { class: 'mk' }, 'R'), h('span', { class: 't' }, 'Road to Legend')),
@@ -591,7 +591,9 @@ function windowBlock() {
     else if (S.car.status === 'youth') opts.push(stanceRow(cur, '유스 잔류', ['1군 콜업을 노린다', '예상 역할 ', ROLECHIP('youth')], 'youth', '잔류'));
     else if (st0.expired) { if (st0.renew) opts.push(stanceRow(cur, '재계약 제안', [`${st0.years}년`, h('b', null, wageTxt(st0.wage)), '역할 ', ROLECHIP(st0.role)], 'renew', '재계약')); else opts.push(h('div', { class: 'result' }, h('b', { style: { color: '#ff9a9d' } }, '계약 만료'), h('span', { class: 'mute' }, `${cur.name}이(가) 재계약을 제안하지 않았습니다${why}.`))); }
     else {
-      if (st0.extend) opts.push(stanceRow(cur, '계약 연장 제안', [`계약 마지막 해 · ${st0.extend.years}년 연장`, h('b', null, wageTxt(st0.extend.wage)), '신뢰 +5'], 'extend', '연장 서명'));
+      if (st0.extend) opts.push(stanceRow(cur, st0.extend.asked ? '재계약 요청 수락' : st0.extend.proactive ? '구단의 선제 재계약 제안' : '계약 연장 제안', [st0.extend.proactive || st0.extend.asked ? `새 계약 ${st0.extend.years}년` : `계약 마지막 해 · ${st0.extend.years}년 연장`, h('b', null, wageTxt(st0.extend.wage)), S.car.wage ? h('span', { class: 'chip good' }, `주급 +${Math.round((st0.extend.wage / S.car.wage - 1) * 100)}%`) : '', '신뢰 +5'], 'extend', '서명'));
+      else if (S.car.status === 'first' && S.renY !== S.w.year) opts.push(h('div', { class: 'reqbox' }, h('div', null, h('b', null, '구단에 재계약·연봉 인상 요청'), h('div', { class: 'mute', style: { fontSize: '12px' } }, '활약·역할·현재 주급에 따라 결과가 갈립니다. 거절되면 감독 신뢰가 조금 떨어집니다. 이적시장마다 1회.')), h('div', null, h('button', { class: 'btn ghost sm', onclick: () => { const r = GM.askRenewal(S); toast(r && r.ok ? '구단이 재계약 요청을 받아들였습니다.' : `거절: ${r ? r.why : ''}`); U.save(); render(); } }, '재계약 요청'))));
+      else if (S.renY === S.w.year && !st0.extend) opts.push(h('div', { class: 'mute', style: { fontSize: '12px' } }, '이번 이적시장의 재계약 요청은 거절되었습니다.'));
       opts.push(stanceRow(cur, st0.extend ? '연장 없이 잔류' : '잔류', [`계약 ${S.car.contract + 1}년 여름까지${st0.left === 1 ? ' (마지막 해)' : ''}`, h('b', null, wageTxt(S.car.wage)), '예상 역할 ', ROLECHIP(st0.role)], 'stay', '잔류', !!st0.extend));
     }
   }
@@ -815,7 +817,7 @@ async function runHalf() {
 }
 function teamRankBox(tr, when) {
   return h('div', { class: 'trank' }, h('div', null, h('div', { class: 'lbl' }, `${when} 팀 내 평점`), h('div', { class: 'num', style: { fontSize: '22px', fontWeight: 800 } }, `${tr.n}명 중 ${tr.rank}위`), h('div', { class: 'mute', style: { fontSize: '12px' } }, `내 평균 평점 ${tr.myR.toFixed(2)}`)),
-    h('div', { class: 'tlist' }, ...tr.top.map((x, i) => h('div', { class: x.me ? 'me' : '' }, h('span', { class: 'mute' }, i + 1), h('span', null, x.me ? `${x.n} (나)` : x.n), rt2(x.r)))));
+    h('div', { class: 'tlist' }, ...tr.top.map((x, i) => h('div', { class: x.me ? 'me' : '' }, h('span', { class: 'mute' }, i + 1), h('span', { class: 'tpos' }, x.pos), h('span', null, x.me ? `${x.n} (나)` : x.n), rt2(x.r)))));
 }
 U.teamRankBox = teamRankBox;
 function midBlock() {

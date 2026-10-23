@@ -807,6 +807,21 @@ function renewDecision(S, c) {
   return { renew, role: r, wage, years, prob, why: renew ? '' : (p.age >= 32 && pf.score < 1.5 ? '나이와 하락한 경기력' : pf.ms < .35 ? '출전 시간 부족' : pf.rating < 6.6 ? '부진한 평점' : '구단의 리빌딩 계획') };
 }
 C.renewDecision = renewDecision;
+// 선수 측 재계약(연봉 인상) 요청
+function askRenewal(S) {
+  const w = S.w, car = S.car, p = S.p, c = w.clubs[car.club];
+  const pf = perfScore(S), r = roleAt(S, c), ovr = C.ovrOf(p);
+  const base = wageFor(c, ovr, w.lg[c.lg].nation);
+  const deserve = base > car.wage * 1.05;
+  let pr = 1 / (1 + Math.exp(-((pf.score - .9) * 1.6 + (deserve ? .6 : -.6) + (['key', 'starter'].includes(r) ? .5 : -.8) - Math.max(0, p.age - 31) * .3)));
+  pr = clamp(pr, .04, .92);
+  if (R() < pr) {
+    const wage = Math.round(Math.max(car.wage * rnd(1.08, 1.3), base * rnd(.95, 1.12)));
+    return { ok: true, wage, years: Math.max(car.contract - w.year + 1, p.age >= 31 ? 2 : contractYears(p.age)), pr };
+  }
+  return { ok: false, pr, why: pf.score < .5 ? '최근 활약이 기대에 못 미친다' : !deserve ? '이미 충분한 대우를 받고 있다' : '지금은 재정 여유가 없다' };
+}
+C.askRenewal = askRenewal;
 function clubStance(S) {
   const w = S.w, car = S.car, p = S.p, c = w.clubs[car.club];
   if (!c) return null;
@@ -829,6 +844,14 @@ function clubStance(S) {
   // 계약 마지막 해: 활약이 좋으면 연장 제안
   const st = { stay: true, role: r, block: r === 'key' && R() < .35, left: car.contract - w.year + 1 };
   if (car.contract === w.year) { const d = renewDecision(S, c); if (d.renew && R() < .8) st.extend = { wage: Math.max(d.wage, car.wage), years: d.years }; }
+  // 잘하고 있으면 계약이 남아 있어도 구단이 먼저 연장·인상을 제안한다
+  else {
+    const pf = perfScore(S);
+    if (pf.score > 1.4 && ['key', 'starter'].includes(r) && p.age <= 31 && R() < clamp(.25 + (pf.score - 1.4) * .3, .25, .85)) {
+      const base = wageFor(c, ovr, w.lg[c.lg].nation);
+      st.extend = { wage: Math.round(Math.max(base * 1.08, car.wage * rnd(1.2, 1.5))), years: Math.max(car.contract - w.year + 1, contractYears(p.age)), proactive: true };
+    }
+  }
   return st;
 }
 C.clubStance = clubStance;
@@ -893,7 +916,7 @@ function ballonDor(S) {
     const at = ['ST', 'LW', 'RW', 'CAM', 'LM', 'RM'].includes(e[1]);
     const g = at ? Math.max(0, (e[2] - 75) * 1.9 + N(0, 7)) : ['CM', 'CDM'].includes(e[1]) ? Math.max(0, (e[2] - 75) * .9 + N(0, 4)) : e[1] === 'GK' ? 8 : Math.max(0, N(4, 3));
     const tp = (champs.has(c.id) && w.lg[c.lg].tier === 1 ? 3 : 0) + (ucl === c.id ? 6 : 0);
-    return { n: C.pName(w, e), club: c.name, cid: c.id, ovr: e[2], age: e[3], s: (e[2] * .3 + (rr - 6.8) * 10 + g * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) + N(0, 1.6) };
+    return { n: C.pName(w, e), pid: String(e[0]), club: c.name, cid: c.id, ovr: e[2], age: e[3], s: (e[2] * .3 + (rr - 6.8) * 10 + g * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) + N(0, 1.6) };
   }).sort((a, b) => b.s - a.s).slice(0, 60);
   // 같은 팀 선수끼리는 표가 갈린다
   const seen = {}; list.forEach(x => { const k = seen[x.cid] = (seen[x.cid] || 0) + 1; if (k > 1) x.s -= (k - 1) * 2.4; });
@@ -911,6 +934,7 @@ function ballonDor(S) {
     const mys = C.effOvr(p) * .55 + (r - 6.8) * 4 + ga * .1 + (C.effOvr(p) - 74) * .2 + (tot.apps >= 25 ? 1 : -2);
     youngRank = yl.filter(x => x.s > mys).length + 1;
   }
+  (w.bdHist = w.bdHist || []).push({ y: ss.year + 1, top: all.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr]) });
   return { rank: rank <= 30 ? rank : null, top: all.slice(0, 10), youngRank };
 }
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -15,7 +15,7 @@ function sel(value, opts, on, wide) {
 }
 function clubCell(w, id, size = 18, short) {
   const c = w.clubs[id];
-  return h('span', { class: 'cc' }, crest(c || null, size), h('span', null, c ? (short && c.short ? c.short : c.name) : '해체된 구단'));
+  return h('span', { class: 'cc' + (c && U.openClub ? ' lnk' : ''), onclick: c && U.openClub ? ev => { ev.stopPropagation(); U.openClub(id); } : null }, crest(c || null, size), h('span', null, c ? (short && c.short ? c.short : c.name) : '해체된 구단'));
 }
 function natCell(code, size = 18) { return h('span', { class: 'cc' }, natCrest(code, size), h('span', null, C.natName(code))); }
 const seasons = w => Object.keys(w.arch || {}).sort().reverse();
@@ -43,7 +43,7 @@ function leaders(s, list, kind) {
   const w = s.w;
   if (!list || !list.length) return h('div', { class: 'empty', style: { padding: '14px 0' } }, '기록 없음');
   return h('table', { class: 'ltable' }, h('thead', null, h('tr', null, h('th', null, '#'), h('th', null, '선수'), h('th', null, kind === 'g' ? '골' : '도움'))),
-    h('tbody', null, ...list.map((x, i) => h('tr', { class: x[4] ? 'me' : '' }, h('td', null, i + 1), h('td', null, h('div', { style: { display: 'grid', gap: '1px' } }, h('b', { style: { fontWeight: x[4] ? 800 : 600 } }, x[0] + (x[4] ? ' (나)' : '')), h('span', { class: 'mute', style: { fontSize: '11px' } }, clubCell(w, x[1], 14)))), h('td', null, h('b', null, x[2]), h('span', { class: 'mute', style: { fontSize: '11px', marginLeft: '4px' } }, kind === 'g' ? `${x[3]}도움` : `${x[3]}골`))))));
+    h('tbody', null, ...list.map((x, i) => h('tr', { class: x[4] ? 'me' : '' }, h('td', null, i + 1), h('td', null, h('div', { style: { display: 'grid', gap: '1px' } }, h('b', { class: x[5] ? 'lnk' : '', style: { fontWeight: x[4] ? 800 : 600 }, onclick: x[5] ? () => U.openPlayer(x[5]) : x[4] ? () => U.setTab('profile') : null }, x[0] + (x[4] ? ' (나)' : '')), h('span', { class: 'mute', style: { fontSize: '11px' } }, clubCell(w, x[1], 14)))), h('td', null, h('b', null, x[2]), h('span', { class: 'mute', style: { fontSize: '11px', marginLeft: '4px' } }, kind === 'g' ? `${x[3]}도움` : `${x[3]}골`))))));
 }
 function leagueView(s, root) {
   const w = s.w, v = wv();

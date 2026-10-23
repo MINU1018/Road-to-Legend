@@ -483,7 +483,8 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 
 .trank { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--panel2); }
 .tlist { display: grid; gap: 3px; font-size: 12.5px; }
-.tlist > div { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; }
+.tlist > div { display: grid; grid-template-columns: 18px 38px 1fr auto; gap: 8px; align-items: center; }
+.tpos, .tlist .tpos { font-size: 10.5px; font-weight: 700; color: var(--mute); background: var(--panel); border-radius: 5px; text-align: center; padding: 1px 0; }
 .tlist > div.me { color: var(--gold); font-weight: 700; }
 @media (max-width: 520px) { .trank { grid-template-columns: 1fr; } }
 
@@ -495,6 +496,24 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .archbar { margin-top: 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border: 1px solid rgba(242,193,78,.4); font-size: 13px; }
 .mlog.hof tr.click { cursor: pointer; }
 .mlog.hof tr.click:hover td { background: color-mix(in srgb, var(--gold) 7%, transparent); }
+
+.sec.limited { border-color: rgba(242,193,78,.45); background: linear-gradient(135deg, rgba(242,193,78,.1), transparent 60%), var(--panel); }
+
+.lnk { cursor: pointer; }
+.lnk:hover, span.lnk:hover > span:last-child { text-decoration: underline; text-underline-offset: 3px; color: var(--gold); }
+.dbgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.dbitem { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--panel2); cursor: pointer; border: 1px solid transparent; }
+.dbitem:hover { border-color: var(--gold); }
+.dbhead { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.dbhead > div:nth-child(2) { flex: 1; min-width: 160px; }
+.dbstat { text-align: center; padding: 8px 14px; border-radius: 10px; background: var(--panel2); }
+.dbstat b { font-family: var(--font-display); font-size: 28px; }
+.dbclub { display: grid; gap: 2px; }
+.bdrow { display: grid; grid-template-columns: 60px 1fr; gap: 10px; align-items: start; padding-top: 8px; border-top: 1px solid var(--line); }
+.bdlist { display: grid; gap: 3px; font-size: 13px; }
+.bdlist > div { display: grid; grid-template-columns: 18px auto 1fr; gap: 8px; align-items: baseline; }
+.bdlist > div.me { color: var(--gold); font-weight: 700; }
+.tpos { display: inline-block; min-width: 34px; }
 </style>
 
 <div id="app"></div>
@@ -502,6 +521,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 <script src="data_fc27.js"></script>
 <script src="data_world.js"></script>
 <script src="data_ext.js"></script>
+<script src="profiles.js"></script>
 <script src="core.js"></script>
 <script src="world.js"></script>
 <script src="season.js"></script>
@@ -519,6 +539,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 <script src="ui.js"></script>
 <script src="ui_pages.js"></script>
 <script src="ui_world.js"></script>
+<script src="ui_db.js"></script>
 <script src="ui_games.js"></script>
 <script src="ui_settings.js"></script>
 <script src="ui_extra.js"></script>

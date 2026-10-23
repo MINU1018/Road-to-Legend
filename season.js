@@ -50,6 +50,7 @@ function playerMatch(p, o) {
   st.apps = 1; st.starts = o.start ? 1 : 0; st.min = o.minutes;
   const poss = clamp(.5 + (o.sT - o.sO) * .012, .3, .72);
   const shots = [];
+  const TR = {}; for (const t of (p.traits || [])) TR[t] = 1;
   // --- 슈팅 ---
   const attQ = role === 'GK' ? 0 : Math.exp(((A('attPos') + A('finishing')) / 2 - 72) * .03);
   const share = sh[0] * attQ;
@@ -61,10 +62,10 @@ function playerMatch(p, o) {
   const kq = 1 - (o.sO - 70) * .006;
   for (let i = 0; i < nSh; i++) {
     const r = R();
-    const type = r < sh[3] * (A('heading') / 70) ? 'head' : r < sh[3] * (A('heading') / 70) + sh[4] * (A('longShots') / 70) ? 'out' : 'in';
+    const type = r < sh[3] * (A('heading') / 70) * (TR.header ? 1.35 : 1) ? 'head' : r < sh[3] * (A('heading') / 70) + sh[4] * (A('longShots') / 70) ? 'out' : 'in';
     let xg = clamp((type === 'head' ? rnd(.03, .2) : type === 'out' ? rnd(.02, .08) : clamp(.04 + Math.exp(N(-2.35, .85)), .03, .78)) * xgK, .02, .85);
     const qual = type === 'head' ? A('heading') : type === 'out' ? (A('longShots') * .7 + A('shotPower') * .3) : (A('finishing') * .8 + A('composure') * .2);
-    const conv = clamp(.76 + (qual - 65) * .013, .45, 1.22) * kq;
+    const conv = clamp(.76 + (qual - 65) * .013, .45, 1.22) * kq * (type === 'in' && TR.finisher ? 1.1 : type === 'head' && TR.header ? 1.15 : type === 'out' && TR.rocket ? 1.3 : 1);
     const goal = R() < xg * conv;
     const onT = goal || R() < clamp(.24 + (qual - 60) * .006, .15, .55);
     const sp = shotSpot(type, xg);
@@ -76,14 +77,14 @@ function playerMatch(p, o) {
   // 페널티
   if (o.penTaker && R() < .11 * f) {
     st.penTaken++; st.shots++; st.xg += .79; st.sot++;
-    const pc = clamp(.55 + (A('penalties') - 55) * .009 + (A('composure') - 60) * .002, .55, .93);
+    const pc = clamp(.55 + (A('penalties') - 55) * .009 + (A('composure') - 60) * .002 + (TR.spot ? .07 : 0), .55, .97);
     const g = R() < pc; if (g) { goals++; st.penGoals++; st.xgot += .95; } else st.xgot += .5;
     shots.push({ x: 50, y: 11, xg: .79, g: g ? 1 : 0, t: 'P', on: 1 });
   }
   // 직접 프리킥
-  if (o.fkTaker && R() < .09 * f) {
+  if ((o.fkTaker || TR.deadball) && R() < .09 * f * (TR.deadball ? 1.5 : 1)) {
     st.shots++; const xg = rnd(.04, .09); st.xg += xg; st.npxg += xg;
-    const g = R() < xg * clamp(.6 + (A('fkAcc') + A('curve') - 120) * .02, .5, 2.6);
+    const g = R() < xg * clamp(.6 + (A('fkAcc') + A('curve') - 120) * .02, .5, 2.6) * (TR.deadball ? 1.4 : 1);
     const on = g || R() < .35; if (on) st.sot++; if (g) { goals++; st.xgot += .5; }
     shots.push({ x: rnd(30, 70), y: rnd(19, 27), xg: +xg.toFixed(2), g: g ? 1 : 0, t: 'F', on: on ? 1 : 0 });
   }
@@ -93,7 +94,7 @@ function playerMatch(p, o) {
   // --- 도움 ---
   const cre = role === 'W' || role === 'FB' ? (A('crossing') * .45 + A('dribbling') * .25 + A('vision') * .3) : (A('vision') * .5 + A('shortPass') * .35 + A('ballControl') * .15);
   const aq = Math.exp((cre - 70) * .016);
-  const ash = sh[2] * aq;
+  const ash = sh[2] * aq * (TR.maestro ? 1.15 : 1);
   let assists = 0; const othersOn = binom(others, f);
   for (let i = 0; i < othersOn; i++) if (R() < ash * 1.08) assists++;
   st.assists = assists;
@@ -112,7 +113,7 @@ function playerMatch(p, o) {
   st.dribAtt = poisson(rt[4] * f * Math.pow(A('dribbling') / 70, 2) * (1 + (p.skill - 3) * .12));
   st.dribOk = binom(st.dribAtt, clamp(.32 + ((A('dribbling') + A('agility') + A('balance')) / 3 - 62) * .011, .2, .82));
   st.duelA = poisson(rt[5] * f) + st.dribAtt;
-  const duelP = clamp(.42 + (A('strength') - 62) * .004 + (A('balance') - 62) * .002 + (['CB', 'FB', 'DM', 'CM'].includes(role) ? (A('standTackle') - 60) * .004 : (A('dribbling') - 60) * .003), .25, .75);
+  const duelP = clamp(.42 + (A('strength') - 62) * .004 + (A('balance') - 62) * .002 + (['CB', 'FB', 'DM', 'CM'].includes(role) ? (A('standTackle') - 60) * .004 : (A('dribbling') - 60) * .003) + (C.hasTrait && C.hasTrait(p, 'wall') ? .06 : 0), .25, .8);
   st.duelW = st.dribOk + binom(st.duelA - st.dribAtt, duelP);
   st.aerA = poisson(rt[6] * f * (1 + (p.height - 180) * .02));
   st.aerW = binom(st.aerA, clamp(.28 + (A('heading') - 60) * .006 + (A('jumping') - 60) * .005 + (A('strength') - 60) * .003 + (p.height - 180) * .009, .1, .88));
@@ -122,8 +123,8 @@ function playerMatch(p, o) {
   // --- 수비 ---
   const dq = (A('defAware') + A('standTackle') + A('interceptions')) / 3;
   const defF = (1.35 - poss) * clamp(dq / 65, .5, 1.5);
-  st.tackles = poisson(rt[10] * f * defF);
-  st.ints = poisson(rt[11] * f * defF * (A('interceptions') / 70));
+  st.tackles = poisson(rt[10] * f * defF * (TR.engine ? 1.3 : 1) * (TR.wall ? 1.15 : 1));
+  st.ints = poisson(rt[11] * f * defF * (A('interceptions') / 70) * (TR.engine ? 1.25 : 1) * (TR.wall ? 1.15 : 1));
   st.clear = poisson(rt[12] * f * (1.3 - poss) * (role === 'GK' ? 1 : (A('heading') + A('defAware')) / 140));
   st.blocks = poisson(rt[13] * f * (1.3 - poss));
   st.recov = poisson(rt[14] * f * (.7 + A('reactions') / 200));
@@ -419,9 +420,12 @@ async function userMatch(S, o, hooks) {
     const r = playerMatch(p, { adj: o.adj || (ss.breakout && ss.role === 'youth' ? 4 : 0), lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
     rec.gf = r.gf; rec.ga = r.ga; rec.st = r.st; rec.shots = r.shots; rec.played = true; rec.start = sel.start; rec.min = sel.minutes;
     // 결정적 순간
-    if (hooks && ss.momentsLeft > 0 && sel.minutes >= 25) {
+    // 결정적 순간: 유스·친선전·대승/대패 경기는 제외하고, 승부가 걸린 접전에서만
+    const close = Math.abs(rec.gf - rec.ga) <= 1;
+    const meaningful = o.kind !== 'Y' && o.stage !== '친선전' && close && ((o.imp || 0) >= 1 || o.ko || o.stage === '결승' || R() < .5);
+    if (hooks && meaningful && ss.momentsLeft > 0 && sel.minutes >= 25) {
       const remaining = ss.fx.length - ss.i + 1;
-      const chance = clamp(ss.momentsLeft / Math.max(4, remaining * .55) * (1 + (o.imp || 0) * .9), 0, .95);
+      const chance = clamp(ss.momentsLeft / Math.max(3, remaining * .3) * (1 + (o.imp || 0) * .9), 0, .95);
       if (o.stage === '결승' || R() < chance) {
         ss.momentsLeft--;
         const mc = C.makeMoment(S, rec, o);
@@ -435,6 +439,7 @@ async function userMatch(S, o, hooks) {
     }
     const res = rec.gf > rec.ga ? 1 : rec.gf < rec.ga ? -1 : 0;
     rec.rating = matchRating(p, rec.st, res);
+    if ((o.imp || 0) >= 2 && C.hasTrait && C.hasTrait(p, 'bigGame')) rec.rating = Math.min(10, +(rec.rating + .2).toFixed(1));
     if (rec.st.min >= 10) { rec.st.ratingSum = rec.rating; rec.st.rated = 1; }
     if (res > 0) rec.st.wins = 1; else if (res < 0) rec.st.losses = 1; else rec.st.draws = 1;
     if (rec.rating >= 8.3 || (rec.rating >= 7.9 && res > 0 && rec.st.goals + rec.st.assists >= 2)) { rec.st.motm = 1; rec.motm = true; }
@@ -458,7 +463,7 @@ async function userMatch(S, o, hooks) {
 function injuryRoll(S, rec, minutes) {
   const p = S.p, ss = S.ss;
   const it = C.INTENSITY[S.car.intensity || 'normal'][2] * (S.car.focus === 'care' ? .75 : 1);
-  const pr = .0068 * p.hid.inj * C.diff().inj * ({ low: .6, normal: 1, high: 1.4 }[C.cfg.injuries] || 1) * it * (p.age > 30 ? 1 + (p.age - 30) * .09 : 1) * (minutes / 90);
+  const pr = .0068 * (C.hasTrait && C.hasTrait(p, 'iron') ? .75 : 1) * p.hid.inj * C.diff().inj * ({ low: .6, normal: 1, high: 1.4 }[C.cfg.injuries] || 1) * it * (p.age > 30 ? 1 + (p.age - 30) * .09 : 1) * (minutes / 90);
   if (R() < pr) {
     const t = R();
     const days = t < .55 ? rint(6, 14) : t < .85 ? rint(15, 35) : t < .96 ? rint(36, 90) : rint(120, 260);

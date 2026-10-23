@@ -59,7 +59,10 @@ function buildWorld() {
   return w;
 }
 C.buildWorld = buildWorld;
-function pName(w, e) { return typeof e[0] === 'number' ? F.P[e[0]][1] : e[0]; }
+function pName(w, e) { return typeof e[0] === 'number' ? F.P[e[0]][1] : String(e[0]).split('#')[0]; }
+// 생성 선수 고유 ID (동명이인 구분)
+let UID = 0;
+const uid = n => n + '#' + (Date.now() % 1e6).toString(36) + (++UID).toString(36);
 C.pName = pName;
 
 // 베스트 11 전력 (4-3-3): GK1, CB2, 풀백2, 미드3, 공격3
@@ -95,7 +98,7 @@ function materialize(w, c) {
     const age = st ? rint(21, 31) : rint(18, 33);
     const o = clamp(Math.round(N(st ? c.str + .5 : c.str - 5, st ? 2.5 : 3.5)), 38, 92);
     const nat = genNat(c.nat);
-    return [genName(nat), pos, o, age, age < 24 ? o + rint(0, 6) : o, nat];
+    return [uid(genName(nat)), pos, o, age, age < 24 ? o + rint(0, 6) : o, nat];
   });
   c.lite = false; c.str = xiStrength(c.sq);
 }
@@ -139,7 +142,7 @@ function refillSquad(c, w) {
     const age = young ? rint(17, 19) : rint(20, 30);
     const o = clamp(Math.round(young ? N(lv - 13, 3.5) : N(lv - 2.5, 3)), 42, 92);
     const pot = young ? clamp(Math.round(N(lv + 1, 5)), o + 2, 95) : o + (age < 24 ? rint(0, 5) : 0);
-    c.sq.push([genName(nat), pos, o, age, pot, nat]);
+    c.sq.push([uid(genName(nat)), pos, o, age, pot, nat]);
   };
   for (const pos in MINPOS) while ((cnt[pos] || 0) < MINPOS[pos]) { sign(pos, c.pres, R() < .3); cnt[pos] = (cnt[pos] || 0) + 1; }
   // 전력이 목표보다 낮으면 보강

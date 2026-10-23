@@ -220,6 +220,15 @@ function pushValue(S) {
 }
 GM.pushValue = pushValue;
 // 리뷰 후 다음 시즌
+// 재계약 요청 (이적시장마다 1회)
+GM.askRenewal = function (S) {
+  if (S.phase !== 'window' || S.renY === S.w.year || !['first'].includes(S.car.status)) return null;
+  S.renY = S.w.year;
+  const r = C.askRenewal(S);
+  if (r.ok) { S.stance = Object.assign({}, S.stance, { extend: { wage: r.wage, years: r.years, asked: true } }); }
+  else S.car.trust = Math.max(0, S.car.trust - 3);
+  return r;
+};
 // 에이전트 역제의
 GM.requestMove = function (S, mode) {
   if (S.phase !== 'window' || S.reqY === S.w.year) return null;

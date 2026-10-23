@@ -17,32 +17,39 @@ U.pages.shop = function () {
     h('div', null, h('div', { class: 'lbl' }, '보유 재산'), money),
     h('div', { class: 'mute', style: { fontSize: '12px', textAlign: 'right' } }, `${s.w.year}/${String(s.w.year + 1).slice(2)} 시즌 기준 · 시즌이 바뀌면 구매 한도가 초기화됩니다`, h('br'), `누적 지출 ${C.fmtEUR((s.stats && s.stats.spent) || 0)}`))));
   const after = (r, el) => { if (!r) return; if (r.ok === false && !r.price) { toast(r.msg); return; } toast((r.ok ? '' : '실패 · ') + r.msg); if (r.ok) confetti(30); U.save(); U.setTab('shop'); };
-  // 1:1 개인 코치
-  const coach = SH.item('coach');
+  // 1:1 개인 코치 (최대 3개 동시)
+  const coach = SH.COACH;
   const w = C.POSW[s.p.pos];
   const keys = C.AK.filter(k => s.p.pos === 'GK' || C.AGROUP[k] !== 'GK').sort((a, b) => ((w[b] ? 1 : 0) - (w[a] ? 1 : 0)) || s.p.a[a] - s.p.a[b]);
-  st.coachK = keys.includes(st.coachK) ? st.coachK : keys[0];
+  st.coachKs = (st.coachKs || []).filter(k => keys.includes(k));
+  if (!st.coachKs.length) st.coachKs = keys.slice(0, 3);
   const left = coach.limit - (stt.bought.coach || 0);
+  const toggle = k => { const i = st.coachKs.indexOf(k); if (i >= 0) st.coachKs.splice(i, 1); else { if (st.coachKs.length >= 3) st.coachKs.shift(); st.coachKs.push(k); } U.setTab('shop'); };
   const list = h('div', { class: 'attrpick' }, ...keys.map(k => {
     const v = Math.round(s.p.a[k]);
-    return h('button', { class: (st.coachK === k ? 'on ' : '') + (w[k] ? 'key' : ''), onclick: () => { st.coachK = k; U.setTab('shop'); } },
+    return h('button', { class: (st.coachKs.includes(k) ? 'on ' : '') + (w[k] ? 'key' : ''), onclick: () => toggle(k) },
       h('span', null, C.ALABEL[k]), h('b', { style: { color: U.barCol ? U.barCol(v) : null } }, v));
   }));
-  const price = SH.coachPrice(s, st.coachK), err = SH.check(s, coach, st.coachK);
+  const price = SH.coachPrice(s, st.coachKs), err = SH.check(s, coach, st.coachKs);
   root.append(h('div', { class: 'sec' }, h('h3', null, '1:1 개인 코치', h('span', { class: 'chip' }, `이번 시즌 ${Math.max(0, left)}회 남음`)),
-    h('div', { class: 'sub' }, '올리고 싶은 능력치를 직접 고릅니다. 테두리가 있는 것은 포지션 핵심 능력치입니다. 어릴수록, 낮을수록 많이 오릅니다.'),
+    h('div', { class: 'sub' }, '능력치를 최대 3개까지 골라 한 번에 지도받습니다. 3개를 고르면 20% 묶음 할인. 테두리가 있는 것은 포지션 핵심 능력치입니다.'),
     h('div', { class: 'in', style: { display: 'grid', gap: '12px' } }, list,
-      h('div', { class: 'buyrow' }, h('div', null, h('b', null, `${C.ALABEL[st.coachK]} 집중 지도`), h('div', { class: 'mute', style: { fontSize: '12px' } }, `현재 ${Math.round(s.p.a[st.coachK])}`)),
-        h('button', { class: 'btn gold', disabled: err ? true : null, onclick: () => after(SH.buy(s, 'coach', st.coachK)) }, err ? `${err} · ${C.fmtEUR(price)}` : `${C.fmtEUR(price)} 결제`)))));
-  // 나머지 상품
-  const cats = {};
-  for (const it of SH.ITEMS) if (it.id !== 'coach') (cats[it.cat] = cats[it.cat] || []).push(it);
-  for (const cat in cats) {
-    root.append(h('div', { class: 'sec' }, h('h3', null, cat), h('div', { class: 'in shopgrid' }, ...cats[cat].map(it => {
+      h('div', { class: 'buyrow' }, h('div', null, h('b', null, st.coachKs.map(k => C.ALABEL[k]).join(' · ') || '능력치를 고르세요'), h('div', { class: 'mute', style: { fontSize: '12px' } }, `${st.coachKs.length}/3 선택 · 어릴수록, 낮은 능력치일수록 많이 오릅니다`)),
+        h('button', { class: 'btn gold', disabled: err ? true : null, onclick: () => after(SH.buy(s, 'coach', st.coachKs.slice())) }, err ? `${err}${st.coachKs.length ? ' · ' + C.fmtEUR(price) : ''}` : `${C.fmtEUR(price)} 결제`)))));
+  // 보유 특성
+  const tr = s.p.traits || [];
+  if (tr.length) root.append(h('div', { class: 'sec' }, h('h3', null, '보유 플레이 특성'), h('div', { class: 'in chg' }, ...tr.map(t => h('span', { class: 'chip gold', title: SH.TRAITS[t][1] }, '★ ' + SH.TRAITS[t][0])))));
+  // 이번 시즌 진열 (시즌마다 바뀜)
+  const items = SH.stockItems(s), cats = {};
+  for (const it of items) (cats[it.cat] = cats[it.cat] || []).push(it);
+  root.append(h('div', { class: 'mute', style: { fontSize: '12px', padding: '0 4px' } }, '진열 상품은 시즌마다 바뀝니다. 특가 상품은 30% 할인, 한정 상품은 가끔만 들어옵니다.'));
+  const order = Object.keys(cats).sort((a, b) => (b.startsWith('한정') - a.startsWith('한정')));
+  for (const cat of order) {
+    root.append(h('div', { class: 'sec' + (cat.startsWith('한정') ? ' limited' : '') }, h('h3', null, cat), h('div', { class: 'in shopgrid' }, ...cats[cat].map(it => {
       const e = SH.check(s, it), pr = SH.priceOf(s, it);
-      const used = stt.career[it.id] || 0;
+      const used = stt.career[it.id] || 0, sale = stt.stock.sale[it.id];
       return h('div', { class: 'item' + (e && e !== '재산 부족' ? ' dim' : '') },
-        h('b', null, it.name), h('span', { class: 'mute' }, it.desc),
+        h('b', null, it.name, sale ? h('span', { class: 'chip bad', style: { marginLeft: '6px' } }, '특가 −30%') : null), h('span', { class: 'mute' }, it.desc),
         it.career ? h('span', { class: 'mute', style: { fontSize: '11px' } }, `커리어 ${used}/${it.career}회`) : null,
         h('button', { class: 'btn sm' + (e ? ' ghost' : ''), disabled: e ? true : null, onclick: () => after(SH.buy(s, it.id)) }, e ? `${e}` + (e === '재산 부족' ? ` · ${C.fmtEUR(pr)}` : '') : C.fmtEUR(pr)));
     }))));

@@ -94,6 +94,17 @@ const GOFF = {
   GK: { PAC: -30, SHO: -40, PAS: -24, DRI: -28, DEF: -36, PHY: -20, GK: 0 }
 };
 
+// ---------- FC27 포지션 프로필 ----------
+// 같은 포지션·같은 종합 능력치의 실제 선수들 평균 → 성장할 때 이 모양을 향해 간다
+function profileAt(pos, ovr) {
+  const P = (G.TC_PROF || {})[pos]; if (!P) return null;
+  let i = 0; while (i < P.length - 2 && ovr > P[i + 1][0]) i++;
+  const a = P[i], b = P[i + 1], t = (ovr - a[0]) / (b[0] - a[0]);
+  const o = {}; AK.forEach((k, j) => { o[k] = clamp(a[j + 1] + (b[j + 1] - a[j + 1]) * t, 5, 99); });
+  return o;
+}
+C.profileAt = profileAt;
+
 // ---------- 선수 생성 ----------
 function newPlayer(opt) {
   const pos = opt.pos, sk = styleKey(pos);
@@ -123,6 +134,9 @@ function newPlayer(opt) {
     if (k === 'composure' || k === 'reactions') o -= 4; // 어린 선수는 멘탈이 덜 여묾
     apt[k] = o;
   }
+  // 실제 FC27 선수 분포와 섞는다 (포지션별 강·약점 모양)
+  const pf = profileAt(pos, 58);
+  if (pf) { const pm = AK.reduce((x, k) => x + (w[k] ? pf[k] * w[k] : 0), 0) / AK.reduce((x, k) => x + (w[k] || 0), 0); for (const k of AK) apt[k] = apt[k] * .45 + (pf[k] - pm) * .55; }
   const target = clamp(Math.round(50 + 4.2 * T + N(0, 2.5)), 42, 65);
   let lv = target;
   for (let i = 0; i < 30; i++) { for (const k of AK) p.a[k] = clamp(lv + apt[k], 8, 99); const o = posOvr(p.a, pos); lv += (target - o) * .9; if (Math.abs(target - o) < .05) break; }
@@ -147,10 +161,10 @@ function applyOvrDelta(p, d, focus, posOverride) {
     if (pos === 'GK' && AGROUP[k] !== 'GK' && k !== 'reactions') m = .15;
     mix[k] = m;
   }
-  // 뒤처진 능력치 따라잡기: 포지션 평균보다 낮을수록 가중
-  let ws = 0, wn = 0; for (const k of AK) if (w[k]) { ws += p.a[k] * w[k]; wn += w[k]; }
-  const avg = wn ? ws / wn : 60;
-  for (const k of AK) { if (mix[k] < .1) continue; const lag = clamp((avg - p.a[k]) / 14, 0, 1.4); mix[k] *= 1 + lag * (w[k] ? .9 : .5); }
+  // 뒤처진 능력치 따라잡기: 같은 수준 실제 선수(FC27) 평균보다 낮을수록 더 오르고, 높을수록 덜 오른다
+  const tgt = d > 0 ? profileAt(pos, ovrOf(p, pos) + d) : null;
+  if (tgt) for (const k of AK) { if (mix[k] < .05) continue; const gap = tgt[k] - p.a[k]; mix[k] *= clamp(1 + gap / 9, .3, 3.2); if (!w[k] && gap > 6) mix[k] += Math.min(1.2, gap / 25); }
+  else { let ws = 0, wn = 0; for (const k of AK) if (w[k]) { ws += p.a[k] * w[k]; wn += w[k]; } const avg = wn ? ws / wn : 60; for (const k of AK) { if (mix[k] < .1) continue; const lag = clamp((avg - p.a[k]) / 14, 0, 1.4); mix[k] *= 1 + lag * (w[k] ? .9 : .5); } }
   for (const k of AK) sw += (w[k] || 0) * mix[k];
   for (const k of AK) {
     let inc = d * mix[k] / sw * N(1, .25);
@@ -239,6 +253,8 @@ function seasonGrowth(p, ctx) {
       bump(p, k, -amt * rnd(.6, 1.4));
     }
   }
+  // 실제 선수 평균보다 크게 뒤처진 능력치는 훈련·경기 경험으로 조금씩 따라온다 (예: 공격수의 헤더)
+  { const tg = profileAt(p.pos, ovrOf(p)); if (tg) { const yf = age <= 23 ? 1 : age <= 28 ? .7 : .35; for (const k of AK) { if (AGROUP[k] === 'GK' && p.pos !== 'GK') continue; const gap = tg[k] - p.a[k]; if (gap > 8) bump(p, k, Math.min(3.2, gap * .09) * yf * rnd(.6, 1.3)); } } }
   // 정신 능력치는 경험으로 소폭 상승
   if (age <= 30) { bump(p, 'composure', rnd(.2, 1.2) * clamp(ctx.minShare * 1.5, .3, 1.2)); bump(p, 'reactions', rnd(0, .7)); }
   // GK가 아닌 선수의 GK 능력치는 고정에 가깝게

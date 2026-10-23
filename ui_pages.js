@@ -338,7 +338,7 @@ U.pages.attrs = function () {
   const isGK = p.pos === 'GK';
   const face = isGK ? C.GKGROUPS.map(([k, l, a]) => [k, l, Math.round(p.a[a])]) : C.GROUPS.map(([k, l]) => [k, l, C.faceStats(p.a)[k]]);
   root.append(h('div', { class: 'sec' }, h('h3', null, h('span', null, `${p.name} · ${C.POSKO[p.pos]}`), h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, 'OVR'), ovrb(o))),
-    h('div', { class: 'sub' }, `${C.STYLES[C.styleKey(p.pos)][p.style] ? C.STYLES[C.styleKey(p.pos)][p.style][0] + ' · ' : ''}약발 ${'★'.repeat(p.weak)} · 개인기 ${'★'.repeat(p.skill)} · 키 ${p.height}cm`),
+    h('div', { class: 'sub' }, `${C.STYLES[C.styleKey(p.pos)][p.style] ? C.STYLES[C.styleKey(p.pos)][p.style][0] + ' · ' : ''}약발 ${'★'.repeat(p.weak)} · 개인기 ${'★'.repeat(p.skill)} · 키 ${p.height}cm${(p.traits || []).length && C.shop ? ' · 특성: ' + p.traits.map(t => C.shop.TRAITS[t][0]).join(', ') : ''}`),
     h('div', { class: 'in' }, h('div', { class: 'face' }, ...face.map(([k, l, v]) => h('div', null, h('div', { class: 'lbl' }, k), h('div', { class: 'v', style: { color: U.barCol(v) } }, v), h('div', { class: 'mute', style: { fontSize: '11px' } }, l)))))));
   const mods = p.mods || [];
   root.append(h('div', { class: 'two' },

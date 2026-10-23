@@ -15,9 +15,16 @@ function liteName(c, i, y) {
 }
 const LITEPOS = ['ST', 'ST', 'LW', 'RW', 'CAM', 'CM', 'CM', 'CDM', 'LB', 'RB', 'CB', 'CB', 'GK', 'ST', 'CM', 'RW'];
 function squadOf(w, c, y) {
-  if (!c.lite && c.sq && c.sq.length) return c.sq.map(e => ({ n: C.pName(w, e), pos: e[1], ovr: e[2] }));
-  return LITEPOS.map((pos, i) => { const r = C.seeded(c.id + '|o|' + i + '|' + y); return { n: liteName(c, i, y), pos, ovr: c.str + (i < 12 ? 2 : -5) + (r() - .5) * 8 }; });
+  if (!c.lite && c.sq && c.sq.length) return c.sq.map(e => ({ id: String(e[0]), n: C.pName(w, e), pos: e[1], ovr: e[2], age: e[3], nat: e[5] }));
+  const used = new Set();
+  return LITEPOS.map((pos, i) => {
+    const r = C.seeded(c.id + '|o|' + i + '|' + y);
+    let n = liteName(c, i, y), k = 0; while (used.has(n) && k < 6) n = liteName(c, i + 40 + k++ * 17, y); used.add(n);
+    const age = 19 + Math.floor(C.seeded(c.id + '|a|' + i + '|' + Math.floor((y + i) / 4))() * 14) + ((y + i) % 4);
+    return { n, pos, ovr: c.str + (i < 12 ? 2 : -5) + (r() - .5) * 8, age, nat: c.nat };
+  });
 }
+C.squadOf = squadOf;
 const GW = { ST: 1, W: .5, AM: .42, CM: .17, DM: .07, FB: .06, CB: .09, GK: 0 };
 const AW = { ST: .42, W: .7, AM: .8, CM: .45, DM: .2, FB: .34, CB: .07, GK: .01 };
 function distribute(n, ws) {
@@ -38,7 +45,22 @@ function leagueLeaders(S, lgId, rows, me) {
     const play = sq.map((x, i) => Math.exp((x.ovr - top) * .1) * (i < 11 ? 1 : .45));
     const g = distribute(gf, sq.map((x, i) => (GW[C.ROLE[x.pos]] || .1) * play[i] * (1 + N(0, .25) ** 2)));
     const a = distribute(ga, sq.map((x, i) => (AW[C.ROLE[x.pos]] || .1) * play[i] * (1 + N(0, .25) ** 2)));
-    sq.forEach((x, i) => { if (g[i]) sc.push([x.n, r.id, g[i], a[i]]); if (a[i]) as.push([x.n, r.id, a[i], g[i]]); });
+    sq.forEach((x, i) => { if (g[i]) sc.push([x.n, r.id, g[i], a[i], 0, x.id || '']); if (a[i]) as.push([x.n, r.id, a[i], g[i], 0, x.id || '']); });
+    // 주요 선수 시즌 기록 보관 (명단이 있는 구단, OVR 73 이상 또는 득점·도움 상위)
+    if (!c.lite) {
+      const ppg = r.p ? r.pts / r.p : 1.4, tier = (w.lg[lgId] || {}).tier || 1;
+      const gk = (c.sq || []).filter(e => e[1] === 'GK').sort((a, b) => b[2] - a[2])[0];
+      const recs = sq.map((x, i) => ({ x, i, g: g[i], a: a[i] }));
+      if (gk) recs.push({ x: { id: String(gk[0]), n: C.pName(w, gk), pos: 'GK', ovr: gk[2], age: gk[3], nat: gk[5] }, i: 0, g: 0, a: 0 });
+      for (const q of recs) {
+        const x = q.x; if (!x.id || ((x.ovr < 75 || tier > 1) && q.g < 12 && q.a < 9)) continue;
+        if (me && me.club === r.id && x.n === me.name) continue;
+        const apps = Math.max(1, Math.round(r.p * (q.i < 11 ? C.rnd(.72, .97) : C.rnd(.25, .6))));
+        const rt = clamp(6.45 + (x.ovr - top) * .025 + (ppg - 1.4) * .25 + (q.g * .6 + q.a * .4) / apps * .9 + N(0, .14), 5.8, 8.6);
+        const P = (w.ps = w.ps || {})[x.id] = w.ps[x.id] || { n: x.n, nat: x.nat, pos: x.pos, h: [] };
+        P.pos = x.pos; P.h.push([y - 2000, r.id, apps, q.g, q.a, Math.round(rt * 100), x.ovr, x.age]);
+      }
+    }
   }
   if (me && rows.some(r => r.id === me.club)) { sc.push([me.name, me.club, me.g, me.a, 1]); as.push([me.name, me.club, me.a, me.g, 1]); }
   const by = (x, z) => z[2] - x[2] || z[3] - x[3] || R() - .5;

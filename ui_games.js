@@ -37,8 +37,6 @@ function goalScene(mc) {
   let net = '';
   for (let x = GX; x <= GX + GW; x += 12) net += `<line x1="${x}" y1="${GY}" x2="${x}" y2="${GY + GH}"/>`;
   for (let y = GY; y <= GY + GH; y += 11.5) net += `<line x1="${GX}" y1="${y}" x2="${GX + GW}" y2="${y}"/>`;
-  let wall = '';
-  if (mc.wall) for (let i = 0; i < 4; i++) { const x = 160 + i * 20; wall += `<g transform="translate(${x},${GY + GH + 34})" opacity=".92"><rect x="-8" y="-46" width="16" height="30" rx="6" fill="#2a3242"/><path d="M-6 -16 L-6 0 M6 -16 L6 0" stroke="#2a3242" stroke-width="6" stroke-linecap="round"/><circle cx="0" cy="-52" r="6.5" fill="#c9926c"/></g>`; }
   const kc = mc.kc || '#e5484d';
   const marks = mc.opts.map((z, i) => { const [x, y] = zxy(z); return `<g class="zm" data-i="${i}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="15" fill="rgba(242,193,78,.16)" stroke="#f2c14e" stroke-width="1.6" stroke-dasharray="4 3"/><text x="${x}" y="${y + 5}" font-size="15" font-weight="800" text-anchor="middle" fill="#f2c14e" font-family="Barlow Condensed, sans-serif">${i + 1}</text></g>`; }).join('');
   return svg(`<svg class="goalsvg" viewBox="0 0 400 230" role="img" aria-label="골문">
@@ -51,8 +49,6 @@ function goalScene(mc) {
     <g stroke="rgba(255,255,255,.2)" stroke-width=".8" class="net">${net}</g>
     <rect x="${GX - 4}" y="${GY - 4}" width="${GW + 8}" height="4" fill="#f4f6f8"/><rect x="${GX - 4}" y="${GY - 4}" width="4" height="${GH + 4}" fill="#f4f6f8"/><rect x="${GX + GW}" y="${GY - 4}" width="4" height="${GH + 4}" fill="#f4f6f8"/>
     <line x1="0" y1="${GY + GH}" x2="400" y2="${GY + GH}" stroke="#f4f6f8" stroke-width="1.5"/>
-    <g transform="translate(200,${GY + GH}) scale(1.05)">${keeperSVG(kc, '#1b1e24')}</g>
-    ${wall}
     <g class="marks">${marks}</g>
     <g class="fx"></g>
     <circle class="ball" cx="200" cy="216" r="7" fill="#fff" stroke="#111" stroke-width="1.2" style="transition:transform .55s cubic-bezier(.25,.6,.3,1);transform-box:fill-box;transform-origin:center"/>
