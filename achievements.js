@@ -86,11 +86,11 @@ const L = [
   ['penfail3', 'b', '11미터의 공포', '페널티킥 결정적 순간 통산 3회 실패', 1],
   ['badluck', 'b', '불운의 아이콘', '한 시즌 이벤트에서 나쁜 결과 3번', 1],
   // 재산·상점
-  ['shop1', 'b', '첫 쇼핑', '상점에서 처음 구매'],
-  ['spender', 's', '큰손', '상점에서 누적 1,000만 유로 사용'],
+  ['shop1', 'b', '첫 투자', '휴식기 투자를 처음 사용'],
+  ['trait1', 's', '나만의 무기', '플레이 특성 획득'],
+  ['trait3', 'g', '완성형 선수', '플레이 특성 3개 보유'],
+  ['spender', 's', '큰손', '투자에 누적 1,000만 유로 사용'],
   ['rich', 'g', '재벌', '재산 7,000만 유로 달성'],
-  ['scandal', 'b', '과속 딱지', '슈퍼카 구설수에 오르기', 1],
-  ['house', 'b', '내 집 마련', '바닷가 저택 구입'],
   // 메타
   ['ach20', 's', '도전 정신', '도전과제 20개 달성'],
   ['ach50', 'g', '완벽주의자', '도전과제 50개 달성']
@@ -242,8 +242,8 @@ A.fire = function (S, kind, x) {
     else if (kind === 'shop') {
       unlock(S, 'shop1');
       if (stats(S).spent >= 1e7) unlock(S, 'spender');
-      if (x.id === 'house') unlock(S, 'house');
-      if (x.id === 'car' && x.scandal) unlock(S, 'scandal');
+      if (x.trait) unlock(S, 'trait1');
+      if ((S.p.traits || []).length >= 3) unlock(S, 'trait3');
     }
   } catch (e) { console.error('ach', e); }
 };

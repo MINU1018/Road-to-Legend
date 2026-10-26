@@ -263,7 +263,11 @@ function seasonGrowth(p, ctx) {
   let drift = 0;
   if (ctx.minShare != null) {
     const youthBoost = age <= 21 ? 1.25 : age <= 25 ? 1 : .55;
-    drift = (clamp(((ctx.rating || 6.6) - 6.75) * 2.6, -2.2, 3) + clamp((ctx.minShare - .35) * 2.2, -1, 1.4)) * youthBoost + N(0, 1.1);
+    // 기대 평점(자기 능력치·팀 수준 기준) 대비 활약으로 판단 → 잘나가는 선수도 계속 폭주하지 않고, 부진한 선수도 회복 여지가 있다
+    const expR = 6.72 + clamp(o0 - (ctx.clubLv || 70), -15, 15) * .03; // 팀 내 위치 대비 기대 평점
+    drift = (clamp(((ctx.rating || 6.6) - expR) * 2.4, -1.8, 2.2) + clamp((ctx.minShare - .4) * 1.6, -.7, 1)) * youthBoost + N(0, 1.1) - .3;
+    if (h.pot - o0 > 14) drift -= (h.pot - o0 - 14) * .25; // 성장 한계가 지나치게 앞서가지 않도록
+
     if (ctx.intensity === 'hard') drift += .35; if (ctx.intensity === 'light') drift -= .25;
     h.pot = clamp(h.pot + drift, ovrOf(p) - 1, 99);
   }

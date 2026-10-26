@@ -869,16 +869,26 @@ function computeAwards(S) {
   const awards = [];
   const role = C.ROLE[p.pos];
   if (lg && ss.status !== 'youth') {
-    const leader = Math.round(N(big ? 24 : lg.tier === 1 ? 20 : 19, 3.5));
-    if (L.goals >= Math.max(10, leader)) awards.push({ t: `${lg.name} 득점왕`, k: 'boot', v: `${L.goals}골` });
-    const aLead = Math.round(N(big ? 12 : 11, 2.2));
-    if (L.assists >= Math.max(7, aLead)) awards.push({ t: `${lg.name} 도움왕`, k: 'assist', v: `${L.assists}도움` });
-    const full = apps >= (lgN - 1) * 2 * .6;
-    if (full && lr >= N(big ? 7.42 : 7.32, .1) + (role === 'GK' ? .05 : 0)) awards.push({ t: `${lg.name} 올해의 선수`, k: 'mvp' });
-    else if (full && p.age <= 22 && lr >= N(7.08, .12)) awards.push({ t: `${lg.name} 영플레이어`, k: 'young' });
-    if (apps >= 20 && lr >= N(7.28, .08)) awards.push({ t: `${lg.name} 올해의 팀`, k: 'tots' });
+    // 개인상은 같은 리그 경쟁자(시뮬된 득점·도움·평점)와 비교해 정한다
+    const A = w.arch && w.arch[ss.label] && w.arch[ss.label].lg[lg.id];
+    const others = (list) => (list || []).filter(x => !x[4]);
+    const aiG = others(A && A.sc)[0], aiA = others(A && A.as)[0];
+    const bestG = aiG ? aiG[2] : Math.round(N(big ? 24 : 19, 3.5)), bestA = aiA ? aiA[2] : Math.round(N(11, 2.2));
+    if (L.goals >= 8 && (L.goals > bestG || (L.goals === bestG && R() < .5))) awards.push({ t: `${lg.name} 득점왕`, k: 'boot', v: `${L.goals}골` });
+    if (L.assists >= 6 && (L.assists > bestA || (L.assists === bestA && R() < .5))) awards.push({ t: `${lg.name} 도움왕`, k: 'assist', v: `${L.assists}도움` });
+    const rounds = Math.max(10, (ss.rounds ? ss.rounds.length : (lgN - 1) * 2));
+    const full = apps >= rounds * .6;
+    const best = (A && A.best) || [];
+    const myR = lr + N(0, .06) + (L.goals + L.assists) * .004;
+    const rankR = best.filter(x => x[2] > myR).length + 1;
+    const youngBest = best.filter(x => x[5] && x[5] <= 22)[0];
+    if (full && rankR === 1 && (L.goals + L.assists >= 8 || role === 'GK' || ['CB', 'DM'].includes(role))) awards.push({ t: `${lg.name} 올해의 선수`, k: 'mvp' });
+    else if (full && p.age <= 22 && (!youngBest || myR > youngBest[2])) awards.push({ t: `${lg.name} 영플레이어`, k: 'young' });
+    if (apps >= rounds * .5 && rankR <= 11) awards.push({ t: `${lg.name} 올해의 팀`, k: 'tots' });
     if (role === 'GK' && L.cs >= Math.max(12, Math.round(N(lgN * .75, 2)))) awards.push({ t: `${lg.name} 골든글러브`, k: 'glove', v: `클린시트 ${L.cs}` });
-    if (C.avgRating(tot) >= N(7.05, .14) && tot.apps >= 25) awards.push({ t: `${w.clubs[ss.club].name} 올해의 선수`, k: 'club' });
+    // 구단 올해의 선수: 동료들의 시즌 평점 추정치(팀 내 순위)와 비교
+    const tr = ss.tr || (C.teamRank ? C.teamRank(S, ss) : null);
+    if (tot.apps >= 25 && tr && tr.rank === 1 && R() < clamp(.55 + (tr.myR - (tr.top[1] ? tr.top[1].r : tr.myR)) * 2.5, .25, .95)) awards.push({ t: `${w.clubs[ss.club].name} 올해의 선수`, k: 'club' });
     // 유러피언 골든슈
     if (C.confOf(lg.nation) === 'UEFA' && lg.tier === 1) { const pts = L.goals * (big ? 2 : 1.5); if (pts >= N(58, 5)) awards.push({ t: '유러피언 골든슈', k: 'goldshoe', v: `${L.goals}골` }); }
   }
@@ -916,7 +926,7 @@ function ballonDor(S) {
     const at = ['ST', 'LW', 'RW', 'CAM', 'LM', 'RM'].includes(e[1]);
     const g = at ? Math.max(0, (e[2] - 75) * 1.9 + N(0, 7)) : ['CM', 'CDM'].includes(e[1]) ? Math.max(0, (e[2] - 75) * .9 + N(0, 4)) : e[1] === 'GK' ? 8 : Math.max(0, N(4, 3));
     const tp = (champs.has(c.id) && w.lg[c.lg].tier === 1 ? 3 : 0) + (ucl === c.id ? 6 : 0);
-    return { n: C.pName(w, e), pid: String(e[0]), club: c.name, cid: c.id, ovr: e[2], age: e[3], s: (e[2] * .3 + (rr - 6.8) * 10 + g * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) + N(0, 1.6) };
+    return { n: C.pName(w, e), pid: String(e[0]), club: c.name, cid: c.id, ovr: e[2], age: e[3], s: (e[2] * .3 + (rr - 6.8) * 10 + g * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) + N(0, 2.2) };
   }).sort((a, b) => b.s - a.s).slice(0, 60);
   // 같은 팀 선수끼리는 표가 갈린다
   const seen = {}; list.forEach(x => { const k = seen[x.cid] = (seen[x.cid] || 0) + 1; if (k > 1) x.s -= (k - 1) * 2.4; });

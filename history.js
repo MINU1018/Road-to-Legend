@@ -35,7 +35,7 @@ function distribute(n, ws) {
 }
 // 리그 하나의 득점·도움 순위 생성
 function leagueLeaders(S, lgId, rows, me) {
-  const w = S.w, y = S.ss.year, sc = [], as = [];
+  const w = S.w, y = S.ss.year, sc = [], as = [], best = [];
   for (const r of rows) {
     const c = w.clubs[r.id]; if (!c) continue;
     const sq = squadOf(w, c, y).filter(x => x.pos !== 'GK').sort((a, b) => b.ovr - a.ovr).slice(0, 16);
@@ -46,6 +46,11 @@ function leagueLeaders(S, lgId, rows, me) {
     const g = distribute(gf, sq.map((x, i) => (GW[C.ROLE[x.pos]] || .1) * play[i] * (1 + N(0, .25) ** 2)));
     const a = distribute(ga, sq.map((x, i) => (AW[C.ROLE[x.pos]] || .1) * play[i] * (1 + N(0, .25) ** 2)));
     sq.forEach((x, i) => { if (g[i]) sc.push([x.n, r.id, g[i], a[i], 0, x.id || '']); if (a[i]) as.push([x.n, r.id, a[i], g[i], 0, x.id || '']); });
+    // 리그 평점 순위용: 주전급 선수 평점 추정 (사용자 평점 모델과 같은 기준)
+    { const ppg0 = r.p ? r.pts / r.p : 1.4;
+      sq.forEach((x, i) => { if (i >= 11) return; const apps = Math.round(r.p * C.rnd(.72, .97)); if (me && me.club === r.id && x.n === me.name) return;
+        const rt = clamp(6.62 + (x.ovr - 72) * .035 + (ppg0 - 1.4) * .18 + ((g[i] * .6 + a[i] * .4) / Math.max(1, apps)) * .7 + N(0, .16), 5.9, 8.4);
+        best.push([x.n, r.id, +rt.toFixed(2), x.pos, x.id || '', x.age || 0, apps]); }); }
     // 주요 선수 시즌 기록 보관 (명단이 있는 구단, OVR 73 이상 또는 득점·도움 상위)
     if (!c.lite) {
       const ppg = r.p ? r.pts / r.p : 1.4, tier = (w.lg[lgId] || {}).tier || 1;
@@ -56,7 +61,7 @@ function leagueLeaders(S, lgId, rows, me) {
         const x = q.x; if (!x.id || ((x.ovr < 75 || tier > 1) && q.g < 12 && q.a < 9)) continue;
         if (me && me.club === r.id && x.n === me.name) continue;
         const apps = Math.max(1, Math.round(r.p * (q.i < 11 ? C.rnd(.72, .97) : C.rnd(.25, .6))));
-        const rt = clamp(6.45 + (x.ovr - top) * .025 + (ppg - 1.4) * .25 + (q.g * .6 + q.a * .4) / apps * .9 + N(0, .14), 5.8, 8.6);
+        const rt = clamp(6.62 + (x.ovr - 72) * .035 + (ppg - 1.4) * .18 + (q.g * .6 + q.a * .4) / apps * .7 + N(0, .16), 5.8, 8.4);
         const P = (w.ps = w.ps || {})[x.id] = w.ps[x.id] || { n: x.n, nat: x.nat, pos: x.pos, h: [] };
         P.pos = x.pos; P.h.push([y - 2000, r.id, apps, q.g, q.a, Math.round(rt * 100), x.ovr, x.age]);
       }
@@ -64,7 +69,7 @@ function leagueLeaders(S, lgId, rows, me) {
   }
   if (me && rows.some(r => r.id === me.club)) { sc.push([me.name, me.club, me.g, me.a, 1]); as.push([me.name, me.club, me.a, me.g, 1]); }
   const by = (x, z) => z[2] - x[2] || z[3] - x[3] || R() - .5;
-  return { sc: sc.sort(by).slice(0, 15), as: as.sort(by).slice(0, 15) };
+  return { sc: sc.sort(by).slice(0, 15), as: as.sort(by).slice(0, 15), best: best.sort((x, z) => z[2] - x[2]).slice(0, 25) };
 }
 
 // ---------- 각국 컵 ----------
@@ -309,6 +314,7 @@ function archiveSeason(S, tables) {
       const lg = w.lg[id], L = a.lg[id];
       const avg = lg ? lg.clubs.reduce((x, c) => x + (w.clubs[c] ? w.clubs[c].str : 60), 0) / Math.max(1, lg.clubs.length) : 0;
       const major = lg && lg.tier === 1 && (avg >= 66 || lg.nation === p.nat);
+      delete L.best;
       if (major) { L.sc = (L.sc || []).slice(0, 10); L.as = (L.as || []).slice(0, 10); }
       else a.lg[id] = { n: L.n, t: L.t.slice(0, lg && lg.tier === 1 ? 4 : 1), sc: (L.sc || []).slice(0, lg && lg.tier === 1 ? 3 : 1), as: (L.as || []).slice(0, lg && lg.tier === 1 ? 3 : 0), slim: 1 };
     }

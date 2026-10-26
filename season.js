@@ -52,7 +52,8 @@ function playerMatch(p, o) {
   const shots = [];
   const TR = {}; for (const t of (p.traits || [])) TR[t] = 1;
   // --- 슈팅 ---
-  const attQ = role === 'GK' ? 0 : Math.exp(((A('attPos') + A('finishing')) / 2 - 72) * .03);
+  const qa = (A('attPos') + A('finishing')) / 2, qa2 = qa > 84 ? 84 + (qa - 84) * .45 : qa; // 최상위 구간은 효과 체감
+  const attQ = role === 'GK' ? 0 : Math.exp((qa2 - 72) * .028);
   const share = sh[0] * attQ;
   const myXGexp = Math.pow(o.lamT, .8) * Math.pow(1.36, .2) * share * f; // 강팀 소속이어도 개인 몫은 완만하게 증가
   // 강팀일수록 슈팅 수보다 슈팅 질이 오른다 (슈팅당 xG 상승)
@@ -65,7 +66,7 @@ function playerMatch(p, o) {
     const type = r < sh[3] * (A('heading') / 70) * (TR.header ? 1.35 : 1) ? 'head' : r < sh[3] * (A('heading') / 70) + sh[4] * (A('longShots') / 70) ? 'out' : 'in';
     let xg = clamp((type === 'head' ? rnd(.03, .2) : type === 'out' ? rnd(.02, .08) : clamp(.04 + Math.exp(N(-2.35, .85)), .03, .78)) * xgK, .02, .85);
     const qual = type === 'head' ? A('heading') : type === 'out' ? (A('longShots') * .7 + A('shotPower') * .3) : (A('finishing') * .8 + A('composure') * .2);
-    const conv = clamp(.76 + (qual - 65) * .013, .45, 1.22) * kq * (type === 'in' && TR.finisher ? 1.1 : type === 'head' && TR.header ? 1.15 : type === 'out' && TR.rocket ? 1.3 : 1);
+    const conv = clamp(.76 + (Math.min(qual, 88) - 65) * .013 + Math.max(0, qual - 88) * .004, .45, 1.12) * kq * (type === 'in' && TR.finisher ? 1.1 : type === 'head' && TR.header ? 1.15 : type === 'out' && TR.rocket ? 1.3 : 1);
     const goal = R() < xg * conv;
     const onT = goal || R() < clamp(.24 + (qual - 60) * .006, .15, .55);
     const sp = shotSpot(type, xg);
@@ -768,7 +769,8 @@ function teamRank(S, ssArg) {
   const list = top.map((e, i) => {
     const r = r0(), r2 = r0();
     const g = Math.sqrt(-2 * Math.log(r || 1e-9)) * Math.cos(2 * Math.PI * r2);
-    return { n: C.pName(w, e), pos: e[1], r: +(6.62 + (e[2] - avg) * .035 + (ppg - 1.4) * .28 + g * .2 - (i >= 13 ? .1 : 0)).toFixed(2) };
+    const atk = ['ST', 'LW', 'RW', 'CAM'].includes(e[1]) ? .1 : ['CB', 'GK'].includes(e[1]) ? -.08 : 0;
+    return { n: C.pName(w, e), pos: e[1], r: +(6.62 + (e[2] - 72) * .035 + (ppg - 1.4) * .18 + atk + g * .2 - (i >= 13 ? .15 : 0)).toFixed(2) };
   }).filter(x => x.pos !== 'GK' || true);
   const all = list.concat({ n: S.p.name, pos: S.p.pos, r: +myR.toFixed(2), me: true }).sort((a, b) => b.r - a.r);
   return { rank: all.findIndex(x => x.me) + 1, n: all.length, myR: +myR.toFixed(2), top: all.slice(0, 5) };

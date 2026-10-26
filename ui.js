@@ -324,7 +324,7 @@ function dragTabs(nav) {
   return wrap;
 }
 function topbar(inGame) {
-  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['value', '이적·가치'], ['table', '리그·대회'], ['db', '선수·팀'], ['trophies', '트로피'], ['shop', '상점'], ['ach', '도전과제']];
+  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['value', '이적·가치'], ['table', '리그·대회'], ['db', '선수·팀'], ['trophies', '트로피'], ['ach', '도전과제']];
   const needs = S && ['window', 'training', 'preEvents', 'midEvents', 'mid', 'winter', 'h1', 'h2', 'review', 'reviewDone', 'freeYear'].includes(S.phase);
   return h('div', { class: 'top' }, h('div', { class: 'wrap' },
     h('button', { class: 'brand', onclick: () => { if (!busy) U.go('home'); }, title: '처음 화면' }, h('span', { class: 'mk' }, 'R'), h('span', { class: 't' }, 'Road to Legend')),
@@ -829,6 +829,7 @@ function midBlock() {
   out.push(h('div', { class: 'chg' }, lg ? h('span', { class: 'chip' }, `${lg.name} · ${pos}위`) : null, ROLECHIP(ss.role), S.car.status !== 'youth' ? h('span', { class: 'chip' }, `감독 신뢰 ${Math.round(S.car.trust)}`) : null, ss.inj > 0 ? h('span', { class: 'chip bad' }, `부상 중 · ${ss.inj}일`) : null));
   { const gc = goalChip(); if (gc) out.push(gc); }
   { const tr = C.teamRank(S); if (tr) out.push(teamRankBox(tr, '전반기')); }
+  if (U.shopPanel) { const sp = U.shopPanel('겨울 휴식기'); if (sp) out.push(sp); }
   if (ss.moments.length) out.push(h('div', { class: 'mute', style: { fontSize: '12px' } }, '결정적 순간: ', ...ss.moments.map(m => h('span', { class: 'chip ' + (m.ok ? 'good' : 'bad'), style: { marginRight: '4px' } }, m.title))));
   out.push(h('button', { class: 'btn', onclick: () => { GM.toMidEvents(S); render(); } }, '계속'));
   return out;
@@ -867,6 +868,7 @@ function reviewBlock() {
   if (r.awards.length) out.push(h('div', { class: 'chg' }, ...r.awards.map(a => h('span', { class: 'chip gold' }, trophy(a.k, 14, '#f2c14e'), a.t))));
   if (ss && !ss.tr) ss.tr = C.teamRank(S, ss);
   if (ss && ss.tr) out.push(teamRankBox(ss.tr, '시즌'));
+  if (U.shopPanel && S.phase === 'review') { const sp = U.shopPanel('여름 휴식기'); if (sp) out.push(sp); }
   if (r.goal) out.push(h('div', { class: 'goalbar' }, h('span', { class: 'lbl' }, '시즌 목표'), h('span', null, r.goal.label), h('b', { class: r.goal.ok ? 'up' : 'dn' }, r.goal.ok ? '달성' : '실패')));
   if (r.perfBonus) out.push(h('div', { class: 'mute', style: { fontSize: '13px' } }, `성과급 ${C.fmtEUR(r.perfBonus)} 지급`));
   // 성장

@@ -49,29 +49,60 @@ X.onMatch = function (S, rec) {
 };
 
 // ---------- 시즌 목표 ----------
-const EXP_APPS = { key: 34, starter: 30, rotation: 20, backup: 10, reserve: 4, youth: 18 };
-const GA_RATE = { ST: .5, W: .42, AM: .42, CM: .22, DM: .1, FB: .14, CB: .08, GK: 0 };
+// 시즌 목표: 포지션별 지표 + 지난 시즌 기록·이번 시즌 예상 출전으로 기대값을 잡고,
+// 달성 확률(쉬움 ≈70%, 보통 ≈50%, 어려움 ≈25%)이 되도록 목표치를 정한다
+const SHARE = { key: .88, starter: .78, rotation: .5, backup: .26, reserve: .1 };
+const RATE = { // 경기당 기본 기대치
+  goals: { ST: .42, W: .28, AM: .26, CM: .09, DM: .04, FB: .03, CB: .05, GK: 0 },
+  assists: { ST: .12, W: .2, AM: .22, CM: .14, DM: .07, FB: .12, CB: .03, GK: 0 },
+  def: { ST: .6, W: 1, AM: 1.2, CM: 3, DM: 4.4, FB: 3.4, CB: 4, GK: 0 },
+  saves: { GK: 2.8 }, cs: { GK: .3, CB: .3, FB: .28, DM: .28 }
+};
+const KINDS = { ST: ['goals', 'ga', 'apps', 'rating'], W: ['ga', 'goals', 'assists', 'apps', 'rating'], AM: ['ga', 'assists', 'goals', 'apps', 'rating'], CM: ['ga', 'assists', 'def', 'apps', 'rating'], DM: ['def', 'cs', 'apps', 'rating'], CB: ['def', 'cs', 'apps', 'rating'], FB: ['assists', 'def', 'cs', 'apps', 'rating'], GK: ['cs', 'saves', 'apps', 'rating'] };
+const KLABEL = { goals: '득점', ga: '공격포인트 (골+도움)', assists: '도움', def: '태클+가로채기', cs: '클린시트', saves: '선방', apps: '출전' };
+const statOf = (t, k) => k === 'ga' ? t.goals + t.assists : k === 'def' ? t.tackles + t.ints : k === 'goals' ? t.goals : k === 'assists' ? t.assists : k === 'cs' ? t.cs : k === 'saves' ? t.saves : k === 'apps' ? t.apps : 0;
 X.makeGoals = function (S) {
   const ss = S.ss, role = C.ROLE[S.p.pos], youth = S.car.status === 'youth';
-  const E = EXP_APPS[youth ? 'youth' : ss.role] || 20;
-  const lvl = clamp((C.effOvr(S.p) - S.w.clubs[ss.club].str) / 10, -.6, .6); // 팀 내 수준
-  const comp = youth ? 'youth' : 'league';
-  const compName = youth ? '유스 리그' : '리그';
-  const list = [];
-  const diffs = [['easy', '쉬움', .7], ['normal', '보통', 1], ['hard', '어려움', 1.4]];
-  const kinds = [];
-  if (GA_RATE[role] >= .2) kinds.push('ga');
-  if (role === 'GK') kinds.push('cs');
-  kinds.push('apps', 'rating');
-  for (const [d, dl, m] of diffs) {
-    const k = kinds[(diffs.findIndex(x => x[0] === d) + rint(0, 9)) % kinds.length];
-    let target, label;
-    if (k === 'ga') { target = Math.max(2, Math.round(E * GA_RATE[role] * (1 + lvl) * m)); label = `${compName} 공격포인트 ${target}개 (골+도움)`; }
-    else if (k === 'cs') { target = Math.max(2, Math.round(E * .3 * (1 + lvl) * m)); label = `${compName} 클린시트 ${target}회`; }
-    else if (k === 'apps') { target = Math.max(3, Math.min(youth ? 22 : 38, Math.round(E * (.8 + (m - 1) * .5)))); label = `${compName} ${target}경기 출전`; }
-    else { target = +(6.62 + (m - 1) * .45 + lvl * .25).toFixed(2); label = `시즌 평균 평점 ${target.toFixed(2)} 이상 (10경기 이상)`; }
-    list.push({ d, dl, k, target, comp, label });
-  }
+  const lg = C.leagueOf(S);
+  const L = youth ? 22 : lg ? (C.leagueRounds ? ss.rounds.length + (C.splitCount ? C.splitCount(lg) : 0) : 34) : 30;
+  const comp = youth ? 'youth' : 'league', compName = youth ? '유스 리그' : '리그';
+  let E = youth ? L * .8 : L * (SHARE[ss.role] || .5);
+  const lvl = clamp((C.effOvr(S.p) - S.w.clubs[ss.club].str) / 10, -.6, .6);
+  // 지난 시즌 같은 단계(유스/1군) 리그 기록
+  const last = S.hist[S.hist.length - 1];
+  let prev = null;
+  if (last) { const t = youth ? last.youth : (last.agg && last.agg.league ? last.agg.league.st : null); if (t && t.apps >= 8 && (youth ? true : last.status !== 'youth')) prev = t; }
+  if (prev && !youth) E = E * .6 + Math.min(L, prev.apps) * .4;
+  E = clamp(E, 3, L);
+  const rate = k => {
+    let d = k === 'ga' ? (RATE.goals[role] + RATE.assists[role]) : (RATE[k] && RATE[k][role]) || 0;
+    d *= k === 'cs' || k === 'saves' ? 1 : 1 + lvl * .8;
+    if (prev && prev.apps >= 8) { const pr = statOf(prev, k) / prev.apps; d = d * .45 + pr * .55; }
+    return d;
+  };
+  const Z = { easy: -.9, normal: -.1, hard: .7 };
+  const make = (k, d, force) => {
+    const dl = { easy: '쉬움', normal: '보통', hard: '어려움' }[d];
+    if (k === 'apps') { const target = force != null ? force : clamp(Math.round(E + Z[d] * Math.max(2.5, E * .22)), 3, L); return { d, dl, k, target, comp, label: `${compName} ${target}경기 출전` }; }
+    if (k === 'rating') {
+      const minApps = Math.max(5, Math.round(E * .4));
+      let base = prev && prev.rated >= 8 ? C.avgRating(prev) * .6 + (6.65 + lvl * .35) * .4 : 6.65 + lvl * .35;
+      const target = force != null ? force : +(base + Z[d] * .17 + (d === 'easy' ? -.05 : 0)).toFixed(2);
+      return { d, dl, k, target, comp, minApps, label: `${compName} 평균 평점 ${target.toFixed(2)} 이상 (${minApps}경기 이상 출전)` };
+    }
+    const mu = E * rate(k), sd = Math.max(1, Math.sqrt(mu) * 1.25);
+    const target = force != null ? force : Math.max(1, Math.round(mu + Z[d] * sd));
+    return { d, dl, k, target, comp, label: `${compName} ${KLABEL[k]} ${target}${k === 'cs' || k === 'saves' ? '회' : k === 'def' ? '회' : k === 'goals' ? '골' : k === 'assists' ? '개' : '개'}` };
+  };
+  let kinds = (KINDS[role] || ['apps', 'rating']).slice();
+  if (E < 14) kinds = kinds.filter(k => k !== 'rating');
+  kinds = kinds.filter(k => k === 'apps' || k === 'rating' || E * rate(k) >= 2.5); // 기대값이 너무 작은 지표는 운에 좌우되므로 제외
+  if (kinds.length < 2) kinds = ['apps'].concat(E >= 10 ? ['rating'] : []);
+  if (role === 'GK' || ['CB', 'DM', 'FB'].includes(role)) { if (E < 12) kinds = kinds.filter(k => k !== 'cs'); }
+  const pickK = C.shuffle(kinds);
+  const list = ['easy', 'normal', 'hard'].map((d, i) => make(pickK[i % pickK.length], d));
+  // 목표치가 거꾸로 되는 일 방지: 같은 지표면 단계별로 반드시 높아진다
+  for (let i = 1; i < 3; i++) { const a = list[i - 1], b = list[i]; if (a.k === b.k && b.target <= a.target) list[i] = make(b.k, b.d, a.k === 'rating' ? +(a.target + .08).toFixed(2) : a.target + 1); }
   return list;
 };
 const REWARD = { easy: { trust: 3, money: 4, morale: 4 }, normal: { trust: 6, money: 8, morale: 6, rep: 2 }, hard: { trust: 10, money: 15, morale: 10, rep: 5, ovr: 1 } };
@@ -79,12 +110,10 @@ const PENALTY = { easy: { trust: -6, morale: -6 }, normal: { trust: -4, morale: 
 X.rewardText = d => { const r = REWARD[d]; return [`신뢰 +${r.trust}`, `보너스 주급 ${r.money}배`, r.rep ? `명성 +${r.rep}` : '', r.ovr ? '+1 OVR' : ''].filter(Boolean).join(' · '); };
 X.penaltyText = d => { const r = PENALTY[d]; return [r.trust ? `신뢰 ${r.trust}` : '', `사기 ${r.morale}`].filter(Boolean).join(' · '); };
 X.progress = function (S, g, matches) {
-  const ms = (matches || (S.ss ? S.ss.matches : [])).filter(m => m.played && (g.comp === 'youth' ? m.comp === 'youth' : g.k === 'rating' ? !['nt', 'ntY', 'youth'].includes(m.comp) : m.comp === 'league'));
+  const ms = (matches || (S.ss ? S.ss.matches : [])).filter(m => m.played && (g.comp === 'youth' ? m.comp === 'youth' : m.comp === 'league'));
   const t = C.totalAgg(ms);
-  if (g.k === 'ga') return { v: t.goals + t.assists, done: t.goals + t.assists >= g.target };
-  if (g.k === 'cs') return { v: t.cs, done: t.cs >= g.target };
-  if (g.k === 'apps') return { v: t.apps, done: t.apps >= g.target };
-  const r = C.avgRating(t); return { v: r, done: t.rated >= 10 && r >= g.target };
+  if (g.k === 'rating') { const r = C.avgRating(t); return { v: r, done: t.rated >= (g.minApps || 10) && r >= g.target }; }
+  const v = statOf(t, g.k); return { v, done: v >= g.target };
 };
 X.settle = function (S) {
   const ss = S.ss, g = ss.goal; if (!g) return null;

@@ -29,49 +29,32 @@ C.hasTrait = (p, t) => !!(p && p.traits && p.traits.includes(t));
 // ---------- 상품 목록 ----------
 // core: 항상 진열 / 나머지는 시즌마다 무작위로 일부만 들어온다
 const POOL = [
-  { id: 'weak', name: '약발 특훈 캠프', cat: '훈련', desc: '약발 ★+1 (성공률 65%).', limit: 1, price: S => round(annual(S) * .35 * S.p.weak), can: S => S.p.weak < 5, run: S => R() < .65 ? (S.p.weak++, [true, `약발 ★${S.p.weak}`]) : [false, '이번엔 감을 잡지 못했다'] },
-  { id: 'skill', name: '프리스타일 코치', cat: '훈련', desc: '개인기 ★+1 (성공률 60%).', limit: 1, price: S => round(annual(S) * .32 * S.p.skill), can: S => S.p.skill < 5, run: S => R() < .6 ? (S.p.skill++, [true, `개인기 ★${S.p.skill}`]) : [false, '화려한 기술은 아직 몸에 붙지 않았다'] },
-  { id: 'analyst', name: '전담 영상 분석관', cat: '경기', desc: '이번 시즌 결정적 순간의 선택지가 1개 줄어든다 (최소 2개).', limit: 1, price: S => round(annual(S) * .2), run: S => { S.flags.analystY = S.w.year; return [true, '이번 시즌 결정적 순간이 쉬워진다']; } },
-  { id: 'chef', name: '전담 셰프·영양사', cat: '몸 관리', desc: '이번 시즌 컨디션 +2.', limit: 1, price: S => round(annual(S) * .16), run: S => { S.p.mods.push({ ovr: 2, seasons: 1, why: '전담 셰프' }); return [true, '컨디션 +2 (1시즌)']; } },
-  { id: 'cryo', name: '크라이오·회복 장비', cat: '몸 관리', desc: '부상 위험 영구 감소. 커리어 3회까지.', limit: 1, career: 3, price: S => round(annual(S) * .3), run: S => { S.p.hid.inj = clamp(S.p.hid.inj * .88, .4, 2.5); if (S.ss && S.ss.inj > 0) S.ss.inj = Math.ceil(S.ss.inj * .6); return [true, '부상 위험 감소']; } },
-  { id: 'science', name: '스포츠 과학 패키지', cat: '몸 관리', desc: '노쇠화를 늦춘다. 서른 이후 효과가 크다. 커리어 4회까지.', limit: 1, career: 4, price: S => round(annual(S) * (S.p.age >= 30 ? .45 : .3)), run: S => { S.p.hid.lon = clamp(S.p.hid.lon * (S.p.age >= 30 ? .88 : .94), .35, 2.2); return [true, '노쇠화 지연']; } },
-  { id: 'mental', name: '스포츠 심리 상담', cat: '몸 관리', desc: '사기 +15, 침착성 +2.', limit: 2, price: S => round(annual(S) * .08), run: S => { S.p.morale = clamp(S.p.morale + 15, 0, 100); C.bump(S.p, 'composure', 2); return [true, '사기 +15 · 침착성 +2']; } },
-  { id: 'altitude', name: '고지대 전지훈련', cat: '훈련', desc: '스태미너·가속력·스프린트 상승.', limit: 1, price: S => round(annual(S) * .22), run: S => [true, bumpL(S, ['stamina', 'accel', 'sprint'], 1, 2.4)] },
-  { id: 'aerial', name: '헤딩 머신 훈련', cat: '훈련', desc: '헤더 정확도·점프력 상승.', limit: 1, price: S => round(annual(S) * .18), run: S => [true, bumpL(S, ['heading', 'jumping'], 1.5, 3.2)] },
-  { id: 'defcamp', name: '수비 전술 캠프', cat: '훈련', desc: '수비 이해도·가로채기·스탠딩 태클 상승.', limit: 1, price: S => round(annual(S) * .2), run: S => [true, bumpL(S, ['defAware', 'interceptions', 'standTackle'], 1.4, 3)] },
-  { id: 'shootcamp', name: '슈팅 아카데미', cat: '훈련', desc: '골 결정력·슛 파워·발리 슛 상승.', limit: 1, price: S => round(annual(S) * .22), run: S => [true, bumpL(S, ['finishing', 'shotPower', 'volleys'], 1.2, 2.8)] },
-  { id: 'passcamp', name: '패스 마스터 클래스', cat: '훈련', desc: '시야·짧은 패스·긴 패스 상승.', limit: 1, price: S => round(annual(S) * .2), run: S => [true, bumpL(S, ['vision', 'shortPass', 'longPass'], 1.2, 2.8)] },
-  { id: 'yoga', name: '요가·필라테스', cat: '몸 관리', desc: '민첩성·밸런스 상승, 부상 위험 소폭 감소.', limit: 1, price: S => round(annual(S) * .12), run: S => { S.p.hid.inj = clamp(S.p.hid.inj * .95, .4, 2.5); return [true, bumpL(S, ['agility', 'balance'], 1.2, 2.6)]; } },
-  { id: 'gym', name: '근력 강화 프로그램', cat: '몸 관리', desc: '힘·적극성 상승.', limit: 1, price: S => round(annual(S) * .14), run: S => [true, bumpL(S, ['strength', 'aggression'], 1.4, 3)] },
-  { id: 'mentor', name: '은퇴한 레전드 멘토링', cat: '경기', desc: '반응 속도·침착성·공격 위치 선정 상승.', limit: 1, price: S => round(annual(S) * .3), run: S => [true, bumpL(S, ['reactions', 'composure', S.p.pos === 'GK' ? 'gkPos' : ['CB', 'CDM'].includes(S.p.pos) ? 'defAware' : 'attPos'], 1.2, 2.6)] },
-  { id: 'tactic', name: '감독과 전술 과외', cat: '경기', desc: '감독 신뢰 +10.', limit: 1, price: S => round(annual(S) * .1), can: S => S.car.status !== 'free', run: S => { S.car.trust = clamp(S.car.trust + 10, 0, 100); return [true, '감독 신뢰 +10']; } },
-  { id: 'media', name: '미디어 트레이닝', cat: '생활', desc: '명성 +4, 사기 +5.', limit: 1, price: S => round(annual(S) * .1), run: S => { S.p.rep = clamp(S.p.rep + 4, 0, 100); S.p.morale = clamp(S.p.morale + 5, 0, 100); return [true, '명성 +4 · 사기 +5']; } },
-  { id: 'sleep', name: '수면 클리닉', cat: '몸 관리', desc: '이번 시즌 컨디션 +1, 부상 위험 감소.', limit: 1, price: S => round(annual(S) * .1), run: S => { S.p.mods.push({ ovr: 1, seasons: 1, why: '수면 관리' }); S.p.hid.inj = clamp(S.p.hid.inj * .96, .4, 2.5); return [true, '컨디션 +1 · 부상 위험 감소']; } },
-  { id: 'gkcoach', name: '골키퍼 전담 코치', cat: '훈련', desc: '다이빙·반사신경·핸들링 상승.', limit: 1, can: S => S.p.pos === 'GK', price: S => round(annual(S) * .22), run: S => [true, bumpL(S, ['gkDiving', 'gkReflexes', 'gkHandling'], 1.2, 2.8)] },
-  { id: 'car', name: '한정판 슈퍼카', cat: '생활', desc: '사기 +12, 명성 +2. 가끔 구설수에 오른다.', limit: 1, price: S => round(annual(S) * .5), run: S => { S.p.morale = clamp(S.p.morale + 12, 0, 100); S.p.rep = clamp(S.p.rep + 2, 0, 100); if (R() < .2) { S.car.trust = clamp(S.car.trust - 6, 0, 100); return [true, '사기 +12 · 과속 구설수로 감독 신뢰 −6']; } return [true, '사기 +12 · 명성 +2']; } },
-  { id: 'house', name: '바닷가 저택', cat: '생활', desc: '사기 +20. 커리어 1회.', limit: 1, career: 1, price: S => round(annual(S) * 2.2), run: S => { S.p.morale = clamp(S.p.morale + 20, 0, 100); S.flags.house = 1; return [true, '사기 +20']; } },
-  { id: 'charity', name: '자선 재단 설립', cat: '생활', desc: '명성 +8. 커리어 1회.', limit: 1, career: 1, price: S => round(annual(S) * 1.2), run: S => { S.p.rep = clamp(S.p.rep + 8, 0, 100); S.flags.charity = 1; return [true, '명성 +8']; } },
-  { id: 'hometown', name: '친정 구단 후원', cat: '생활', desc: '유스 시절 구단에 훈련장을 지어 준다. 명성 +4, 사기 +8. 커리어 1회.', limit: 1, career: 1, price: S => round(annual(S) * .8), run: S => { S.p.rep = clamp(S.p.rep + 4, 0, 100); S.p.morale = clamp(S.p.morale + 8, 0, 100); return [true, '명성 +4 · 사기 +8']; } }
+  { id: 'weak', name: '약발 특훈', cat: '훈련', desc: '약발 ★+1 (성공률 65%)', limit: 1, price: S => round(annual(S) * .35 * S.p.weak), can: S => S.p.weak < 5, run: S => R() < .65 ? (S.p.weak++, [true, `약발 ★${S.p.weak}`]) : [false, '이번엔 감을 잡지 못했다'] },
+  { id: 'skill', name: '프리스타일 코치', cat: '훈련', desc: '개인기 ★+1 (성공률 60%)', limit: 1, price: S => round(annual(S) * .32 * S.p.skill), can: S => S.p.skill < 5 && S.p.pos !== 'GK', run: S => R() < .6 ? (S.p.skill++, [true, `개인기 ★${S.p.skill}`]) : [false, '화려한 기술은 아직 몸에 붙지 않았다'] },
+  { id: 'chef', name: '전담 셰프·영양사', cat: '몸 관리', desc: '다음 경기들 컨디션 +2 (1시즌)', limit: 1, price: S => round(annual(S) * .16), run: S => { S.p.mods.push({ ovr: 2, seasons: 1, why: '전담 셰프' }); return [true, '컨디션 +2 (1시즌)']; } },
+  { id: 'cryo', name: '회복 장비 투자', cat: '몸 관리', desc: '부상 위험 영구 감소 (커리어 3회)', limit: 1, career: 3, price: S => round(annual(S) * .3), run: S => { S.p.hid.inj = clamp(S.p.hid.inj * .86, .4, 2.5); if (S.ss && S.ss.inj > 0) S.ss.inj = Math.ceil(S.ss.inj * .6); return [true, '부상 위험 감소']; } },
+  { id: 'science', name: '스포츠 과학', cat: '몸 관리', desc: '노쇠화 지연 (커리어 4회)', limit: 1, career: 4, can: S => S.p.age >= 27, price: S => round(annual(S) * (S.p.age >= 30 ? .45 : .3)), run: S => { S.p.hid.lon = clamp(S.p.hid.lon * (S.p.age >= 30 ? .86 : .93), .35, 2.2); return [true, '노쇠화 지연']; } },
+  { id: 'analyst', name: '전담 영상 분석관', cat: '경기', desc: '이번 시즌 결정적 순간 선택지 1개 감소', limit: 1, price: S => round(annual(S) * .2), run: S => { S.flags.analystY = S.ss ? S.ss.year : S.w.year; return [true, '이번 시즌 결정적 순간이 쉬워진다']; } },
+  { id: 'tactic', name: '감독과 전술 과외', cat: '경기', desc: '감독 신뢰 +10', limit: 1, price: S => round(annual(S) * .1), can: S => ['first', 'loan'].includes(S.car.status), run: S => { S.car.trust = clamp(S.car.trust + 10, 0, 100); return [true, '감독 신뢰 +10']; } }
 ];
 // 특성 마스터 클래스 (한정 상품)
 function traitItem(t) {
   const [nm, ds] = SH.TRAITS[t];
   return { id: 'trait_' + t, trait: t, name: `특성 마스터 클래스: ${nm}`, cat: '한정 · 플레이 특성', desc: `${ds}. 성공률 70%. 실패해도 다음에 다시 시도 가능.`, limit: 1, price: S => round(annual(S) * .9), can: S => !C.hasTrait(S.p, t), run: S => { if (R() < .7) { (S.p.traits = S.p.traits || []).push(t); return [true, `플레이 특성 획득: ${nm}`]; } return [false, '감은 잡았지만 아직 몸에 배지 않았다']; } };
 }
-SH.COACH = { id: 'coach', name: '1:1 개인 코치', cat: '훈련', limit: 2 };
+SH.COACH = { id: 'coach', name: '1:1 개인 코치', cat: '훈련', limit: 1 };
 // 시즌 진열 만들기
 function makeStock(S) {
   const pool = POOL.filter(it => !it.can || it.can(S));
-  const ids = shuffle(pool.map(i => i.id)).slice(0, rint(6, 8));
+  const ids = shuffle(pool.map(i => i.id)).slice(0, 3);
   const stock = { ids, sale: {}, trait: null };
-  const s1 = pick(ids); stock.sale[s1] = .7; // 시즌 특가 1개
   const owned = (S.p.traits || []);
   const cand = Object.keys(SH.TRAITS).filter(t => !owned.includes(t));
-  if (cand.length && R() < .55) stock.trait = pick(cand);
+  if (cand.length && R() < .35) stock.trait = pick(cand);
   return stock;
 }
 function state(S) {
-  const y = S.w.year;
+  const y = S.ss ? S.ss.label + (S.ss.half === 2 ? 'b' : 'a') : 'w' + S.w.year;
   if (!S.shop || S.shop.y !== y) S.shop = { y, bought: {}, career: (S.shop && S.shop.career) || {} };
   if (!S.shop.stock) S.shop.stock = makeStock(S);
   S.stats = S.stats || {}; S.stats.spent = S.stats.spent || 0;
