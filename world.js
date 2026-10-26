@@ -127,14 +127,50 @@ function ageSquad(c) {
     else if (age <= 23) o += pot > o ? (pot - o) * rnd(.1, .33) + N(0, 1.1) : N(0, 1.2);
     else if (age <= 28) o += N(0, 1.1);
     else if (age <= 30) o += N(-.6, 1.2);
-    else o -= (age - 30) * rnd(.5, 1.4) + rnd(0, 1);
+    else o -= (age - 30) * rnd(.3, .95) + rnd(0, .8);
     o = clamp(Math.round(o), 40, 94);
-    const retire = (age >= 33 && R() < (age - 32) * .2) || (age >= 30 && o < c.pres - 15 && R() < .35) || age >= 40;
-    const leave = !retire && R() < .07; // 다른 팀으로 떠남 (단순화)
-    if (!retire && !leave) out.push([e[0], e[1], o, age, Math.max(pot, o), e[5]]);
+    // 은퇴: 나이 위주. 기량이 남아 있으면 더 오래 뛴다
+    const RET = { 32: .04, 33: .08, 34: .15, 35: .25, 36: .38, 37: .52, 38: .65, 39: .78 };
+    let pr = age >= 40 ? .9 : (RET[age] || 0);
+    if (age >= 32) pr *= o >= 82 ? .6 : o >= 75 ? .85 : 1.2;
+    if (age >= 29 && o < 52) pr += .25;
+    const retire = R() < pr;
+    if (retire) { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; continue; }
+    out.push([e[0], e[1], o, age, Math.max(pot, o), e[5]]);
   }
   c.sq = out;
 }
+// 세계 이적 시장: 기량이 팀보다 뛰어나면 상위 구단으로, 밀리면 하위 구단으로, 일부는 같은 수준끼리 이동
+function worldTransfers(w) {
+  const clubs = Object.values(w.clubs).filter(c => !c.lite && c.lg && c.sq);
+  const byStr = clubs.slice().sort((a, b) => a.str - b.str), strs = byStr.map(c => c.str);
+  const lower = x => { let lo = 0, hi = strs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (strs[m] < x) lo = m + 1; else hi = m; } return lo; };
+  const pickClub = (lo, hi, nat, from) => {
+    const i0 = lower(lo), i1 = Math.max(i0 + 1, lower(hi + .001));
+    const cand = byStr.slice(i0, i1).filter(c => c !== from && c.sq.length < 32);
+    if (!cand.length) return null;
+    return wpick(cand, c => (c.nat === nat ? 2.2 : 1) * (c.nat === from.nat ? 1.6 : 1) * (c.sq.length < 26 ? 1.4 : 1));
+  };
+  const moves = [];
+  for (const c of clubs) for (const e of c.sq) {
+    const o = e[2], age = e[3];
+    let p, lo, hi;
+    if (o >= c.str + 4 && age <= 30) { p = clamp(.12 + (o - c.str - 4) * .05, .12, .55); lo = o - 5; hi = o + 3; }
+    else if (o <= c.str - 7) { p = clamp(.28 + (c.str - 7 - o) * .03, .28, .7); lo = o - 6; hi = o + 1; }
+    else { p = .06; lo = o - 4; hi = o + 3; }
+    if (age >= 31 && o < c.str + 2) p += .08;
+    if (age <= 19 && o < c.str - 10) p *= .4; // 유망주는 대개 남는다
+    if (R() < p) moves.push([c, e, lo, hi]);
+  }
+  let n = 0;
+  for (const [c, e, lo, hi] of moves) {
+    const d = pickClub(lo, hi, e[5], c); if (!d) continue;
+    const i = c.sq.indexOf(e); if (i < 0) continue;
+    c.sq.splice(i, 1); d.sq.push(e); n++;
+  }
+  w.lastTx = n;
+}
+C.worldTransfers = worldTransfers;
 function refillSquad(c, w) {
   const cnt = {}; for (const e of c.sq) cnt[e[1]] = (cnt[e[1]] || 0) + 1;
   const sign = (pos, lv, young) => {
@@ -151,8 +187,13 @@ function refillSquad(c, w) {
     const posList = ['GK', 'CB', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
     const pos = pick(posList); sign(pos, Math.min(c.pres + 2, 87), false);
   }
-  // 정원 초과 시 약한 선수 정리
-  while (c.sq.length > 30) { let mi = 0; c.sq.forEach((e, i) => { if (e[2] - (e[3] < 21 ? 6 : 0) < c.sq[mi][2] - (c.sq[mi][3] < 21 ? 6 : 0)) mi = i; }); c.sq.splice(mi, 1); }
+  // 정원 초과 시 약한 선수는 하위 구단으로 (갈 곳이 없으면 명단에서 제외)
+  while (c.sq.length > 30) {
+    let mi = 0; c.sq.forEach((e, i) => { if (e[2] - (e[3] < 21 ? 6 : 0) < c.sq[mi][2] - (c.sq[mi][3] < 21 ? 6 : 0)) mi = i; });
+    const e = c.sq.splice(mi, 1)[0];
+    const cand = Object.values(w.clubs).filter(x => !x.lite && x.lg && x.sq && x !== c && x.sq.length < 28 && Math.abs(x.str - e[2]) < 4);
+    if (cand.length) pick(cand).sq.push(e); else if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1;
+  }
 }
 // 세월이 지나도 세계 수준이 부풀지 않도록 상위권 분포를 처음 수준에 맞춘다
 function topAvgs(w) {
@@ -177,14 +218,17 @@ function normalizeWorld(w) {
 }
 C.topAvgs = topAvgs;
 function advanceWorld(w, results) {
+  C._ps = w.ps || null; C._year = w.year;
   for (const id in w.clubs) {
     const c = w.clubs[id];
     // 명성: 기본값 쪽으로 회귀 + 성적 반영
     let d = (c.base - c.pres) * .1 + N(0, .45) + ((results && results[id]) || 0);
     c.pres = clamp(c.pres + d, 38, 90);
     if (c.lite) { c.str = Math.round((c.pres + N(0, .6)) * 10) / 10; continue; }
-    ageSquad(c); refillSquad(c, w);
+    ageSquad(c);
   }
+  worldTransfers(w);
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lite) refillSquad(c, w); }
   normalizeWorld(w);
   for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lite) c.str = xiStrength(c.sq); }
   w.year++;

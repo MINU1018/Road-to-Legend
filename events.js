@@ -50,6 +50,14 @@ const first = S => S.car.status !== 'youth' && S.car.status !== 'free';
 const role = S => S.ss ? S.ss.role : 'starter';
 const ageIn = (S, a, b) => S.p.age >= a && S.p.age <= b;
 const isGK = S => S.p.pos === 'GK';
+// 팀 성적이 기대(전력 순위)보다 얼마나 나쁜가: 양수일수록 부진
+const underperf = S => {
+  if (!S.ss) return 0; const lg = C.leagueOf(S); if (!lg || !S.ss.tables[lg.id]) return 0;
+  const tb = C.sortTable(S.ss.tables[lg.id]); if (!tb[0] || tb[0].p < 6) return 0;
+  const pos = tb.findIndex(r => r.id === S.ss.club) + 1;
+  const exp = lg.clubs.slice().sort((a, b) => S.w.clubs[b].str - S.w.clubs[a].str).indexOf(S.ss.club) + 1;
+  return (pos - exp) + (pos > lg.clubs.length * .8 ? 3 : 0);
+};
 const avgR = S => { const ms = S.ss ? S.ss.matches.filter(m => m.played && m.rating) : []; return ms.length ? ms.reduce((a, m) => a + m.rating, 0) / ms.length : 6.8; };
 const eurK = v => C.fmtEUR(v);
 const posFocus = S => isGK(S) ? 'keeper' : ['CB', 'CDM'].includes(S.p.pos) ? 'defense' : S.p.pos === 'ST' ? 'shooting' : ['CM', 'CAM'].includes(S.p.pos) ? 'passing' : 'dribble';
@@ -151,7 +159,7 @@ const EVENTS = [
   { id: 'derby', when: ['mid'], cond: first, w: .9, build: S => ({ title: '더비 앞 도발', desc: '라이벌 팀 선수가 인터뷰에서 당신을 조롱했습니다.', icon: 'fire', opts: [
     { label: '무시한다', desc: '경기로 답한다', out: [O(1, '침착성 +1 · 신뢰 +2', 1, { attrs: { composure: 1 }, trust: 2 })] },
     { label: '맞받아친다', desc: '불에 기름을 붓는다', out: [O(.5, '동기부여 컨디션 +2 · 명성 +2', 1, { form: 2, formWhy: '더비 동기부여', rep: 2 }), O(.5, '흥분해 퇴장 · 2경기 정지', -1, { susp: 2, trust: -6 })] }] }) },
-  { id: 'sacked', when: ['mid'], cond: first, w: .5, build: S => ({ title: '감독 경질', desc: '성적 부진으로 감독이 경질됐습니다. 새 감독이 부임합니다.', icon: 'whistle', opts: [
+  { id: 'sacked', when: ['mid'], cond: S => first(S) && underperf(S) >= 4, w: 1.2, build: S => ({ title: '감독 경질', desc: '성적 부진으로 감독이 경질됐습니다. 새 감독이 부임합니다.', icon: 'whistle', opts: [
     { label: '첫 훈련부터 어필', desc: '새 감독 눈에 들기', out: [O(.6, '신뢰 +20', 1, { trust: 20 }), O(.4, '오버페이스 · 신뢰 −12', -1, { trust: -12 })] },
     { label: '조용히 적응', desc: '평소처럼', out: [O(1, '신뢰 +5', 0, { trust: 5 })] }] }), pre2: S => { S.car.trust = 50; } },
   { id: 'bench', when: ['mid'], cond: S => first(S) && ['backup', 'reserve'].includes(role(S)), w: 2.6, build: S => ({ title: '출전 시간 불만', desc: '벤치에 앉아 있는 시간이 길어지고 있습니다.', icon: 'bench', opts: [
@@ -906,38 +914,46 @@ function computeAwards(S) {
 C.computeAwards = computeAwards;
 function trophyPts(list) { let s = 0; for (const t of list) s += t.k === 'cont' ? (t.t.includes('챔피언스') || t.t.includes('리베르타') ? 6 : 2) : t.k === 'nt' ? (t.t.includes('월드컵') ? 8 : 4) : t.k === 'league' ? 3 : 1; return s; }
 function ballonDor(S) {
-  const ss = S.ss, p = S.p, w = S.w;
-  const tot = ss.total, r = C.avgRating(tot), role = C.ROLE[p.pos];
-  const lg = C.leagueOf(S, ss.club);
-  const lgF = lg ? (BIG5.includes(lg.nation) && lg.tier === 1 ? 1 : lg.tier === 1 && C.confOf(lg.nation) === 'UEFA' ? .8 : .55) : .5;
-  const att = ['ST', 'W', 'AM'].includes(role);
-  const ga = att ? tot.goals + tot.assists * .6 : role === 'GK' ? tot.cs * .8 : tot.goals * 1.5 + tot.assists + tot.cs * .3;
-  // 점수: 능력치보다 그 시즌 활약(공격 포인트·평점·우승)이 더 크게 반영된다
-  const tpMe = trophyPts(ss.trophies);
-  const myScore = (C.ovrOf(p) * .3 + (r - 6.8) * 10 + ga * .32 * lgF + tpMe * 1.5 + (w.clubs[ss.club].str - 80) * .12) * (tot.apps >= 25 ? 1 : tot.apps >= 15 ? .82 : .55) * (ss.status === 'youth' ? .3 : 1);
-  // AI 후보: 세계 상위 선수 (이번 시즌 활약을 간단히 시뮬)
+  const ss = S.ss, p = S.p, w = S.w, world = S.mode === 'world';
+  // AI 후보: 이번 시즌 실제로 기록된 리그 성적(선수 기록)을 바탕으로 점수 계산
+  const yOff = ss.year - 2000;
+  const seasonOf = pid => { const P = w.ps && w.ps[pid]; if (!P || typeof P.h !== 'string') return null; const seg = P.h.slice(0, -1).split(';').pop(); if (!seg) return null; const x = seg.split(',').map(Number); return x[0] === yOff ? x : null; };
   const cands = [];
-  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg || c.lite) continue; for (const e of c.sq) if (e[2] >= 82) cands.push([e, c]); }
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg || c.lite) continue; for (const e of c.sq) if (e[2] >= 80) cands.push([e, c]); }
   const champs = new Set(Object.values(ss.final || {}).map(t => t[0] && t[0].id));
   const ucl = ss.allCont && ss.allCont.UCL && ss.allCont.UCL.winner;
   const lgFOf = c => { const l = w.lg[c.lg]; return l ? (BIG5.includes(l.nation) && l.tier === 1 ? 1 : l.tier === 1 && C.confOf(l.nation) === 'UEFA' ? .8 : .55) : .5; };
   let list = cands.map(([e, c]) => {
-    const rr = 6.75 + (e[2] - 80) * .055 + N(0, .28);
     const at = ['ST', 'LW', 'RW', 'CAM', 'LM', 'RM'].includes(e[1]);
-    const g = at ? Math.max(0, (e[2] - 75) * 1.9 + N(0, 7)) : ['CM', 'CDM'].includes(e[1]) ? Math.max(0, (e[2] - 75) * .9 + N(0, 4)) : e[1] === 'GK' ? 8 : Math.max(0, N(4, 3));
+    const rec = seasonOf(String(e[0]));
+    let rr, g, a, apps;
+    if (rec) { apps = rec[2]; g = rec[3] * 1.28; a = rec[4] * 1.25; rr = rec[5] / 100 || 6.6; }
+    else { rr = 6.75 + (e[2] - 80) * .055 + N(0, .28); g = at ? Math.max(0, (e[2] - 75) * 1.9 + N(0, 7)) : Math.max(0, N(3, 2)); a = at ? g * .4 : N(3, 2); apps = 30; }
+    const ga = at ? g + a * .6 : e[1] === 'GK' ? 8 : g * 1.5 + a;
     const tp = (champs.has(c.id) && w.lg[c.lg].tier === 1 ? 3 : 0) + (ucl === c.id ? 6 : 0);
-    return { n: C.pName(w, e), pid: String(e[0]), club: c.name, cid: c.id, ovr: e[2], age: e[3], s: (e[2] * .3 + (rr - 6.8) * 10 + g * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) + N(0, 2.2) };
+    const appF = apps >= 25 ? 1 : apps >= 15 ? .85 : .6;
+    return { n: C.pName(w, e), pid: String(e[0]), club: c.name, cid: c.id, ovr: e[2], age: e[3], g: Math.round(rec ? rec[3] : g), s: (e[2] * .3 + (rr - 6.8) * 10 + ga * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) * appF + N(0, 1.6) };
   }).sort((a, b) => b.s - a.s).slice(0, 60);
   // 같은 팀 선수끼리는 표가 갈린다
   const seen = {}; list.forEach(x => { const k = seen[x.cid] = (seen[x.cid] || 0) + 1; if (k > 1) x.s -= (k - 1) * 2.4; });
   list = list.sort((a, b) => b.s - a.s).slice(0, 30);
-  const me = { n: p.name, club: w.clubs[ss.club].name, cid: ss.club, ovr: C.ovrOf(p), age: p.age, s: myScore, me: true };
-  const mates = list.filter(x => x.cid === ss.club).length; me.s -= mates * .8;
-  const all = list.concat(me).sort((a, b) => b.s - a.s);
-  const rank = all.indexOf(me) + 1;
+  let all = list, me = null, r = 0, ga = 0, tot = null;
+  if (!world) {
+    tot = ss.total; r = C.avgRating(tot);
+    const role = C.ROLE[p.pos], lg = C.leagueOf(S, ss.club);
+    const lgF = lg ? (BIG5.includes(lg.nation) && lg.tier === 1 ? 1 : lg.tier === 1 && C.confOf(lg.nation) === 'UEFA' ? .8 : .55) : .5;
+    const att = ['ST', 'W', 'AM'].includes(role);
+    ga = att ? tot.goals + tot.assists * .6 : role === 'GK' ? tot.cs * .8 : tot.goals * 1.5 + tot.assists + tot.cs * .3;
+    const tpMe = trophyPts(ss.trophies);
+    const myScore = (C.ovrOf(p) * .3 + (r - 6.8) * 10 + ga * .32 * lgF + tpMe * 1.5 + (w.clubs[ss.club].str - 80) * .12) * (tot.apps >= 25 ? 1 : tot.apps >= 15 ? .82 : .55) * (ss.status === 'youth' ? .3 : 1);
+    me = { n: p.name, club: w.clubs[ss.club].name, cid: ss.club, ovr: C.ovrOf(p), age: p.age, s: myScore, me: true };
+    me.s -= list.filter(x => x.cid === ss.club).length * .8;
+    all = list.concat(me).sort((a, b) => b.s - a.s);
+  }
+  const rank = me ? all.indexOf(me) + 1 : null;
   // 골든보이 (21세 이하)
   let youngRank = null;
-  if (p.age <= 21) {
+  if (!world && p.age <= 21) {
     const yl = [];
     for (const id in w.clubs) for (const e of w.clubs[id].sq) if (e[3] <= 21 && e[2] >= 74) yl.push({ s: e[2] * .55 + N(0, 1.3) + (e[2] - 74) * .2, n: C.pName(w, e) });
     yl.sort((a, b) => b.s - a.s);
@@ -945,6 +961,7 @@ function ballonDor(S) {
     youngRank = yl.filter(x => x.s > mys).length + 1;
   }
   (w.bdHist = w.bdHist || []).push({ y: ss.year + 1, top: all.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr]) });
-  return { rank: rank <= 30 ? rank : null, top: all.slice(0, 10), youngRank };
+  return { rank: rank && rank <= 30 ? rank : null, top: all.slice(0, 10), youngRank };
 }
+C.ballonDor = ballonDor;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -40,7 +40,7 @@ U.kvSet = kvSet; U.kvGet = kvGet;
 const wageTxt = v => C.fmtWage(v);
 U.wageTxt = wageTxt;
 let saveT = null, hasSave = false, prevScr = 'home';
-U.save = function () { if (!S || S.viewOnly) return; clearTimeout(saveT); saveT = setTimeout(async () => { const t = GM.serialize(S); if (!t) return; const ok = await kvSet('save', t); hasSave = ok; }, 300); };
+U.save = function () { if (!S || S.viewOnly) return; clearTimeout(saveT); saveT = setTimeout(async () => { const t = GM.serialize(S); if (!t) return; const ok = await kvSet('save', t); hasSave = ok; if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } }, 300); };
 
 // ---------- 이펙트 ----------
 function countUp(el, a, b, dur = 900, fmt = v => Math.round(v)) {
@@ -232,8 +232,8 @@ function render() {
 U.render = render;
 U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; render(); scrollTo(0, 0); };
 U.back = () => U.go(prevScr === 'settings' ? 'home' : prevScr);
-U.loadSave = async o => { delete o.viewOnly; repairSave(o); S = o; await kvSet('save', JSON.stringify(o)); hasSave = true; U.go('game', 'career'); };
-U.clearSave = async () => { S = null; await kvDel('save'); hasSave = false; U.go('home'); };
+U.loadSave = async o => { delete o.viewOnly; repairSave(o); S = o; S.w.ps = S.w.ps || {}; await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
+U.clearSave = async () => { S = null; await kvDel('save'); await kvDel('ps'); hasSave = false; U.go('home'); };
 U.setTab = t => { tab = t; render(); scrollTo(0, 0); };
 
 // 예전 저장 파일 보정: 팀 색이 비어 있는 구단에 색을 채운다
@@ -242,11 +242,18 @@ function repairSave(o) {
   for (const id in o.w.clubs) { const c = o.w.clubs[id]; const e = ext[id]; if (!c.c1) c.c1 = (e && e[3]) || '#3a4252'; if (!c.c2) c.c2 = (e && e[4]) || '#e9eef5'; }
   for (const r of o.hist || []) { if (!r.c1) r.c1 = (o.w.clubs[r.club] || {}).c1 || '#3a4252'; if (!r.c2) r.c2 = (o.w.clubs[r.club] || {}).c2 || '#e9eef5'; }
 }
+U.startWorld = async function () {
+  if (S && S.phase !== 'retired') {
+    const ok = await overlay(close => [h('div', { class: 'head' }, h('h2', null, '관전 모드 시작'), h('span', { class: 'mute' }, '진행 중인 저장을 덮어씁니다.')), h('div', { class: 'body' }, h('p', { class: 'mute' }, '먼저 설정에서 저장 파일로 내보내 두면 나중에 다시 불러올 수 있습니다.'), h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' } }, h('button', { class: 'btn ghost', onclick: () => close(false) }, '취소'), h('button', { class: 'btn gold', onclick: () => close(true) }, '시작')))]);
+    if (!ok) return;
+  }
+  S = GM.newWorld(); hasSave = true; U.save(); U.go('game', 'wsim');
+};
 U.boot = async function () {
   await U.loadSettings();
   if (C.logos && C.logos.probe) C.logos.probe(() => render());
   const t = await kvGet('save');
-  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; repairSave(S); } }
+  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; repairSave(S); if (!S.w.ps) { const pt = await kvGet('ps'); S.w.ps = pt ? (GM.parse(pt) || {}) : {}; } } }
   U.hof = GM.parse(await kvGet('hof') || '[]') || [];
   // 이전 버전에서 은퇴한 현재 커리어는 상세 기록 보관을 채워 둔다
   if (S && S.phase === 'retired' && U.hof[0] && !U.hof[0].id && U.hof[0].name === S.p.name) { const id = 'c' + Date.now(); await archiveCareer(id); U.hof[0].id = id; await kvSet('hof', JSON.stringify(U.hof)); }
@@ -264,11 +271,12 @@ function viewHome() {
   const hero = h('div', { class: 'wrap home2' },
     h('div', { class: 'title' },
       h('div', { class: 'tl1' }, 'ROAD TO'), h('div', { class: 'tl2' }, 'LEGEND')),
-    cont ? homeCard() : null,
+    cont && S.mode !== 'world' ? homeCard() : null,
     h('div', { class: 'hacts' },
-      cont ? h('button', { class: 'btn gold big', onclick: () => U.go('game', 'career') }, `이어하기 · ${esc(S.p.name)} (${S.p.age}세)`) : null,
+      cont ? h('button', { class: 'btn gold big', onclick: () => U.go('game', S.mode === 'world' ? 'wsim' : 'career') }, S.mode === 'world' ? `관전 모드 이어하기 · ${S.w.year}/${String(S.w.year + 1).slice(2)} 시즌` : `이어하기 · ${esc(S.p.name)} (${S.p.age}세)`) : null,
       h('button', { class: cont ? 'btn ghost big' : 'btn gold big', onclick: () => newCareer() }, '새 커리어'),
       h('button', { class: 'btn ghost', onclick: () => U.pickSaveFile && U.pickSaveFile() }, '저장 파일 불러오기'),
+      h('button', { class: 'btn ghost', title: '내 선수 없이 세계 축구만 시즌마다 시뮬레이션', onclick: () => U.startWorld && U.startWorld() }, '관전 모드 (시뮬레이션만)'),
       h('button', { class: 'btn ghost', onclick: () => U.go('ach') }, '도전과제', achN ? h('span', { class: 'mute', style: { marginLeft: '6px' } }, achN) : null)),
     hofBlock());
   w.append(hero);
@@ -296,7 +304,7 @@ U.openArchive = async function (id) {
   repairSave(o); o.viewOnly = true; S = o; st.viewIdx = null; U.go('game', 'records');
 };
 U.exportArchive = async function (id) { const o = await loadArchive(id); if (!o) { toast('이 선수의 상세 기록은 보관되어 있지 않습니다.'); return; } U.exportSave(o); };
-U.closeArchive = async function () { const t = await kvGet('save'); const o = t ? GM.parse(t) : null; S = o && o.w && o.p ? o : null; if (S) repairSave(S); U.go('home'); };
+U.closeArchive = async function () { const t = await kvGet('save'); const o = t ? GM.parse(t) : null; S = o && o.w && o.p ? o : null; if (S) { repairSave(S); if (!S.w.ps) { const pt = await kvGet('ps'); S.w.ps = pt ? (GM.parse(pt) || {}) : {}; } } U.go('home'); };
 function hofBlock() {
   const list = U.hof || [];
   if (!list.length) return null;
@@ -324,12 +332,13 @@ function dragTabs(nav) {
   return wrap;
 }
 function topbar(inGame) {
-  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['value', '이적·가치'], ['table', '리그·대회'], ['db', '선수·팀'], ['trophies', '트로피'], ['ach', '도전과제']];
+  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['mx', '경기 탐색'], ['value', '이적·가치'], ['table', '리그·대회'], ['db', '선수·팀'], ['trophies', '트로피'], ['inj', '부상'], ['ach', '도전과제']];
+  if (S && S.mode === 'world') tabs.splice(0, tabs.length, ['wsim', '시즌 진행'], ['table', '리그·대회'], ['db', '선수·팀']);
   const needs = S && ['window', 'training', 'preEvents', 'midEvents', 'mid', 'winter', 'h1', 'h2', 'review', 'reviewDone', 'freeYear'].includes(S.phase);
   return h('div', { class: 'top' }, h('div', { class: 'wrap' },
     h('button', { class: 'brand', onclick: () => { if (!busy) U.go('home'); }, title: '처음 화면' }, h('span', { class: 'mk' }, 'R'), h('span', { class: 't' }, 'Road to Legend')),
     inGame ? dragTabs(h('nav', { class: 'tabs' }, ...tabs.map(([k, l]) => h('button', { class: tab === k ? 'on' : '', 'data-tab': k, onclick: () => { if (!busy || st.simming) U.setTab(k); } }, l, k === 'career' && needs && tab !== 'career' ? h('span', { class: 'dot' }) : null)))) : h('div', { style: { flex: 1 } }),
-    inGame && S ? h('div', { class: 'topinfo' }, h('span', { class: 'hide-s' }, '시즌 ', h('b', null, seasonLabel())), h('span', { class: 'hide-s' }, '재산 ', h('b', null, C.fmtEUR(Math.max(0, S.p.money))))) : null,
+    inGame && S && S.mode !== 'world' ? h('div', { class: 'topinfo' }, h('span', { class: 'hide-s' }, '시즌 ', h('b', null, seasonLabel())), h('span', { class: 'hide-s' }, '재산 ', h('b', null, C.fmtEUR(Math.max(0, S.p.money))))) : null,
     h('button', { class: 'gear', title: '설정', 'aria-label': '설정', onclick: () => { if (!busy) U.go('settings'); } }, svg('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'))));
 }
 const seasonLabel = () => `${S.w.year}/${String(S.w.year + 1).slice(2)}`;
@@ -421,6 +430,7 @@ function viewGame() {
   const w = h('div', { class: 'screen' }); w.append(topbar(true));
   if (S && S.viewOnly) w.append(h('div', { class: 'wrap' }, h('div', { class: 'archbar' }, h('span', null, h('b', null, `${S.p.name}`), ` · 보관된 은퇴 선수 기록을 보는 중입니다 (읽기 전용)`), h('span', { style: { display: 'flex', gap: '6px' } }, h('button', { class: 'btn ghost sm', onclick: () => U.exportSave(S) }, '내보내기'), h('button', { class: 'btn sm', onclick: () => U.closeArchive() }, '나가기')))));
   setAtmo(S && S.car && S.car.club ? club(S.car.club) : null);
+  if (S && S.mode === 'world' && !['wsim', 'table', 'db'].includes(tab)) tab = 'wsim';
   if (tab === 'career') w.append(viewHub());
   else w.append(U.pages[tab] ? U.pages[tab]() : h('div', { class: 'empty' }, '준비 중'));
   return w;

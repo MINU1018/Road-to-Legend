@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 <title>Road to Legend</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -526,6 +526,22 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .invitems .item.trait { box-shadow: inset 0 0 0 1px rgba(242,193,78,.5); }
 .invitems .item.dim { opacity: .5; }
 .invitems .item .btn { justify-self: start; margin-top: 2px; }
+
+.injstat { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.injstat > div { background: var(--panel2); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
+
+.mxf { display: flex; flex-wrap: wrap; gap: 8px; }
+.mxf select, .mxf input { flex: 1 1 150px; min-width: 0; }
+.mxsum { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 640px) { .mxsum { grid-template-columns: repeat(3, 1fr); } }
+.ltable th.lnk.on { color: var(--gold); }
+.mxl .res.W { background: rgba(62,207,142,.18); color: #7ee2b0; } .mxl .res.L { background: rgba(255,107,110,.15); color: #ff9a9d; } .mxl .res.D { background: rgba(154,163,178,.15); }
+
+.wshead .in { display: grid; gap: 12px; }
+.wsbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.wsgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.wsitem { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--panel2); }
+.wsitem.gold { box-shadow: inset 0 0 0 1px rgba(242,193,78,.35); }
 </style>
 
 <div id="app"></div>
@@ -552,9 +568,11 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 <script src="ui_pages.js"></script>
 <script src="ui_world.js"></script>
 <script src="ui_db.js"></script>
+<script src="ui_explore.js"></script>
+<script src="ui_wsim.js"></script>
 <script src="ui_games.js"></script>
 <script src="ui_settings.js"></script>
 <script src="ui_extra.js"></script>
 <script>TCUI.boot();</script>
 
-</body></html>
+</head></html>

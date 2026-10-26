@@ -25,6 +25,12 @@ function squadOf(w, c, y) {
   });
 }
 C.squadOf = squadOf;
+// 구단 번호 (선수 기록 용량 절약)
+function cix(w, id) { w.cix = w.cix || []; if (!w._cm) { w._cm = {}; w.cix.forEach((x, i) => w._cm[x] = i); Object.defineProperty(w, '_cm', { enumerable: false, value: w._cm, writable: true }); } let i = w._cm[id]; if (i == null) { i = w.cix.length; w.cix.push(id); w._cm[id] = i; } return i; }
+C.cix = cix;
+C.cidOf = (w, v) => typeof v === 'number' ? (w.cix || [])[v] : v;
+// 선수 시즌 기록 풀기: [시즌-2000, 구단, 경기, 골, 도움, 평점×100, OVR, 나이]
+C.psHist = P => !P ? [] : Array.isArray(P.h) ? P.h : String(P.h || '').split(';').filter(Boolean).map(x => x.split(',').map((v, i) => i === 1 && isNaN(+v) ? v : +v));
 const GW = { ST: 1, W: .5, AM: .42, CM: .17, DM: .07, FB: .06, CB: .09, GK: 0 };
 const AW = { ST: .42, W: .7, AM: .8, CM: .45, DM: .2, FB: .34, CB: .07, GK: .01 };
 function distribute(n, ws) {
@@ -51,19 +57,30 @@ function leagueLeaders(S, lgId, rows, me) {
       sq.forEach((x, i) => { if (i >= 11) return; const apps = Math.round(r.p * C.rnd(.72, .97)); if (me && me.club === r.id && x.n === me.name) return;
         const rt = clamp(6.62 + (x.ovr - 72) * .035 + (ppg0 - 1.4) * .18 + ((g[i] * .6 + a[i] * .4) / Math.max(1, apps)) * .7 + N(0, .16), 5.9, 8.4);
         best.push([x.n, r.id, +rt.toFixed(2), x.pos, x.id || '', x.age || 0, apps]); }); }
-    // 주요 선수 시즌 기록 보관 (명단이 있는 구단, OVR 73 이상 또는 득점·도움 상위)
-    if (!c.lite) {
-      const ppg = r.p ? r.pts / r.p : 1.4, tier = (w.lg[lgId] || {}).tier || 1;
-      const gk = (c.sq || []).filter(e => e[1] === 'GK').sort((a, b) => b[2] - a[2])[0];
-      const recs = sq.map((x, i) => ({ x, i, g: g[i], a: a[i] }));
-      if (gk) recs.push({ x: { id: String(gk[0]), n: C.pName(w, gk), pos: 'GK', ovr: gk[2], age: gk[3], nat: gk[5] }, i: 0, g: 0, a: 0 });
-      for (const q of recs) {
-        const x = q.x; if (!x.id || ((x.ovr < 75 || tier > 1) && q.g < 12 && q.a < 9)) continue;
-        if (me && me.club === r.id && x.n === me.name) continue;
-        const apps = Math.max(1, Math.round(r.p * (q.i < 11 ? C.rnd(.72, .97) : C.rnd(.25, .6))));
-        const rt = clamp(6.62 + (x.ovr - 72) * .035 + (ppg - 1.4) * .18 + (q.g * .6 + q.a * .4) / apps * .7 + N(0, .16), 5.8, 8.4);
-        const P = (w.ps = w.ps || {})[x.id] = w.ps[x.id] || { n: x.n, nat: x.nat, pos: x.pos, h: [] };
-        P.pos = x.pos; P.h.push([y - 2000, r.id, apps, q.g, q.a, Math.round(rt * 100), x.ovr, x.age]);
+    // 선수 시즌 기록 보관: 한 번 기록되기 시작한 선수는 이후 매 시즌 계속 기록 (부진·벤치 시즌 포함)
+    if (!c.lite && c.sq) {
+      const ppg = r.p ? r.pts / r.p : 1.4;
+      const ga = {}; sq.forEach((x, i) => { ga[x.id] = [g[i], a[i]]; });
+      const ord = c.sq.slice().sort((p1, p2) => p2[2] - p1[2]);
+      const rk = {}; const cnt = {};
+      for (const e of ord) { const gk = e[1] === 'GK'; const k = gk ? 'g' : 'o'; cnt[k] = (cnt[k] || 0) + 1; rk[e[0]] = gk ? (cnt.g === 1 ? 0 : 20) : cnt.o - 1; }
+      w.ps = w.ps || {};
+      for (const e of c.sq) {
+        const id = String(e[0]), o = e[2], age = e[3], tracked = !!w.ps[id];
+        const [gg, aa] = ga[id] || [0, 0];
+        const tierL = (w.lg[lgId] || {}).tier || 1;
+        if (o < 50 && !tracked) continue; // 명단이 있는 구단의 선수는 모두 기록
+        void tierL; // 기량이 크게 떨어진 선수는 더 기록하지 않음
+        const nm = C.pName(w, e);
+        if (me && me.club === r.id && nm === me.name) continue;
+        const i = rk[e[0]];
+        const share = i <= 10 ? C.rnd(.7, .97) : i <= 15 ? C.rnd(.25, .6) : i <= 19 ? C.rnd(.05, .3) : C.rnd(0, .12);
+        const apps = Math.round(r.p * share);
+        const rt = apps ? clamp(6.62 + (o - 72) * .035 + (ppg - 1.4) * .18 + (gg * .6 + aa * .4) / apps * .7 + N(0, .16) - (i > 15 ? .15 : 0), 5.8, 8.4) : 0;
+        C.psDirty = true;
+        const Pp = w.ps[id] = w.ps[id] || { n: nm, nat: e[5], pos: e[1], h: '' };
+        if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(x => x.join(',')).join(';') + (Pp.h.length ? ';' : '');
+        Pp.pos = e[1]; Pp.h += [y - 2000, cix(w, r.id), apps, apps ? gg : 0, apps ? aa : 0, Math.round(rt * 100), o, age].join(',') + ';';
       }
     }
   }
@@ -303,7 +320,7 @@ function archiveSeason(S, tables) {
   // 대륙 대회
   for (const k in ss.allCont) {
     const cs = ss.allCont[k];
-    A.cont[k] = { n: cs.name, w: cs.winner, ph: cs.table ? C.sortTable(cs.table).slice(0, 36).map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null, r: (cs.ties || []).map((ts, i) => ({ n: (cs.rounds[i] || [])[2] || '', t: (ts || []).map(t => [t[0], t[1], t.win || null]) })) };
+    A.cont[k] = { n: cs.name, w: cs.winner, ph: cs.table ? C.sortTable(cs.table).slice(0, 36).map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null, r: (cs.ties || []).map((ts, i) => ({ n: (cs.rounds[i] || [])[2] || '', t: (ts || []).map(t => [t[0], t[1], t.win || null, t.sc ? t.sc[0] : null, t.sc ? t.sc[1] : null, t.pen ? 1 : 0]) })) };
   }
   w.arch[ss.label] = A;
   // 용량 관리: 3시즌 지난 기록은 1부 리그만 전체 순위, 나머지는 우승팀만

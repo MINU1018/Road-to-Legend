@@ -183,9 +183,9 @@ U.pickSaveFile = function () {
 // 저장 파일 다운로드: claude.ai 안에서는 downloads 기능, 그 밖(Vercel 등)에서는 브라우저 다운로드
 U.exportSave = async function (obj) {
   const S = obj || U.S(); if (!S) return;
-  const t = G.TCG.serialize(S) || G.TCG.serialize(Object.assign({}, S, { phase: 'window' }));
+  const t = G.TCG.serialize(S, true) || G.TCG.serialize(Object.assign({}, S, { phase: S.mode === 'world' ? 'world' : 'window' }), true);
   const safe = (S.p.name || 'player').replace(/[^\w가-힣-]+/g, '_').slice(0, 24);
-  const fn = `RoadToLegend_${safe}_${S.p.age}세_${S.w.year}.json`;
+  const fn = S.mode === 'world' ? `RoadToLegend_관전모드_${S.w.year}.json` : `RoadToLegend_${safe}_${S.p.age}세_${S.w.year}.json`;
   try {
     const dl = G.claude && G.claude.use ? await Promise.race([G.claude.use('downloads'), new Promise(r => setTimeout(() => r(null), 2500))]) : null;
     if (dl) { try { await dl.save({ filename: fn, data: t }); toast('저장 파일을 내보냈습니다.'); } catch (e) { if (e && e.code !== 'declined') toast('파일 저장을 할 수 없는 환경입니다.'); } return; }

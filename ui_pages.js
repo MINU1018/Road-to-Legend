@@ -49,7 +49,7 @@ function liveRec() {
   const total = C.totalAgg(club);
   const youth = C.totalAgg(youthM);
   return { live: true, label: ss.label, age: s.p.age, club: ss.club, clubName: c.name, short: c.short, c1: c.c1, c2: c.c2, lgName: lg ? lg.name : '', status: s.car.status, total, agg, youth, youthLabel: youthM.length ? youthM[0].compName.replace(' 리그', '') : '', youthRating: C.avgRating(youth), nt: C.totalAgg(ss.matches.filter(m => ['nt', 'ntY'].includes(m.comp))), rating: C.avgRating(total), trophies: [], awards: [],
-    log: ss.matches.map(m => ({ y: m.comp === 'youth' ? 1 : 0, d: m.d, c: m.comp, cn: m.compName, s: m.stage, o: m.oppName, h: m.home, gf: m.gf, ga: m.ga, p: m.played ? 1 : 0, st: m.start ? 1 : 0, mi: m.min || 0, r: m.rating || 0, g: m.played ? m.st.goals : 0, a: m.played ? m.st.assists : 0, mo: m.motm ? 1 : 0, w: m.why || '', pen: m.pens || '', yc: m.played ? m.st.yellow : 0, rc: m.played ? m.st.red : 0 })),
+    log: ss.matches.map(m => ({ ...C.logExtra(m), y: m.comp === 'youth' ? 1 : 0, d: m.d, c: m.comp, cn: m.compName, s: m.stage, o: m.oppName, h: m.home, gf: m.gf, ga: m.ga, p: m.played ? 1 : 0, st: m.start ? 1 : 0, mi: m.min || 0, r: m.rating || 0, g: m.played ? m.st.goals : 0, a: m.played ? m.st.assists : 0, mo: m.motm ? 1 : 0, w: m.why || '', pen: m.pens || '', yc: m.played ? m.st.yellow : 0, rc: m.played ? m.st.red : 0 })),
     shots: club.filter(m => m.played && m.shots).flatMap(m => m.shots), pos: s.p.pos };
 }
 function seasons() { const s = S(); const list = s.hist.map((r, i) => ({ r, i })); const lv = liveRec(); if (lv) list.push({ r: lv, i: 'live' }); return list; }

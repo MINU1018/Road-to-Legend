@@ -70,7 +70,7 @@ function playerMatch(p, o) {
     const goal = R() < xg * conv;
     const onT = goal || R() < clamp(.24 + (qual - 60) * .006, .15, .55);
     const sp = shotSpot(type, xg);
-    shots.push({ x: sp[0], y: sp[1], xg: +xg.toFixed(2), g: goal ? 1 : 0, t: type === 'head' ? 'H' : (p.foot === 'L' ? (R() < .75 ? 'L' : 'R') : (R() < .78 ? 'R' : 'L')), on: onT ? 1 : 0 });
+    shots.push({ x: sp[0], y: sp[1], xg: +xg.toFixed(2), g: goal ? 1 : 0, t: type === 'head' ? 'H' : (p.foot === 'L' ? (R() < .75 ? 'L' : 'R') : (R() < .78 ? 'R' : 'L')), on: onT ? 1 : 0, ob: type === 'out' ? 1 : 0 });
     st.shots++; st.xg += xg; st.npxg += xg; if (type === 'head') st.headShots++;
     if (onT) { st.sot++; st.xgot += goal ? xg * rnd(1.1, 1.9) : xg * rnd(.5, 1.1); }
     if (goal) goals++;
@@ -461,20 +461,50 @@ async function userMatch(S, o, hooks) {
   if (hooks && hooks.match) await hooks.match(rec);
   return rec;
 }
+// 부상: 최근 부상 이력·복귀 직후·누적 출전 부담·나이에 따라 확률과 기간이 달라지고,
+// 부상을 당할 때마다 일정 확률로 커리어 수명(노쇠화 속도)·부상 체질이 나빠진다
+function injuryState(S, d) {
+  const p = S.p, hist = p.injHist || [];
+  const dayNow = d || (S.ss && S.ss.lastDay) || 0;
+  const recent = hist.filter(x => dayNow - x.d < 365);
+  const last = hist[hist.length - 1];
+  const sinceBack = last ? dayNow - (last.d + last.days) : 999;
+  const ms = S.ss ? S.ss.matches.filter(m => m.played && dayNow - m.d <= 14) : [];
+  const load = ms.reduce((a, m) => a + (m.min || 0), 0);
+  const fatigue = clamp((load - 270) / 180, 0, 1.5); // 2주에 270분 넘게 뛰면 피로 누적
+  const mult = (1 + recent.length * .28 + recent.filter(x => x.days >= 36).length * .25) * (sinceBack < 21 ? 1.8 : sinceBack < 45 ? 1.3 : 1) * (1 + fatigue * .35);
+  return { recent: recent.length, sinceBack, fatigue, mult, total: hist.length, days: hist.reduce((a, x) => a + x.days, 0) };
+}
+C.injuryState = injuryState;
 function injuryRoll(S, rec, minutes) {
   const p = S.p, ss = S.ss;
   const it = C.INTENSITY[S.car.intensity || 'normal'][2] * (S.car.focus === 'care' ? .75 : 1);
-  const pr = .0068 * (C.hasTrait && C.hasTrait(p, 'iron') ? .75 : 1) * p.hid.inj * C.diff().inj * ({ low: .6, normal: 1, high: 1.4 }[C.cfg.injuries] || 1) * it * (p.age > 30 ? 1 + (p.age - 30) * .09 : 1) * (minutes / 90);
+  const stt = injuryState(S, rec.d);
+  const pr = .0062 * stt.mult * (C.hasTrait && C.hasTrait(p, 'iron') ? .75 : 1) * p.hid.inj * C.diff().inj * ({ low: .6, normal: 1, high: 1.4 }[C.cfg.injuries] || 1) * it * (p.age > 30 ? 1 + (p.age - 30) * .09 : 1) * (minutes / 90);
   if (R() < pr) {
     const t = R();
-    const days = t < .55 ? rint(6, 14) : t < .85 ? rint(15, 35) : t < .96 ? rint(36, 90) : rint(120, 260);
+    let days = t < .55 ? rint(6, 14) : t < .85 ? rint(15, 35) : t < .96 ? rint(36, 90) : rint(120, 260);
+    // 복귀 직후 재발·나이·부상 체질이면 더 길어진다
+    const reinj = stt.sinceBack < 30;
+    days = Math.round(days * (reinj ? rnd(1.2, 1.6) : 1) * (p.age > 28 ? 1 + (p.age - 28) * .03 : 1) * clamp(p.hid.inj, .8, 1.6));
     const kinds = days < 15 ? ['발목 염좌', '타박상', '근육 피로', '허벅지 경미한 부상'] : days < 36 ? ['햄스트링 부상', '종아리 근육 부상', '사타구니 부상', '발목 인대 부상'] : days < 91 ? ['허벅지 근육 파열', '중족골 골절', '무릎 내측 인대 부상'] : ['전방십자인대 파열', '아킬레스건 파열', '정강이뼈 골절'];
-    ss.inj = days; rec.injury = { days, kind: pick(kinds) };
-    ss.injuries = (ss.injuries || []).concat({ d: rec.d, days, kind: rec.injury.kind });
-    if (days >= 90) { // 장기 부상: 신체 능력 저하
-      for (const k of ['accel', 'sprint', 'agility']) C.bump(p, k, -rnd(1, 3.5));
-      p.hid.pot -= rint(0, 2);
+    const kind = reinj && p.injHist && p.injHist.length ? p.injHist[p.injHist.length - 1].kind + ' 재발' : pick(kinds);
+    ss.inj = days; rec.injury = { days, kind };
+    ss.injuries = (ss.injuries || []).concat({ d: rec.d, days, kind });
+    // 후유증: 확률적으로 커리어 수명 단축·부상 체질화
+    const after = [];
+    const sev = days >= 120 ? 3 : days >= 36 ? 2 : days >= 15 ? 1 : 0;
+    const pAfter = [.04, .12, .4, .75][sev] * (reinj ? 1.6 : 1) * (stt.recent >= 2 ? 1.4 : 1);
+    if (R() < pAfter) { const k = [1.02, 1.04, 1.07, 1.12][sev]; p.hid.lon = clamp(p.hid.lon * k, .35, 2.4); after.push('노쇠화 가속'); }
+    if (R() < [.05, .1, .25, .45][sev] * (reinj ? 1.5 : 1)) { p.hid.inj = clamp(p.hid.inj * 1.08, .4, 2.6); after.push('부상 체질화'); }
+    if (sev >= 2) { // 장기 부상: 신체 능력 저하
+      for (const k of ['accel', 'sprint', 'agility']) C.bump(p, k, -rnd(.5, 2) * sev);
+      p.hid.pot -= rint(0, sev);
+      after.push('스피드 저하');
     }
+    rec.injury.after = after;
+    (p.injHist = p.injHist || []).push({ y: ss.year, d: rec.d, age: p.age, club: ss.club, comp: rec.compName, opp: rec.oppName, days, kind, reinj: reinj ? 1 : 0, after });
+    if (after.length && C.news) C.news(S, `${p.name} 부상 후유증 우려: ${after.join(', ')}`, 'injury', sev >= 2);
   }
 }
 C.userMatch = userMatch;
@@ -559,6 +589,7 @@ async function doCont(S, fx, hooks) {
     if (tie.agg[0] === tie.agg[1]) { win = C.koWinner(w.clubs[ss.club].str, oc.str, 0, 0) === 0; rec.pens = win ? 'W' : 'L'; }
     rec.koWin = win; if (!final) rec.agg = tie.agg.slice();
     tie.win = win ? ss.club : oid;
+    tie.sc = tie[0] === ss.club ? tie.agg.slice() : [tie.agg[1], tie.agg[0]]; if (tie.agg[0] === tie.agg[1]) tie.pen = 1;
     if (!win) { cs.userOut = true; ss.contOut = rd[2]; }
     if (final) { cs.winner = tie.win; cs.done = true; if (win) ss.contWon = true; }
     resolveOthers(S, cs, ri);
@@ -601,6 +632,7 @@ function resolveOthers(S, cs, ri) {
     let a = 0, b = 0;
     if (single) { [a, b] = C.quickMatch(s0, s1, 0); } else { const m1 = C.quickMatch(s0, s1, 1), m2 = C.quickMatch(s1, s0, 1); a = m1[0] + m2[1]; b = m1[1] + m2[0]; }
     t.win = C.koWinner(s0, s1, a, b) === 0 ? t[0] : t[1];
+    t.sc = [a, b]; if (a === b) t.pen = 1;
   }
   if (ri === cs.rounds.length - 1) { cs.done = true; cs.winner = cs.ties[ri][0] && cs.ties[ri][0].win; }
 }
@@ -707,6 +739,12 @@ function compAgg(ms) {
 C.compAgg = compAgg;
 function totalAgg(ms, filter) { const t = blankStats(); for (const m of ms) if (m.played && (!filter || filter(m))) addStats(t, m.st); return t; }
 C.totalAgg = totalAgg;
+// 경기 로그용 세부 기록: 골 유형(프리킥·페널티·헤더·중거리), 슈팅, 상대 ID, 클럽
+C.logExtra = m => {
+  if (!m.played || !m.st) return { oi: m.opp, cl: m.club || null };
+  const sh = m.shots || [], gl = sh.filter(x => x.g);
+  return { oi: m.opp, fk: gl.filter(x => x.t === 'F').length, pk: gl.filter(x => x.t === 'P').length, hd: gl.filter(x => x.t === 'H').length, ob: gl.filter(x => x.ob).length, sh: m.st.shots, sot: m.st.sot, xg: +(m.st.xg || 0).toFixed(2), kp: m.st.chances, pa: m.st.passAtt ? Math.round(m.st.passOk / m.st.passAtt * 100) : 0, tk: m.st.tackles + m.st.ints, dr: m.st.dribOk };
+};
 const avgRating = st => st.rated ? +(st.ratingSum / st.rated).toFixed(2) : 0;
 C.avgRating = avgRating;
 
@@ -731,7 +769,7 @@ function finishSeason(S) {
   const myLgPos = lg ? tables[lg.id].findIndex(r => r.id === ss.club) + 1 : 0;
   ss.lgPos = myLgPos; ss.lgN = lg ? lg.clubs.length : 0;
   const trophies = [];
-  const cname = w.clubs[ss.club].name;
+  const cname = ss.club && w.clubs[ss.club] ? w.clubs[ss.club].name : '';
   if (lg && myLgPos === 1) trophies.push({ t: lg.name, k: 'league', club: cname, y: ss.label });
   if (ss.CWon) trophies.push({ t: ss.cupName, k: 'cup', club: cname, y: ss.label });
   if (ss.LCWon) trophies.push({ t: ss.lcupName, k: 'lcup', club: cname, y: ss.label });
@@ -753,6 +791,7 @@ function finishSeason(S) {
   return ss;
 }
 C.finishSeason = finishSeason;
+C.setupCont = setupCont;
 // 팀 내 평점 순위: 동료들의 시즌 평점은 능력치·팀 성적으로 추정 (시즌 동안 고정된 시드)
 function teamRank(S, ssArg) {
   const ss = ssArg || S.ss, w = S.w, c = w.clubs[ss.club];

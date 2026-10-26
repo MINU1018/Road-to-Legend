@@ -7,6 +7,7 @@ const GM = G.TCG = {};
 
 const evCount = () => { const f = C.cfg.events; return f === 'off' ? 0 : f === 'low' ? (R() < .5 ? 1 : 0) : f === 'high' ? (R() < .5 ? 3 : 2) : (R() < .55 ? 2 : 1); };
 GM.newGame = function (opt) {
+  C.psDirty = true;
   const w = C.buildWorld();
   const p = C.newPlayer(Object.assign({ year: w.year }, opt));
   const S = { v: 1, w, p, car: { club: null, status: 'youth', contract: 0, wage: 0, trust: 50, years: 0, focus: 'balance', intensity: 'normal' }, hist: [], flags: {}, phase: 'academy', vh: [], trophies: [], awards: [], evLog: [], created: Date.now() };
@@ -192,7 +193,7 @@ GM.endSeason = function (S) {
     rating, minShare: ss.minShare, trophies: ss.trophies, awards: ss.awards, ballon: ss.ballon ? ss.ballon.rank : null, ballonTop: ss.ballon ? ss.ballon.top.slice(0, 5).map(x => [x.n, x.club, !!x.me]) : [],
     tourn: ss.tourn ? { name: ss.tourn.name, stage: ss.tourn.stage, won: ss.tourn.won } : null,
     moments: ss.moments, injuries: ss.injuries || [], winter: ss.winter ? { from: w.clubs[ss.winter.from].name, to: w.clubs[ss.winter.to].name, type: ss.winter.type } : null,
-    log: ss.matches.map(m => ({ y: m.comp === 'youth' ? 1 : 0, d: m.d, c: m.comp, cn: m.compName, s: m.stage, o: m.oppName, h: m.home, gf: m.gf, ga: m.ga, p: m.played ? 1 : 0, st: m.start ? 1 : 0, mi: m.min || 0, r: m.rating || 0, g: m.played ? m.st.goals : 0, a: m.played ? m.st.assists : 0, mo: m.motm ? 1 : 0, w: m.why || '', pen: m.pens || '', ko: m.koWin, mm: m.moment ? m.moment.ok : undefined, yc: m.played ? m.st.yellow : 0, rc: m.played ? m.st.red : 0 })),
+    log: ss.matches.map(m => ({ ...C.logExtra(m), y: m.comp === 'youth' ? 1 : 0, d: m.d, c: m.comp, cn: m.compName, s: m.stage, o: m.oppName, h: m.home, gf: m.gf, ga: m.ga, p: m.played ? 1 : 0, st: m.start ? 1 : 0, mi: m.min || 0, r: m.rating || 0, g: m.played ? m.st.goals : 0, a: m.played ? m.st.assists : 0, mo: m.motm ? 1 : 0, w: m.why || '', pen: m.pens || '', ko: m.koWin, mm: m.moment ? m.moment.ok : undefined, yc: m.played ? m.st.yellow : 0, rc: m.played ? m.st.red : 0 })),
     shots: ss.matches.filter(m => m.played && m.shots && !['nt', 'ntY', 'youth'].includes(m.comp)).flatMap(m => m.shots).slice(0, 260),
     table: lg && ss.final[lg.id] ? ss.final[lg.id].map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null,
     cupOut: ss.CWon ? '우승' : ss.COut || '', lcupOut: ss.LCWon ? '우승' : ss.LCOut || '', contOut: ss.contWon ? '우승' : ss.contOut || '', contName: ss.cont ? ss.allCont[ss.cont].name : '', cupName: ss.cupName, lcupName: ss.lcupName,
@@ -284,10 +285,12 @@ GM.summary = function (S) {
 // ---------- 저장 ----------
 const KEY = 'tc.save.v1', HOF = 'tc.hof.v1';
 // 시즌 도중(경기 진행 중)에는 저장하지 않고, 단계 사이에서만 직렬화
-GM.serialize = function (S) {
-  if (!['window', 'training', 'review', 'reviewDone', 'retired', 'academy', 'freeYear'].includes(S.phase)) return null;
+GM.serialize = function (S, full) {
+  if (!['window', 'training', 'review', 'reviewDone', 'retired', 'academy', 'freeYear', 'world'].includes(S.phase)) return null;
   const o = Object.assign({}, S); delete o.ss; delete o.lastSeason; delete o.pend; delete o.winterOffers; delete o.newsQ;
   if (o.phase === 'review') o.phase = 'reviewDone';
+  // 선수 기록(용량이 큰 부분)은 따로 저장한다: full=true면 포함 (파일 내보내기용)
+  if (o.w && o.w.ps && !full) { o.w = Object.assign({}, o.w); delete o.w.ps; }
   return JSON.stringify(o);
 };
 GM.parse = function (t) { try { return JSON.parse(t); } catch (e) { return null; } };
@@ -299,5 +302,32 @@ GM.saveHof = function (S, sum) {
     list.unshift({ name: S.p.name, nat: S.p.nat, pos: S.p.pos, num: S.p.num, peak: sum.peak, apps: sum.total.apps, goals: sum.total.goals, assists: sum.total.assists, caps: sum.nt.apps, tp: sum.tp, aw: sum.aw, bd: sum.bd, grade: sum.grade[0], retireAge: S.p.age, lastClub: last ? last.clubName : '', maxV: sum.maxV, y: S.w.year, d: Date.now() });
     localStorage.setItem(HOF, JSON.stringify(list.slice(0, 30)));
   } catch (e) { }
+};
+// ---------- 관전(시뮬레이션) 모드: 내 선수 없이 세계만 진행 ----------
+GM.newWorld = function () {
+  C.psDirty = true;
+  const w = C.buildWorld();
+  return { v: 1, mode: 'world', w, p: { name: '', nat: 'ENG', pos: 'ST', age: 0, a: {}, mods: [], hid: { inj: 1, lon: 1, pot: 0, peak: 27 }, traits: [], money: 0, rep: 0, morale: 60, weak: 1, skill: 1, num: 0 },
+    car: { club: null, status: 'none', trust: 50 }, hist: [], flags: {}, phase: 'world', vh: [], trophies: [], awards: [], evLog: [], ws: [], created: Date.now() };
+};
+GM.simWorldSeason = function (S) {
+  const w = S.w, y = w.year;
+  const ss = S.ss = { year: y, label: `${y}/${String(y + 1).slice(2)}`, club: null, status: 'none', fx: [], i: 0, matches: [], tables: {}, alive: {}, allCont: {}, cont: null, events: [], moments: [], injuries: [] };
+  ss.pools = C.nationPools(w);
+  const parts = C.contParticipants(w);
+  for (const k in parts) ss.allCont[k] = C.setupCont(w, k, parts[k], y);
+  C.finishSeason(S);
+  const bd = C.ballonDor(S);
+  // 시즌 요약
+  const tier1 = Object.values(w.lg).filter(l => l.tier === 1);
+  const champs = {}; for (const l of tier1) champs[l.id] = ss.final[l.id] && ss.final[l.id][0] ? ss.final[l.id][0].id : null;
+  const cont = {}; for (const k in ss.allCont) cont[k] = ss.allCont[k].winner || null;
+  const A = w.arch && w.arch[ss.label];
+  const boots = {}; if (A) for (const l of tier1) { const L = A.lg[l.id]; if (L && L.sc && L.sc[0]) boots[l.id] = [L.sc[0][0], L.sc[0][1], L.sc[0][2], L.sc[0][5] || '']; }
+  S.ws = (S.ws || []).concat({ y, label: ss.label, champs, cont, boots, bd: bd.top.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.ovr]), intl: (w.intl && w.intl[y + 1] || []).map(t => [t.k, t.n, t.w, t.ru]), tx: 0 });
+  C.advanceWorld(w, ss.resAdj);
+  S.ws[S.ws.length - 1].tx = w.lastTx || 0;
+  S.lastSeason = ss; S.ss = null;
+  return S.ws[S.ws.length - 1];
 };
 })(typeof window !== 'undefined' ? window : globalThis);

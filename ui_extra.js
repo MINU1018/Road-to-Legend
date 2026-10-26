@@ -118,3 +118,31 @@ U.bioBlock = function (s) {
   return box;
 };
 })(window);
+
+// ---------- 부상 기록 ----------
+(function () {
+  const C = window.TC, U = window.TCUI, { h } = U;
+  U.pages.inj = function () {
+    const s = U.S(), p = s.p, w = s.w;
+    const root = h('div', { class: 'wrap prof screen' });
+    let list = (p.injHist || []).slice();
+    if (!list.length) for (const r of s.hist) for (const x of (r.injuries || [])) list.push({ y: r.y, d: x.d, age: r.age, club: r.club, days: x.days, kind: x.kind, after: [] });
+    const st = C.injuryState ? C.injuryState(s) : { recent: 0, fatigue: 0, mult: 1 };
+    const risk = p.hid.inj * st.mult;
+    const riskL = risk < .85 ? ['낮음', 'good'] : risk < 1.2 ? ['보통', ''] : risk < 1.7 ? ['높음', 'bad'] : ['매우 높음', 'bad'];
+    const lonL = p.hid.lon < .85 ? '느림' : p.hid.lon < 1.15 ? '보통' : p.hid.lon < 1.5 ? '빠름' : '매우 빠름';
+    const cur = s.ss && s.ss.inj > 0 ? `부상 중 · ${s.ss.inj}일 남음` : '정상';
+    const totalDays = list.reduce((a, x) => a + x.days, 0), longN = list.filter(x => x.days >= 36).length, reN = list.filter(x => x.reinj).length, afN = list.filter(x => x.after && x.after.length).length;
+    const missed = s.hist.reduce((a, r) => a + (r.log || []).filter(m => m.w === '부상').length, 0) + (s.ss ? s.ss.matches.filter(m => m.why === '부상').length : 0);
+    root.append(h('div', { class: 'sec' }, h('h3', null, '현재 몸 상태'), h('div', { class: 'in injstat' },
+      ...[['상태', cur], ['부상 위험도', h('span', { class: 'chip ' + riskL[1] }, riskL[0])], ['최근 1년 부상', `${st.recent}회`], ['최근 2주 출전 부담', st.fatigue > .8 ? '높음' : st.fatigue > .2 ? '보통' : '낮음'], ['노쇠화 속도', lonL]].map(([k, v]) => h('div', null, h('div', { class: 'lbl' }, k), h('b', null, v)))),
+      h('div', { class: 'sub', style: { paddingBottom: '14px' } }, '최근 부상이 많거나 복귀 직후, 출전 부담이 클수록 다시 다칠 확률이 오릅니다. 큰 부상일수록 후유증(노쇠화 가속·부상 체질화·스피드 저하)이 남을 확률이 높습니다.')));
+    root.append(h('div', { class: 'statline' }, ...[['통산 부상', `${list.length}회`], ['결장 일수', `${totalDays}일`], ['결장 경기', `${missed}경기`], ['장기 부상', `${longN}회`]].map(([l, v]) => h('div', null, h('div', { class: 'lbl' }, l), h('div', { class: 'v', style: { fontSize: '22px' } }, v)))));
+    if (reN || afN) root.append(h('div', { class: 'chg' }, reN ? h('span', { class: 'chip bad' }, `재발 ${reN}회`) : null, afN ? h('span', { class: 'chip bad' }, `후유증 ${afN}회`) : null));
+    if (!list.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '아직 부상 기록이 없습니다.'))); return root; }
+    root.append(h('div', { class: 'sec' }, h('h3', null, '부상 이력'), h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '620px' } },
+      h('thead', null, h('tr', null, ...['날짜', '나이', '구단', '부상', '결장', '비고'].map(x => h('th', null, x)))),
+      h('tbody', null, ...list.slice().reverse().map(x => h('tr', null, h('td', null, x.d ? C.fmtDateY(x.d) : (x.y || '')), h('td', null, x.age ? `${x.age}세` : ''), h('td', null, (w.clubs[x.club] || {}).name || ''), h('td', null, h('b', { style: { color: x.days >= 90 ? '#ff9a9d' : x.days >= 36 ? '#f2c14e' : null } }, x.kind)), h('td', null, `${x.days}일`), h('td', null, [x.reinj ? '재발' : '', ...(x.after || [])].filter(Boolean).join(' · ')))))))));
+    return root;
+  };
+})();
