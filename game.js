@@ -326,7 +326,7 @@ GM.simWorldSeason = function (S) {
   const boots = {}; if (A) for (const l of tier1) { const L = A.lg[l.id]; if (L && L.sc && L.sc[0]) boots[l.id] = [L.sc[0][0], L.sc[0][1], L.sc[0][2], L.sc[0][5] || '']; }
   S.ws = (S.ws || []).concat({ y, label: ss.label, champs, cont, boots, bd: bd.top.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.ovr]), intl: (w.intl && w.intl[y + 1] || []).map(t => [t.k, t.n, t.w, t.ru]), tx: 0 });
   C.advanceWorld(w, ss.resAdj);
-  S.ws[S.ws.length - 1].tx = w.lastTx || 0;
+  { const L = S.ws[S.ws.length - 1]; L.tx = w.lastTx || 0; L.txs = w.txStat || null; L.big = (w.bigTx || []).slice().sort((x, z) => z[5] - x[5]).slice(0, 20); }
   S.lastSeason = ss; S.ss = null;
   return S.ws[S.ws.length - 1];
 };

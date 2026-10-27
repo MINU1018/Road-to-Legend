@@ -71,16 +71,24 @@ function playerView(s, root, pid) {
   const name = e ? C.pName(w, e) : P ? P.n : '알 수 없는 선수';
   const nat = e ? e[5] : P && P.nat, pos = e ? e[1] : P && P.pos;
   root.append(h('div', { class: 'sec' }, h('div', { class: 'in dbhead' }, flag(nat, 36),
-    h('div', null, h('h2', { style: { margin: 0 } }, name), h('div', { class: 'mute' }, [C.natName(nat), pos, e ? `${e[3]}세` : P && P.ret ? `${P.ret}년 은퇴` : '기록 밖 (하부 리그 등)'].filter(Boolean).join(' · '))),
+    h('div', null, h('h2', { style: { margin: 0 } }, name), h('div', { class: 'mute' }, [C.natName(nat), pos, e ? `${e[3]}세` : P && P.ret ? `${P.ret}년 은퇴` : '기록 밖 (하부 리그 등)', e && e[6] != null ? `계약 ${Math.max(1, e[6])}년 남음` : '', e && e[7] && w.clubs[e[7]] ? `${w.clubs[e[7]].name}에서 임대 중` : ''].filter(Boolean).join(' · '))),
     e ? h('div', { class: 'dbstat' }, h('div', { class: 'lbl' }, 'OVR'), h('b', null, e[2])) : null,
     c ? h('div', { class: 'dbclub' }, clubLink(w, c.id, 26), h('div', { class: 'mute', style: { fontSize: '12px' } }, (w.lg[c.lg] || {}).name || '')) : null)));
   const hist = C.psHist(P);
+  // 이적 경로: 구단이 바뀔 때마다 한 칸 (임대는 따로 표시)
+  if (hist.length) {
+    const path = []; for (const x of hist) { const cid = C.cidOf(w, x[1]), L = path[path.length - 1]; if (L && L.cid === cid && !!L.loan === !!x[8]) L.y1 = x[0]; else path.push({ cid, y0: x[0], y1: x[0], loan: x[8] ? 1 : 0 }); }
+    const yy = v => (v < 1000 ? v + 2000 : v);
+    if (c && !c.lite) { const L = path[path.length - 1], ln = !!(e && e[7]); if (!L || L.cid !== c.id || !!L.loan !== ln) path.push({ cid: c.id, y0: w.year - 2000, y1: null, loan: ln ? 1 : 0 }); else L.y1 = null; }
+    root.append(h('div', { class: 'sec' }, h('h3', null, '커리어 경로', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` 구단 ${new Set(path.filter(x => !x.loan).map(x => x.cid)).size}곳 · 임대 ${path.filter(x => x.loan).length}회`)),
+      h('div', { class: 'in cpath' }, ...path.map(x => h('div', { class: 'cpstep' + (x.loan ? ' loan' : '') }, clubLink(w, x.cid, 18), h('span', { class: 'mute' }, `${yy(x.y0)}–${x.y1 == null ? '현재' : String(yy(x.y1) + 1).slice(2)}${x.loan ? ' · 임대' : ''}`))))));
+  }
   if (hist.length) {
     const tot = hist.reduce((a, x) => (a.apps += x[2], a.g += x[3], a.a += x[4], a), { apps: 0, g: 0, a: 0 });
     root.append(h('div', { class: 'sec' }, h('h3', null, '시즌별 리그 기록'), h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, ...['시즌', '구단', '나이', 'OVR', '경기', '골', '도움', '평점'].map(x => h('th', null, x)))),
-      h('tbody', null, ...hist.slice().reverse().map(x => h('tr', null, h('td', null, seasonLbl(x[0] < 1000 ? x[0] + 2000 : x[0])), h('td', null, clubLink(w, C.cidOf(w, x[1]), 16)), h('td', null, x[7] != null ? x[7] : ''), h('td', null, x[6]), h('td', null, x[2]), h('td', null, h('b', null, x[3])), h('td', null, x[4]), h('td', null, U.rt2(x[5] / 100)))),
+      h('tbody', null, ...hist.slice().reverse().map(x => h('tr', null, h('td', null, seasonLbl(x[0] < 1000 ? x[0] + 2000 : x[0])), h('td', null, clubLink(w, C.cidOf(w, x[1]), 16), x[8] ? h('span', { class: 'mute', style: { fontSize: '11px' } }, ' (임대)') : null), h('td', null, x[7] != null ? x[7] : ''), h('td', null, x[6]), h('td', null, x[2]), h('td', null, h('b', null, x[3])), h('td', null, x[4]), h('td', null, U.rt2(x[5] / 100)))),
         h('tr', { class: 'me' }, h('td', null, '통산'), h('td'), h('td'), h('td'), h('td', null, tot.apps), h('td', null, tot.g), h('td', null, tot.a), h('td')))))));
-  } else root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '보관된 시즌 기록이 없습니다. (OVR 73 이상이거나 리그 득점·도움 상위권에 든 시즌만 기록됩니다)')));
+  } else root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '보관된 시즌 기록이 없습니다. 게임 시작(2026/27) 이후 시즌이 끝나야 기록이 쌓입니다.')));
   // 발롱도르 이력
   const bd = (w.bdHist || []).map(b => { const i = b.top.findIndex(x => x[2] === pid); return i >= 0 ? [b.y, i + 1] : null; }).filter(Boolean);
   if (bd.length) root.append(h('div', { class: 'sec' }, h('h3', null, '발롱도르'), h('div', { class: 'in chg' }, ...bd.map(([y, r]) => h('span', { class: 'chip' + (r === 1 ? ' gold' : '') }, `${y}년 ${r}위`)))));
@@ -101,10 +109,12 @@ function clubView(s, root, id) {
   // 스쿼드
   const sq = C.squadOf(w, c, s.w.year).slice().sort((a, b) => (POSORD[a.pos] - POSORD[b.pos]) || b.ovr - a.ovr);
   const meHere = s.car && s.car.club === id;
+  const ent = {}; if (!c.lite && c.sq) for (const e of c.sq) ent[String(e[0])] = e;
+  const note = x => { const e = ent[x.id]; if (!e) return ''; if (e[7] && w.clubs[e[7]]) return `임대 (${w.clubs[e[7]].name})`; return e[6] != null ? `계약 ${Math.max(1, e[6])}년` : ''; };
   root.append(h('div', { class: 'sec' }, h('h3', null, `스쿼드 ${sq.length + (meHere ? 1 : 0)}명`, c.lite ? h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, '하부 리그 구단은 대략적인 명단입니다') : null),
-    h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, ...['포지션', '이름', '나이', '국적', 'OVR'].map(x => h('th', null, x)))),
-      h('tbody', null, ...(meHere ? [h('tr', { class: 'me' }, h('td', null, s.p.pos), h('td', null, h('span', { class: 'lnk', onclick: () => U.setTab('profile') }, `${s.p.name} (나)`)), h('td', null, s.p.age), h('td', null, flag(s.p.nat, 18)), h('td', null, C.ovrOf(s.p)))] : []),
-        ...sq.map(x => h('tr', null, h('td', null, h('span', { class: 'tpos' }, x.pos)), h('td', null, nameLink(x.n, x.id)), h('td', null, x.age != null ? x.age : ''), h('td', null, x.nat ? flag(x.nat, 18) : ''), h('td', null, Math.round(x.ovr)))))))));
+    h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, ...['포지션', '이름', '나이', '국적', 'OVR', '계약'].map(x => h('th', null, x)))),
+      h('tbody', null, ...(meHere ? [h('tr', { class: 'me' }, h('td', null, s.p.pos), h('td', null, h('span', { class: 'lnk', onclick: () => U.setTab('profile') }, `${s.p.name} (나)`)), h('td', null, s.p.age), h('td', null, flag(s.p.nat, 18)), h('td', null, C.ovrOf(s.p)), h('td'))] : []),
+        ...sq.map(x => h('tr', null, h('td', null, h('span', { class: 'tpos' }, x.pos)), h('td', null, nameLink(x.n, x.id)), h('td', null, x.age != null ? x.age : ''), h('td', null, x.nat ? flag(x.nat, 18) : ''), h('td', null, Math.round(x.ovr)), h('td', { class: 'mute', style: { fontSize: '12px' } }, note(x)))))))));
   // 연도별 성적
   const rows = [];
   for (const lb of Object.keys(w.arch || {}).sort().reverse()) {

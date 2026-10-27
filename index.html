@@ -505,6 +505,11 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .dbitem { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--panel2); cursor: pointer; border: 1px solid transparent; }
 .dbitem:hover { border-color: var(--gold); }
 .dbhead { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.cpath { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.cpstep { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border: 1px solid var(--line, rgba(255,255,255,.1)); border-radius: 8px; font-size: 13px; position: relative; }
+.cpstep .mute { font-size: 11px; }
+.cpstep.loan { border-style: dashed; opacity: .85; }
+.cpstep + .cpstep::before { content: "›"; position: absolute; left: -8px; top: 50%; transform: translate(-50%, -50%); opacity: .4; }
 .dbhead > div:nth-child(2) { flex: 1; min-width: 160px; }
 .dbstat { text-align: center; padding: 8px 14px; border-radius: 10px; background: var(--panel2); }
 .dbstat b { font-family: var(--font-display); font-size: 28px; }
@@ -574,5 +579,3 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 <script src="ui_settings.js"></script>
 <script src="ui_extra.js"></script>
 <script>TCUI.boot();</script>
-
-</head></html>

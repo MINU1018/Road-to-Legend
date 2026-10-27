@@ -48,14 +48,17 @@ function leagueLeaders(S, lgId, rows, me) {
     const top = sq.length ? sq[0].ovr : 70;
     let gf = r.gf, ga = Math.round(r.gf * .72);
     if (me && me.club === r.id) { gf = Math.max(0, gf - me.g); ga = Math.max(0, ga - me.a); }
+    // 시즌 폼: 같은 OVR이라도 해마다 잘 풀리는 시즌·안 풀리는 시즌이 있다 (이적 시장 판단에 쓰임)
+    const fm = {};
+    if (!c.lite && c.sq) for (const e of c.sq) { const f = clamp(N(0, 1), -2.5, 2.5); e[9] = Math.round(f * 100) / 100; fm[String(e[0])] = f; }
     const play = sq.map((x, i) => Math.exp((x.ovr - top) * .1) * (i < 11 ? 1 : .45));
-    const g = distribute(gf, sq.map((x, i) => (GW[C.ROLE[x.pos]] || .1) * play[i] * (1 + N(0, .25) ** 2)));
-    const a = distribute(ga, sq.map((x, i) => (AW[C.ROLE[x.pos]] || .1) * play[i] * (1 + N(0, .25) ** 2)));
+    const g = distribute(gf, sq.map((x, i) => (GW[C.ROLE[x.pos]] || .1) * play[i] * Math.exp((fm[x.id] || 0) * .28) * (1 + N(0, .25) ** 2)));
+    const a = distribute(ga, sq.map((x, i) => (AW[C.ROLE[x.pos]] || .1) * play[i] * Math.exp((fm[x.id] || 0) * .22) * (1 + N(0, .25) ** 2)));
     sq.forEach((x, i) => { if (g[i]) sc.push([x.n, r.id, g[i], a[i], 0, x.id || '']); if (a[i]) as.push([x.n, r.id, a[i], g[i], 0, x.id || '']); });
     // 리그 평점 순위용: 주전급 선수 평점 추정 (사용자 평점 모델과 같은 기준)
     { const ppg0 = r.p ? r.pts / r.p : 1.4;
       sq.forEach((x, i) => { if (i >= 11) return; const apps = Math.round(r.p * C.rnd(.72, .97)); if (me && me.club === r.id && x.n === me.name) return;
-        const rt = clamp(6.62 + (x.ovr - 72) * .035 + (ppg0 - 1.4) * .18 + ((g[i] * .6 + a[i] * .4) / Math.max(1, apps)) * .7 + N(0, .16), 5.9, 8.4);
+        const rt = clamp(6.62 + (x.ovr - 72) * .035 + (ppg0 - 1.4) * .18 + ((g[i] * .6 + a[i] * .4) / Math.max(1, apps)) * .7 + (fm[x.id] || 0) * .1 + N(0, .12), 5.9, 8.4);
         best.push([x.n, r.id, +rt.toFixed(2), x.pos, x.id || '', x.age || 0, apps]); }); }
     // 선수 시즌 기록 보관: 한 번 기록되기 시작한 선수는 이후 매 시즌 계속 기록 (부진·벤치 시즌 포함)
     if (!c.lite && c.sq) {
@@ -76,11 +79,11 @@ function leagueLeaders(S, lgId, rows, me) {
         const i = rk[e[0]];
         const share = i <= 10 ? C.rnd(.7, .97) : i <= 15 ? C.rnd(.25, .6) : i <= 19 ? C.rnd(.05, .3) : C.rnd(0, .12);
         const apps = Math.round(r.p * share);
-        const rt = apps ? clamp(6.62 + (o - 72) * .035 + (ppg - 1.4) * .18 + (gg * .6 + aa * .4) / apps * .7 + N(0, .16) - (i > 15 ? .15 : 0), 5.8, 8.4) : 0;
+        const rt = apps ? clamp(6.62 + (o - 72) * .035 + (ppg - 1.4) * .18 + (gg * .6 + aa * .4) / apps * .7 + (fm[id] || 0) * .1 + N(0, .12) - (i > 15 ? .15 : 0), 5.8, 8.4) : 0;
         C.psDirty = true;
         const Pp = w.ps[id] = w.ps[id] || { n: nm, nat: e[5], pos: e[1], h: '' };
         if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(x => x.join(',')).join(';') + (Pp.h.length ? ';' : '');
-        Pp.pos = e[1]; Pp.h += [y - 2000, cix(w, r.id), apps, apps ? gg : 0, apps ? aa : 0, Math.round(rt * 100), o, age].join(',') + ';';
+        Pp.pos = e[1]; Pp.h += [y - 2000, cix(w, r.id), apps, apps ? gg : 0, apps ? aa : 0, Math.round(rt * 100), o, age].concat(e[7] ? [1] : []).join(',') + ';';
       }
     }
   }
@@ -311,6 +314,11 @@ function archiveSeason(S, tables) {
     L.n = lg.name;
     A.lg[id] = L;
   }
+  // 리그 시뮬 밖의 실명 구단(대륙 대회만 나오는 구단 등)도 선수 시즌 기록은 남긴다
+  { const inT = new Set(); for (const id in tables) for (const r of tables[id]) inT.add(r.id);
+    for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite || !c.sq || !c.sq.length || inT.has(id)) continue;
+      const pg = 30, gf = Math.round(pg * 1.45 * Math.exp((c.str - 70) * .025) * C.rnd(.85, 1.15)), pts = Math.round(pg * clamp(1.5 + (c.str - 70) * .04 + N(0, .2), .8, 2.5));
+      leagueLeaders(S, null, [{ id, p: pg, gf, ga: 0, pts }], null); } }
   // 각국 컵
   const nats = new Set(Object.values(w.lg).map(l => l.nation));
   for (const nat of nats) {

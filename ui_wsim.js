@@ -41,6 +41,14 @@ U.pages.wsim = function () {
     ...Object.entries(r.cont).filter(([k, v]) => v).map(([k, v]) => h('div', { class: 'wsitem gold' }, h('div', { class: 'lbl' }, C.COMPS[k] ? C.COMPS[k].name : k), clubChip(w, v, 22))),
     ...(r.intl || []).map(t => h('div', { class: 'wsitem gold' }, h('div', { class: 'lbl' }, `${t[1]} ${r.y + 1}`), h('span', { class: 'cc' }, U.natCrest(t[2], 20), h('span', null, C.natName(t[2]))))))));
   root.append(h('div', { class: 'sec' }, h('h3', null, '발롱도르'), h('div', { class: 'in bdlist' }, ...r.bd.slice(0, 10).map((x, i) => h('div', null, h('span', { class: 'mute' }, i + 1), pLink(x[0], x[2]), h('span', { class: 'mute', style: { fontSize: '11px' } }, (w.clubs[x[1]] || {}).name || ''))))));
+  if (r.big && r.big.length) {
+    const KN = { sale: '이적', free: '자유계약', loan: '임대' };
+    const t = r.txs;
+    root.append(h('div', { class: 'sec' }, h('h3', null, `${r.label} 시즌 후 이적 시장`, t ? h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` 이적 ${t.sale} · 자유계약 ${t.free} · 임대 ${t.loan} · 재계약 ${t.renew}`) : null),
+      h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '620px' } },
+        h('thead', null, h('tr', null, ...['선수', '나이', 'OVR', '이전 구단', '', '새 구단', '형태'].map(x => h('th', null, x)))),
+        h('tbody', null, ...r.big.slice(0, 15).map(x => h('tr', null, h('td', null, pLink(x[0], x[1])), h('td', null, x[6]), h('td', null, x[5]), h('td', null, clubChip(w, x[2], 16)), h('td', { class: 'mute' }, '→'), h('td', null, clubChip(w, x[3], 16)), h('td', { class: 'mute' }, KN[x[4]] || x[4]))))))));
+  }
   root.append(h('div', { class: 'sec' }, h('h3', null, '주요 리그 우승·득점왕'), h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '560px' } },
     h('thead', null, h('tr', null, ...['리그', '우승', '득점왕'].map(x => h('th', null, x)))),
     h('tbody', null, ...top.map(l => { const b = r.boots[l.id]; return h('tr', null, h('td', null, h('span', { class: 'cc' }, flag(l.nation, 18), h('span', { class: 'lnk', onclick: () => { U.st.wv = Object.assign(U.st.wv || {}, { mode: 'league', nat: l.nation, lg: l.id, season: r.label }); U.setTab('table'); } }, l.name))), h('td', null, clubChip(w, r.champs[l.id])), h('td', null, b ? h('span', null, pLink(b[0], b[3]), h('span', { class: 'mute' }, ` ${b[2]}골`)) : '-')); }))))));
