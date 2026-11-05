@@ -275,18 +275,28 @@ U.POSXY = POSXY;
 
 // ---------- 라우터 ----------
 function render() {
-  const app = $('#app'); app.innerHTML = '';
-  if (scr === 'home') app.append(viewHome());
-  else if (scr === 'create') app.append(viewCreate());
-  else if (scr === 'academy') app.append(viewAcademy());
-  else if (scr === 'real') app.append(viewReal());
-  else if (scr === 'settings') { app.append(topbar(!!S && S.car && S.car.club)); app.append(U.viewSettings()); }
-  else if (scr === 'ach') { app.append(topbar(false)); app.append(U.pages.ach(true)); }
-  else app.append(viewGame());
+  // 새 화면을 먼저 다 만든 뒤 한 번에 교체한다 (비운 채로 그리면 높이가 0이 되며 깜빡이고 스크롤이 맨 위로 튄다)
+  const app = $('#app'), frag = document.createDocumentFragment();
+  if (scr === 'home') frag.append(viewHome());
+  else if (scr === 'create') frag.append(viewCreate());
+  else if (scr === 'academy') frag.append(viewAcademy());
+  else if (scr === 'real') frag.append(viewReal());
+  else if (scr === 'settings') { frag.append(topbar(!!S && S.car && S.car.club)); frag.append(U.viewSettings()); }
+  else if (scr === 'ach') { frag.append(topbar(false)); frag.append(U.pages.ach(true)); }
+  else frag.append(viewGame());
+  const y = scrollY;
+  app.replaceChildren(frag);
+  if (Math.abs(scrollY - y) > 1) scrollTo(0, y);
   if (scr !== 'game' && scr !== 'settings') setAtmo(null);
   if (U.flushAch) U.flushAch();
 }
 U.render = render;
+// 같은 화면 안에서 다시 그리기 (펼치기·필터·정렬·탭): 스크롤 유지 + 등장 애니메이션 없이
+U.stay = function () {
+  const y = scrollY; render();
+  const app = $('#app'); app.querySelectorAll('.screen').forEach(e => e.classList.add('still'));
+  if (Math.abs(scrollY - y) > 1) scrollTo(0, y);
+};
 U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; render(); scrollTo(0, 0); };
 U.back = () => U.go(prevScr === 'settings' ? 'home' : prevScr);
 U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; o.w.txKeys = []; } repairSave(o); S = o; S.w.ps = S.w.ps || {}; await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };

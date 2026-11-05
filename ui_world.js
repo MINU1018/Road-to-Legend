@@ -7,7 +7,7 @@ const natCrest = (c, s) => U.natCrest(c, s);
 const S = () => U.S();
 const st = U.st;
 const wv = () => (st.wv = st.wv || { mode: 'league' });
-const rerender = () => { const y = scrollY; U.setTab('table'); scrollTo(0, y); };
+const rerender = () => U.stay();
 
 function sel(value, opts, on, wide) {
   const e = h('select', { class: 'wsel', style: wide ? { minWidth: '180px' } : null, onchange: ev => on(ev.target.value) }, ...opts.map(([v, l]) => { const o = h('option', { value: v }, l); if (String(v) === String(value)) o.selected = true; return o; }));

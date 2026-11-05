@@ -54,7 +54,7 @@ U.pages.mx = function () {
   const cnCount = {}; for (const m of all) if (inComp(m)) cnCount[m.cnx] = (cnCount[m.cnx] || 0) + 1;
   const cnList = Object.keys(cnCount).sort((a, b) => cnCount[b] - cnCount[a]);
   if (f.cnx && !cnList.includes(f.cnx)) f.cnx = '';
-  const re = () => U.setTab('mx');
+  const re = () => U.stay();
   const oppIn = h('input', { type: 'search', placeholder: '상대팀 이름', value: f.opp, oninput: e => { f.opp = e.target.value; clearTimeout(f.t); f.t = setTimeout(draw, 200); } });
   root.append(h('div', { class: 'sec' }, h('h3', null, '경기 기록 탐색'), h('div', { class: 'sub' }, '조건으로 경기를 골라내고, 상대팀·대회·시즌별로 묶어 비교합니다. 골 유형(프리킥·페널티·헤더·중거리)과 실점·선방·클린시트·차단은 해당 기능이 추가된 이후 경기부터 기록됩니다.'),
     h('div', { class: 'in mxf' },
