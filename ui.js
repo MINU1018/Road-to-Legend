@@ -46,8 +46,21 @@ async function flushMx(o) {
   const w = o && o.w; if (!w) return;
   if (w.mxPending) for (const lb of Object.keys(w.mxPending)) { const st = w.mxPending[lb]; mxCache[lb] = st; try { await kvSet('mx:' + lb, JSON.stringify(st)); } catch (e) { console.error('mx save', e); } delete w.mxPending[lb]; }
   if (w.mxDrop) { for (const lb of w.mxDrop) { delete mxCache[lb]; await kvDel('mx:' + lb); } w.mxDrop = []; }
+  // 이적 기록 (시즌 이적시장별)
+  if (w.txPending) for (const lb of Object.keys(w.txPending)) { txCache[lb] = w.txPending[lb]; try { await kvSet('tx:' + lb, JSON.stringify(w.txPending[lb])); } catch (e) { console.error('tx save', e); } delete w.txPending[lb]; }
+  if (w.txDrop) { for (const lb of w.txDrop) { delete txCache[lb]; await kvDel('tx:' + lb); } w.txDrop = []; }
 }
-async function purgeMx(o) { const keys = (o && o.w && o.w.mxKeys) || []; for (const lb of keys) { delete mxCache[lb]; await kvDel('mx:' + lb); } }
+const txCache = {};
+U.getTx = async function (label) {
+  if (!S || !S.w || !(S.w.txKeys || []).includes(label)) return null;
+  if (S.w.txPending && S.w.txPending[label]) return S.w.txPending[label];
+  if (txCache[label]) return txCache[label];
+  const t = await kvGet('tx:' + label); if (!t) return null;
+  const v = GM.parse(t); if (v) txCache[label] = v; return v;
+};
+U.txCached = label => (S && S.w && S.w.txPending && S.w.txPending[label]) || txCache[label] || null;
+U.withTx = function (label, onReady) { const v = U.txCached(label); if (v) return v; U._txL = U._txL || {}; if (!U._txL[label]) { U._txL[label] = 1; U.getTx(label).then(x => { delete U._txL[label]; if (x && onReady) onReady(); }); } return null; };
+async function purgeMx(o) { const keys = (o && o.w && o.w.mxKeys) || []; for (const lb of keys) { delete mxCache[lb]; await kvDel('mx:' + lb); } for (const lb of (o && o.w && o.w.txKeys) || []) { delete txCache[lb]; await kvDel('tx:' + lb); } }
 U.getMx = async function (label) {
   if (!S || !S.w || !(S.w.mxKeys || []).includes(label)) return null;
   if (S.w.mxPending && S.w.mxPending[label]) return S.w.mxPending[label];
@@ -276,7 +289,7 @@ function render() {
 U.render = render;
 U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; render(); scrollTo(0, 0); };
 U.back = () => U.go(prevScr === 'settings' ? 'home' : prevScr);
-U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; } repairSave(o); S = o; S.w.ps = S.w.ps || {}; await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
+U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; o.w.txKeys = []; } repairSave(o); S = o; S.w.ps = S.w.ps || {}; await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
 U.clearSave = async () => { await purgeMx(S); S = null; await kvDel('save'); await kvDel('ps'); hasSave = false; U.go('home'); };
 U.setTab = t => { tab = t; render(); scrollTo(0, 0); };
 

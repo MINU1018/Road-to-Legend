@@ -349,7 +349,7 @@ GM.serialize = function (S, full) {
   const o = Object.assign({}, S); delete o.ss; delete o.lastSeason; delete o.pend; delete o.winterOffers; delete o.newsQ;
   if (o.phase === 'review') o.phase = 'reviewDone';
   // 선수 기록(용량이 큰 부분)은 따로 저장한다: full=true면 포함 (파일 내보내기용)
-  if (o.w && ((o.w.ps && !full) || o.w.mxPending || o.w.mxDrop)) { o.w = Object.assign({}, o.w); if (!full) delete o.w.ps; delete o.w.mxPending; delete o.w.mxDrop; } // 경기 상세 기록도 따로 (시즌별 'mx:시즌')
+  if (o.w && ((o.w.ps && !full) || o.w.mxPending || o.w.mxDrop || o.w.txPending || o.w.txDrop)) { o.w = Object.assign({}, o.w); if (!full) delete o.w.ps; delete o.w.mxPending; delete o.w.mxDrop; delete o.w.txPending; delete o.w.txDrop; delete o.w._tx; } // 경기 상세 기록도 따로 (시즌별 'mx:시즌')
   return JSON.stringify(o);
 };
 GM.parse = function (t) { try { return JSON.parse(t); } catch (e) { return null; } };

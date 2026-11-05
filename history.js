@@ -129,8 +129,8 @@ function leagueFromMatches(S, lgId, rows, mlist) {
     const c = w.clubs[id]; if (!c || c.lite || !c.sq) continue;
     for (const e of c.sq) {
       const pid = String(e[0]), o = e[2], tracked = !!w.ps[pid];
-      if (o < 50 && !tracked) continue;
       const x = agg[pid];
+      if (o < 50 && !tracked && !x) continue; // 경기에 나온 선수는 OVR과 관계없이 기록 (팀 득점 = 선수 득점 합)
       const apps = x ? x.apps : 0;
       C.psDirty = true;
       const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
@@ -156,8 +156,8 @@ function otherClubSeason(S, cid) {
   ss.mx.L['_' + cid] = MD.packL(out, 1, true);
   w.ps = w.ps || {};
   for (const e of c.sq) {
-    const pid = String(e[0]); if (e[2] < 50 && !w.ps[pid]) continue;
-    const x = agg[pid], apps = x ? x.apps : 0;
+    const pid = String(e[0]); const x = agg[pid]; if (e[2] < 50 && !w.ps[pid] && !x) continue;
+    const apps = x ? x.apps : 0;
     C.psDirty = true;
     const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
     if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
@@ -453,6 +453,16 @@ function archiveSeason(S, tables) {
       }));
       ss.mx.CONT[k] = out;
     }
+    // 선수별 컵·대륙·국가대표 대회 기록 (리그 기록 h와 별도로 c에 보관): "시즌|대회|경기|골|도움|평점×100;"
+    { const ag = {}, yOff = ss.year - 2000;
+      const add = (key, row) => { const d = C.MD.decode(ss.mx, row); if (!d.ln) return;
+        for (const side of d.ln) for (const x of side) { if (x.id === 'ME' || x.id[0] === '~') continue; const k = x.id + '|' + key; const a = ag[k] || (ag[k] = [0, 0, 0, 0]); a[0]++; a[3] += x.rt; }
+        for (const e of d.ev) { if ('gp'.includes(e.k) && e.p !== 'ME' && e.p[0] !== '~') { const a = ag[e.p + '|' + key]; if (a) a[1]++; } if (e.a && e.a !== 'ME' && e.a[0] !== '~') { const a = ag[e.a + '|' + key]; if (a) a[2]++; } } };
+      for (const k in ss.mx.CUP) { const [nat, kind] = k.split(':'); for (const r of ss.mx.CUP[k]) add(kind + ':' + nat, r); }
+      for (const k in ss.mx.CONT) for (const r of ss.mx.CONT[k]) add('cont:' + k, r);
+      for (const k in ss.mx.INTL) for (const r of ss.mx.INTL[k]) add('nt:' + k, r);
+      for (const k in ag) { const i = k.indexOf('|'), pid = k.slice(0, i), key = k.slice(i + 1), P = w.ps && w.ps[pid]; if (!P) continue; const a = ag[k];
+        P.c = (P.c || '') + `${yOff}|${key}|${a[0]}|${a[1]}|${a[2]}|${Math.round(a[3] / a[0] * 100)};`; C.psDirty = true; } }
     delete ss.mx._pm;
     w.mxPending = w.mxPending || {}; w.mxPending[ss.label] = ss.mx;
     w.mxKeys = (w.mxKeys || []).filter(x => x !== ss.label).concat(ss.label);

@@ -150,12 +150,17 @@ function ageSquad(c) {
     let pr = age >= 40 ? .9 : (RET[age] || 0);
     if (age >= 32) pr *= o >= 82 ? .6 : o >= 75 ? .85 : 1.2;
     if (age >= 29 && o < 52) pr += .25;
-    if (R() < pr) { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; continue; }
+    if (R() < pr) { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; if (C._w) txLog(C._w, e, c, null, 'ret', 0); continue; }
     e[2] = o; e[3] = age; e[4] = Math.max(pot, o); e[6] -= 1;
     out.push(e);
   }
   c.sq = out;
 }
+// 이적 기록: [선수 id, 보낸 구단, 받은 구단, 종류, 이적료(만 유로), OVR, 나이]
+// 종류: buy 이적(이적료) · free 자유계약 · loan 임대 · lret 임대 복귀 · rel 방출(갈 곳 없음) · ret 은퇴 · yth 유스 승격 · new 외부 영입
+function txLog(w, e, from, to, kind, fee) { if (!w._tx) return; w._tx.push([String(e[0]), from ? from.id : '', to ? to.id : '', kind, fee ? Math.round(fee / 1e4) : 0, e[2], e[3]]); }
+C.txLog = txLog;
+const natOf = (w, c) => c && c.lg && w.lg[c.lg] ? w.lg[c.lg].nation : (c ? c.nat : '');
 // 세계 이적 시장
 // 1) 임대 복귀 2) 계약 만료 → 재계약/방출(자유계약) 3) 판매: 팀보다 커진 선수·잉여 자원·부진한 선수·무작위 이동
 // 4) 유망주 임대 5) 큰 선수부터 행선지 결정 (상위 구단이 먼저 데려감, 포지션 수요 반영)
@@ -173,7 +178,7 @@ function worldTransfers(w) {
   // 1) 임대 복귀
   for (const c of clubs) for (const e of c.sq.slice()) {
     ensureE(e);
-    if (e[7]) { const p = w.clubs[e[7]]; e[7] = 0; if (p && !p.lite && p.sq && p !== c) { c.sq.splice(c.sq.indexOf(e), 1); p.sq.push(e); } }
+    if (e[7]) { const p = w.clubs[e[7]]; e[7] = 0; if (p && !p.lite && p.sq && p !== c) { c.sq.splice(c.sq.indexOf(e), 1); p.sq.push(e); txLog(w, e, c, p, 'lret', 0); } }
   }
   // 2~4) 구단·선수 결정
   const market = [];
@@ -230,12 +235,13 @@ function worldTransfers(w) {
     if (!d) {
       if (kind === 'free') {  // 갈 곳 없는 자유계약 선수: 나이 들었으면 은퇴, 아니면 하부 무대로 (기록 밖)
         stat.ret++; if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1;
+        txLog(w, e, c, null, age >= 30 ? 'ret' : 'rel', 0);
       } else c.sq.push(e);
       continue;
     }
     big(e, c, d, kind); w._moved.add(e);
-    if (kind === 'loan') { e[7] = c.id; stat.loan++; }
-    else { e[6] = ctFor(age) + (kind === 'free' && age >= 30 ? 0 : 0); stat[kind]++; }
+    if (kind === 'loan') { e[7] = c.id; stat.loan++; txLog(w, e, c, d, 'loan', 0); }
+    else { const fee = kind === 'sale' ? C.aiFee(o, age, natOf(w, c), e[6]) : 0; txLog(w, e, c, d, kind === 'sale' ? 'buy' : 'free', fee); e[6] = ctFor(age); stat[kind]++; }
     d.sq.push(e);
   }
   w.lastTx = stat.free + stat.sale + stat.loan; w.txStat = stat;
@@ -248,7 +254,7 @@ function refillSquad(c, w, pool) {
     const nat = genNat(c.nat), age = rint(16, 18);
     const o = clamp(Math.round(N(c.pres - 17, 4)), 40, 80);
     const pot = clamp(Math.round(N(c.pres - 1, 6.5)), o + 3, 95);
-    c.sq.push([uid(genName(nat)), pos, o, age, pot, nat, rint(2, 4), 0, 0, 0]);
+    const e = [uid(genName(nat)), pos, o, age, pot, nat, rint(2, 4), 0, 0, 0]; c.sq.push(e); txLog(w, e, null, c, 'yth', 0);
   };
   // 하위 구단 선수 영입 (구단 수준 근처, 팀보다 약한 구단에서)
   const poach = (pos, lv) => {
@@ -258,13 +264,13 @@ function refillSquad(c, w, pool) {
     if (!cand.length) return false;
     const x = cand.sort((a, b) => b.e[2] - a.e[2])[0];
     if (x.e[2] >= 79 && w.bigTx) w.bigTx.push([pName(w, x.e), String(x.e[0]), x.c.id, c.id, 'sale', x.e[2], x.e[3]]);
-    x.c.sq.splice(x.c.sq.indexOf(x.e), 1); x.e[6] = ctFor(x.e[3]); c.sq.push(x.e); x.c = c; w.lastTx++; if (w._moved) w._moved.add(x.e);
+    txLog(w, x.e, x.c, c, 'buy', C.aiFee(x.e[2], x.e[3], natOf(w, x.c), x.e[6])); x.c.sq.splice(x.c.sq.indexOf(x.e), 1); x.e[6] = ctFor(x.e[3]); c.sq.push(x.e); x.c = c; w.lastTx++; if (w._moved) w._moved.add(x.e);
     return true;
   };
   const journeyman = (pos) => {  // 기록 밖 무대 출신 무명 선수: 수준을 낮게 제한
     const nat = genNat(c.nat), age = rint(19, 24);
     const o = clamp(Math.round(N(Math.min(c.pres - 6, 68), 3)), 42, 70);
-    c.sq.push([uid(genName(nat)), pos, o, age, o + rint(0, 4), nat, rint(1, 3), 0, 0, 0]);
+    const e = [uid(genName(nat)), pos, o, age, o + rint(0, 4), nat, rint(1, 3), 0, 0, 0]; c.sq.push(e); txLog(w, e, null, c, 'new', 0);
   };
   // 매년 유스 1~2명
   const nY = R() < .55 ? 1 : 2; const ypos = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST', 'ST', 'CM', 'CB'];
@@ -284,7 +290,7 @@ function refillSquad(c, w, pool) {
     let mi = 0; c.sq.forEach((e, i) => { if (e[2] - (e[3] < 21 ? 6 : 0) < c.sq[mi][2] - (c.sq[mi][3] < 21 ? 6 : 0)) mi = i; });
     const e = c.sq.splice(mi, 1)[0];
     const cand = Object.values(w.clubs).filter(x => !x.lite && x.lg && x.sq && x !== c && x.sq.length < 28 && Math.abs(x.str - e[2]) < 4);
-    if (cand.length) { e[6] = ctFor(e[3]); e[7] = 0; pick(cand).sq.push(e); } else if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1;
+    if (cand.length) { const d = pick(cand); txLog(w, e, c, d, 'free', 0); e[6] = ctFor(e[3]); e[7] = 0; d.sq.push(e); } else { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, 'rel', 0); }
   }
 }
 function playerPool(w) {
@@ -322,7 +328,7 @@ function normalizeWorld(w) {
 }
 C.topAvgs = topAvgs;
 function advanceWorld(w, results) {
-  C._ps = w.ps || null; C._year = w.year;
+  C._ps = w.ps || null; C._year = w.year; C._w = w; w._tx = [];
   for (const id in w.clubs) {
     const c = w.clubs[id];
     // 명성: 기본값 쪽으로 회귀 + 성적 반영
@@ -335,6 +341,11 @@ function advanceWorld(w, results) {
   { const pool = playerPool(w); for (const c of shuffle(Object.values(w.clubs).filter(c => !c.lite && c.sq))) refillSquad(c, w, pool); }
   normalizeWorld(w); w._moved = null;
   for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lite) c.str = xiStrength(c.sq); }
+  // 이번 여름 이적 기록은 다음 시즌 이름으로 보관 (예: 2026/27 시즌이 끝난 뒤 = 2027/28 여름 이적시장)
+  const lbl = `${w.year + 1}/${String(w.year + 2).slice(2)}`;
+  w.txPending = w.txPending || {}; w.txPending[lbl] = w._tx; w.txKeys = (w.txKeys || []).filter(x => x !== lbl).concat(lbl);
+  while (w.txKeys.length > 30) (w.txDrop = w.txDrop || []).push(w.txKeys.shift());
+  w._tx = null; C._w = null;
   w.year++;
 }
 C.advanceWorld = advanceWorld;

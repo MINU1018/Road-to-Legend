@@ -23,7 +23,7 @@ function teamHead(w, id, nat, size, close) {
 U.showMatch = function (o) {
   const s = S(), w = s.w, d = o.d || { ev: [], ln: null };
   U.overlay(close => {
-    const strA = o.nat ? 72 : ((w.clubs[o.a] || {}).str || 65), strB = o.nat ? 72 : ((w.clubs[o.b] || {}).str || 65);
+    const strA = o.sa != null ? o.sa : 72, strB = o.sb != null ? o.sb : 72; // 경기 통계는 경기마다 고정된 값 (시즌이 지나도 같게)
     const ts = MD.teamStats(o.key || `${o.a}|${o.b}|${o.title}`, strA, strB, o.ga, o.gb);
     const head = h('div', { class: 'head mhead' },
       h('div', { class: 'lbl' }, o.title || ''),

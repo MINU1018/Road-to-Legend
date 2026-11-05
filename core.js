@@ -313,6 +313,16 @@ function marketValue(p, ctx) {
   return Math.max(10000, Math.round(v / 10000) * 10000);
 }
 C.marketValue = marketValue;
+// AI 선수 이적료 (유로): 같은 가치 곡선 × 나이 × 리그 × 남은 계약 × 협상 운
+C.aiFee = (ovr, age, nation, ct) => {
+  let v = interp(VT, ovr) * 1e6;
+  v *= age <= 18 ? 1.35 : age <= 21 ? 1.55 : age <= 24 ? 1.3 : age <= 27 ? 1.1 : age <= 29 ? .9 : age <= 30 ? .7 : age <= 31 ? .55 : age <= 32 ? .42 : age <= 33 ? .3 : .18;
+  v *= LGMULT[nation] || .55;
+  v *= ct >= 3 ? 1.15 : ct === 2 ? 1 : ct === 1 ? .75 : .5;
+  v *= .82 + R() * .36;
+  v = v > 1.2e8 ? 1.2e8 + (v - 1.2e8) * .45 : v; // 초고액은 완만하게 (역대 최고 수준 약 2억 유로)
+  return Math.max(10000, Math.round(v / 10000) * 10000);
+};
 // ---------- 설정 ----------
 const CFG_DEFAULT = {
   currency: 'KRW', rates: { KRW: 1500, USD: 1.08, GBP: .85, JPY: 162 }, wageMode: 'week',

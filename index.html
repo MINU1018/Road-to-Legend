@@ -618,6 +618,22 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .mic { display: inline-flex; gap: 2px; }
 .meName { color: var(--gold); font-weight: 700; cursor: pointer; }
 @media (max-width: 600px) { .mlus { grid-template-columns: 1fr; } .fx { grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr); } .fx .fr, .fx .res { display: none; } .mscore .ms { font-size: 26px; } }
+
+.mbars { display: grid; gap: 4px; margin-top: 10px; }
+.mbr { display: grid; grid-template-columns: 24px minmax(0, 200px) 1fr 64px; gap: 10px; align-items: center; font-size: 13px; padding: 2px 4px; border-radius: 6px; }
+.mbr.me { background: color-mix(in srgb, var(--gold) 12%, transparent); }
+.mbr .cc span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbr b { text-align: right; }
+.mbr .mbar { height: 8px; }
+.tbins { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; text-align: center; font-size: 12px; margin-bottom: 8px; }
+.tb2 { height: 120px; display: flex; gap: 4px; align-items: flex-end; justify-content: center; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.tb2 i { display: block; width: 16px; border-radius: 3px 3px 0 0; }
+.tb2 i.f { background: var(--gold); } .tb2 i.a { background: var(--mute); }
+.pfilt { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-bottom: 0; }
+.ptable tr.sub td { background: var(--panel2); font-size: 12px; }
+.ptable tr.on td { background: var(--panel3); }
+.csrow { display: grid; grid-template-columns: minmax(0, 220px) auto 1fr; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; }
+@media (max-width: 600px) { .mbr { grid-template-columns: 20px minmax(0, 1fr) 60px 52px; } .csrow { grid-template-columns: 1fr; gap: 2px; } }
 </style>
 
 <div id="app"></div>
