@@ -530,7 +530,8 @@ async function doLeague(S, fx, hooks) {
   const sorted = C.sortTable(tb), myPos = sorted.findIndex(r => r.id === ss.club), opPos = sorted.findIndex(r => r.id === fx.opp);
   const imp = (fx.r > (ss.rounds.length + C.splitCount(lg)) * .75 ? 1 : 0) + (fx.split ? 1 : 0) + (opPos < 4 && myPos < 6 ? 1 : 0) + (oc.str > S.w.clubs[ss.club].str + 3 ? 1 : 0);
   const rec = await userMatch(S, { d: fx.d, kind: 'L', compKey: 'league', compName: lg.name, opp: fx.opp, oppName: oc.name, oppStr: oc.str, home: fx.home, imp }, hooks);
-  if (fx.home) C.addResult(tb, ss.club, fx.opp, rec.gf, rec.ga); else C.addResult(tb, fx.opp, ss.club, rec.ga, rec.gf);
+  const ui = ss.matches.indexOf(rec);
+  if (fx.home) C.addResult(tb, ss.club, fx.opp, rec.gf, rec.ga, ui); else C.addResult(tb, fx.opp, ss.club, rec.ga, rec.gf, ui);
 }
 async function doYouth(S, fx, hooks) {
   const u21 = !(S.ss.status === 'youth' && S.p.age <= 17);
@@ -567,7 +568,8 @@ async function doCont(S, fx, hooks) {
     if (!oid) { if (fx.r === cs.phaseN - 1) finishPhase(S, cs); return; }
     const oc = w.clubs[oid];
     const rec = await userMatch(S, { d: fx.d, kind: 'E', compKey: 'cont', compName: cs.name, stage: '리그 페이즈', opp: oid, oppName: oc.name, oppStr: oc.str, home: h, imp: oc.str > w.clubs[ss.club].str + 2 ? 2 : 1 }, hooks);
-    if (h) C.addResult(cs.table, ss.club, oid, rec.gf, rec.ga); else C.addResult(cs.table, oid, ss.club, rec.ga, rec.gf);
+    const ui = ss.matches.indexOf(rec);
+    if (h) C.addResult(cs.table, ss.club, oid, rec.gf, rec.ga, ui); else C.addResult(cs.table, oid, ss.club, rec.ga, rec.gf, ui);
     if (fx.r === cs.phaseN - 1) finishPhase(S, cs);
     return;
   }
@@ -584,6 +586,7 @@ async function doCont(S, fx, hooks) {
   const final = !rd[1];
   const rec = await userMatch(S, { d: fx.d, kind: 'E', compKey: 'cont', compName: cs.name, stage: rd[2] + (final ? '' : j === 0 ? ' 1차전' : ' 2차전'), opp: oid, oppName: oc.name, oppStr: oc.str, home: final ? null : (j === 0) === (tie[0] === ss.club), imp: final ? 3 : 2 }, hooks);
   tie.agg = tie.agg || [0, 0]; tie.agg[0] += rec.gf; tie.agg[1] += rec.ga;
+  (tie.ui = tie.ui || []).push(ss.matches.indexOf(rec));
   if (final || j === 1) {
     let win = tie.agg[0] > tie.agg[1];
     if (tie.agg[0] === tie.agg[1]) { win = C.koWinner(w.clubs[ss.club].str, oc.str, 0, 0) === 0; rec.pens = win ? 'W' : 'L'; }
@@ -630,7 +633,7 @@ function resolveOthers(S, cs, ri) {
     const s0 = w.clubs[t[0]].str, s1 = w.clubs[t[1]].str;
     const single = !cs.rounds[ri][1];
     let a = 0, b = 0;
-    if (single) { [a, b] = C.quickMatch(s0, s1, 0); } else { const m1 = C.quickMatch(s0, s1, 1), m2 = C.quickMatch(s1, s0, 1); a = m1[0] + m2[1]; b = m1[1] + m2[0]; }
+    if (single) { [a, b] = C.quickMatch(s0, s1, 0); t.l = [[a, b]]; } else { const m1 = C.quickMatch(s0, s1, 1), m2 = C.quickMatch(s1, s0, 1); a = m1[0] + m2[1]; b = m1[1] + m2[0]; t.l = [m1, m2]; } // t.l: 경기별 [홈 골, 원정 골] (1차전 홈 = t[0])
     t.win = C.koWinner(s0, s1, a, b) === 0 ? t[0] : t[1];
     t.sc = [a, b]; if (a === b) t.pen = 1;
   }
@@ -743,7 +746,7 @@ C.totalAgg = totalAgg;
 C.logExtra = m => {
   if (!m.played || !m.st) return { oi: m.opp, cl: m.club || null };
   const sh = m.shots || [], gl = sh.filter(x => x.g);
-  return { oi: m.opp, fk: gl.filter(x => x.t === 'F').length, pk: gl.filter(x => x.t === 'P').length, hd: gl.filter(x => x.t === 'H').length, ob: gl.filter(x => x.ob).length, sh: m.st.shots, sot: m.st.sot, xg: +(m.st.xg || 0).toFixed(2), kp: m.st.chances, pa: m.st.passAtt ? Math.round(m.st.passOk / m.st.passAtt * 100) : 0, tk: m.st.tackles + m.st.ints, dr: m.st.dribOk };
+  return { oi: m.opp, fk: gl.filter(x => x.t === 'F').length, pk: gl.filter(x => x.t === 'P').length, hd: gl.filter(x => x.t === 'H').length, ob: gl.filter(x => x.ob).length, sh: m.st.shots, sot: m.st.sot, xg: +(m.st.xg || 0).toFixed(2), kp: m.st.chances, pa: m.st.passAtt ? Math.round(m.st.passOk / m.st.passAtt * 100) : 0, tk: m.st.tackles + m.st.ints, dr: m.st.dribOk, ca: m.st.concOn || 0, sv: m.st.saves || 0, cs: m.st.cs || 0, clr: m.st.clear || 0, bl: m.st.blocks || 0 };
 };
 const avgRating = st => st.rated ? +(st.ratingSum / st.rated).toFixed(2) : 0;
 C.avgRating = avgRating;
@@ -752,10 +755,13 @@ function finishSeason(S) {
   const ss = S.ss, w = S.w, p = S.p;
   // 다른 리그 전부 시뮬
   const tables = {};
+  ss.lgM = {};
+  ss.mx = C.MD ? C.MD.newStore(ss.label, ss.year) : null; // 이번 시즌 경기 기록 (득점자·카드·라인업)
   for (const id in w.lg) {
     const lg = w.lg[id];
-    if (ss.tables[id]) { tables[id] = C.sortTable(ss.tables[id]); continue; }
-    tables[id] = C.sortTable(C.simLeague(w, lg));
+    const raw = ss.tables[id] || C.simLeague(w, lg);
+    ss.lgM[id] = raw._m || [];
+    tables[id] = C.sortTable(raw);
   }
   ss.final = tables;
   finishContAll(S);
@@ -796,6 +802,14 @@ C.setupCont = setupCont;
 function teamRank(S, ssArg) {
   const ss = ssArg || S.ss, w = S.w, c = w.clubs[ss.club];
   if (!c || !c.sq || !c.sq.length) return null;
+  // 시즌이 끝났으면 경기 기록으로 집계한 리그 평점 (선수 시즌 기록과 같은 값)
+  if (ss.myAgg && ss.myAgg.length) {
+    const me = ss.myAgg.find(x => x.id === 'ME');
+    if (me && me.apps >= 3) {
+      const all = ss.myAgg.filter(x => x.apps >= 3).map(x => x.id === 'ME' ? { n: S.p.name, pos: S.p.pos, r: x.r, apps: x.apps, me: true } : { n: C.MD.nameOf(x.id), pos: x.pos, r: x.r, apps: x.apps, pid: x.id[0] === '~' ? '' : x.id }).sort((a, b) => b.r - a.r);
+      return { rank: all.findIndex(x => x.me) + 1, n: all.length, myR: me.r, top: all.slice(0, 5), final: 1, basis: '리그 경기 기록 (3경기 이상 출전)' };
+    }
+  }
   const ms = ss.matches.filter(m => !['youth', 'nt', 'ntY'].includes(m.comp));
   const mine = ms.filter(m => m.played && m.rating);
   if (mine.length < 3) return null;
@@ -809,10 +823,10 @@ function teamRank(S, ssArg) {
     const r = r0(), r2 = r0();
     const g = Math.sqrt(-2 * Math.log(r || 1e-9)) * Math.cos(2 * Math.PI * r2);
     const atk = ['ST', 'LW', 'RW', 'CAM'].includes(e[1]) ? .1 : ['CB', 'GK'].includes(e[1]) ? -.08 : 0;
-    return { n: C.pName(w, e), pos: e[1], r: +(6.62 + (e[2] - 72) * .035 + (ppg - 1.4) * .18 + atk + g * .2 - (i >= 13 ? .15 : 0)).toFixed(2) };
+    return { n: C.pName(w, e), pid: String(e[0]), pos: e[1], r: +(6.62 + (e[2] - 72) * .035 + (ppg - 1.4) * .18 + atk + g * .2 - (i >= 13 ? .15 : 0)).toFixed(2) };
   }).filter(x => x.pos !== 'GK' || true);
   const all = list.concat({ n: S.p.name, pos: S.p.pos, r: +myR.toFixed(2), me: true }).sort((a, b) => b.r - a.r);
-  return { rank: all.findIndex(x => x.me) + 1, n: all.length, myR: +myR.toFixed(2), top: all.slice(0, 5) };
+  return { rank: all.findIndex(x => x.me) + 1, n: all.length, myR: +myR.toFixed(2), top: all.slice(0, 5), basis: '시즌 중 추정치 (시즌 종료 후 경기 기록으로 확정)' };
 }
 C.teamRank = teamRank;
 })(typeof window !== 'undefined' ? window : globalThis);

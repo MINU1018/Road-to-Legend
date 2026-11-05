@@ -18,14 +18,18 @@ function applyEffect(S, eff) {
   if (eff.morale) { p.morale = clamp(p.morale + eff.morale, 0, 100); }
   if (eff.rep) { p.rep = clamp(p.rep + eff.rep, 0, 100); out.push(['명성', eff.rep]); }
   if (eff.money) { p.money += eff.money; out.push(['재산', eff.money]); }
-  if (eff.pot) { p.hid.pot = clamp(p.hid.pot + eff.pot, 40, 99); out.push(['성장세', eff.pot]); }
+  if (eff.pot) {
+    // 분기점 선택은 재능 한계 자체도 조금 움직인다 (커리어 통틀어 ±3 이내)
+    if (p.hid.cap) { const adj = clamp((p.hid.capAdj || 0) + eff.pot * .35, -3, 3), d = adj - (p.hid.capAdj || 0); p.hid.capAdj = adj; p.hid.cap = clamp(p.hid.cap + d, 45, 97); }
+    p.hid.pot = clamp(p.hid.pot + eff.pot, 40, p.hid.cap ? p.hid.cap + 1 : 99); out.push(['성장세', eff.pot]);
+  }
   if (eff.peak) { p.hid.peak = clamp(p.hid.peak + eff.peak, 23, 33); out.push(['전성기', eff.peak > 0 ? '늦어짐' : '빨라짐']); }
   if (eff.top || eff.low) {
     const w = C.POSW[p.pos], ks = C.AK.filter(k => w[k] && (p.pos === 'GK' || C.AGROUP[k] !== 'GK')).sort((a, b) => p.a[b] - p.a[a]);
     if (eff.top) ks.slice(0, 3).forEach(k => { const v0 = p.a[k]; C.bump(p, k, eff.top); out.push([C.ALABEL[k], Math.round(p.a[k]) - Math.round(v0)]); });
     if (eff.low) ks.slice(-3).forEach(k => { const v0 = p.a[k]; C.bump(p, k, eff.low); out.push([C.ALABEL[k], Math.round(p.a[k]) - Math.round(v0)]); });
   }
-  if (eff.lon) p.hid.lon = clamp(p.hid.lon * eff.lon, .35, 2.2);
+  if (eff.lon) p.hid.lon = clamp(p.hid.lon * eff.lon, .6, 2.4);
   if (eff.injp) p.hid.inj = clamp(p.hid.inj * eff.injp, .4, 2.5);
   if (eff.inj && S.ss) { S.ss.inj = Math.max(S.ss.inj, eff.inj); out.push(['부상', eff.inj + '일']); }
   if (eff.susp && S.ss) { S.ss.susp += eff.susp; out.push(['출전 정지', eff.susp + '경기']); }
@@ -943,9 +947,12 @@ function ballonDor(S) {
     const role = C.ROLE[p.pos], lg = C.leagueOf(S, ss.club);
     const lgF = lg ? (BIG5.includes(lg.nation) && lg.tier === 1 ? 1 : lg.tier === 1 && C.confOf(lg.nation) === 'UEFA' ? .8 : .55) : .5;
     const att = ['ST', 'W', 'AM'].includes(role);
-    ga = att ? tot.goals + tot.assists * .6 : role === 'GK' ? tot.cs * .8 : tot.goals * 1.5 + tot.assists + tot.cs * .3;
+    // AI 후보와 같은 기준: 리그 기록 × 컵·대륙 대회 보정(골 ×1.28, 도움 ×1.25)
+    const lt = C.totalAgg(ss.matches.filter(m => m.comp === 'league' && m.played));
+    const lg_g = lt.goals * 1.28, lg_a = lt.assists * 1.25;
+    ga = att ? lg_g + lg_a * .6 : role === 'GK' ? (lt.cs || 0) * 1.1 : lg_g * 1.5 + lg_a + (lt.cs || 0) * .3;
     const tpMe = trophyPts(ss.trophies);
-    const myScore = (C.ovrOf(p) * .3 + (r - 6.8) * 10 + ga * .32 * lgF + tpMe * 1.5 + (w.clubs[ss.club].str - 80) * .12) * (tot.apps >= 25 ? 1 : tot.apps >= 15 ? .82 : .55) * (ss.status === 'youth' ? .3 : 1);
+    const myScore = (C.ovrOf(p) * .3 + (r - 6.8) * 10 + ga * .32 * lgF + tpMe * 1.5 + (w.clubs[ss.club].str - 80) * .12) * (tot.apps >= 25 ? 1 : tot.apps >= 15 ? .82 : .55) * (ss.status === 'youth' ? .3 : 1) + N(0, 1.6);
     me = { n: p.name, club: w.clubs[ss.club].name, cid: ss.club, ovr: C.ovrOf(p), age: p.age, s: myScore, me: true };
     me.s -= list.filter(x => x.cid === ss.club).length * .8;
     all = list.concat(me).sort((a, b) => b.s - a.s);

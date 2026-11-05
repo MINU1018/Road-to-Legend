@@ -92,6 +92,79 @@ function leagueLeaders(S, lgId, rows, me) {
   return { sc: sc.sort(by).slice(0, 15), as: as.sort(by).slice(0, 15), best: best.sort((x, z) => z[2] - x[2]).slice(0, 25) };
 }
 
+// 경기 단위 기록으로 리그 시즌 집계: 모든 숫자(골·도움·출전·평점·득점 순위)는 경기 기록의 합
+function leagueFromMatches(S, lgId, rows, mlist) {
+  const w = S.w, ss = S.ss, y = ss.year, st = ss.mx, MD = C.MD;
+  const lg = w.lg[lgId], n = lg.clubs.length, per = Math.max(1, Math.floor(n / 2));
+  const live = lg.clubs.some(id => w.clubs[id] && !w.clubs[id].lite && w.clubs[id].sq && w.clubs[id].sq.length) || lg.clubs.includes(ss.club);
+  const sides = {}; const sideOf = id => sides[id] || (sides[id] = MD.clubSide(w, id, y));
+  const agg = {}, out = [];
+  mlist.forEach((m, i) => {
+    const [a, b, ga, gb, ui] = m, r = Math.floor(i / per);
+    void r;
+    if (!live) { out.push([C.cix(w, a), C.cix(w, b), ga, gb]); return; }
+    const rec = ui != null ? ss.matches[ui] : null;
+    const u = rec ? { side: a === ss.club ? 0 : 1, rec, pos: S.p.pos, ovr: C.effOvr(S.p) } : null;
+    const res = MD.play(st, sideOf(a), sideOf(b), ga, gb, u);
+    MD.addAgg(agg, a, res.P[0]); MD.addAgg(agg, b, res.P[1]);
+    out.push([C.cix(w, a), C.cix(w, b), ga, gb, res.ev, res.ln]);
+  });
+  if (st) st.L[lgId] = MD.packL(out, per, live);
+  if (!live) return null;
+  // 득점·도움 순위, 평점 순위 (내 선수 포함: id 'ME')
+  const list = Object.values(agg);
+  const nm = x => x.id === 'ME' ? S.p.name : MD.nameOf(x.id);
+  const pidOf = x => x.id === 'ME' || x.id[0] === '~' ? '' : x.id;
+  const by = (k1, k2) => (x, z) => z[k1] - x[k1] || z[k2] - x[k2] || x.apps - z.apps;
+  const sc = list.filter(x => x.g > 0).sort(by('g', 'a')).slice(0, 15).map(x => x.id === 'ME' ? [nm(x), x.club, x.g, x.a, 1] : [nm(x), x.club, x.g, x.a, 0, pidOf(x)]);
+  const as = list.filter(x => x.a > 0).sort(by('a', 'g')).slice(0, 15).map(x => x.id === 'ME' ? [nm(x), x.club, x.a, x.g, 1] : [nm(x), x.club, x.a, x.g, 0, pidOf(x)]);
+  const rounds = Math.max(1, Math.round(mlist.length / per));
+  const ageOf = {}; for (const id of lg.clubs) { const c = w.clubs[id]; if (c && c.sq) for (const e of c.sq) ageOf[String(e[0])] = e[3]; }
+  const best = list.filter(x => x.id !== 'ME' && x.apps >= Math.max(5, rounds * .4)).map(x => [nm(x), x.club, +(x.rs / x.apps).toFixed(2), x.pos, pidOf(x), ageOf[x.id] || 0, x.apps]).sort((x, z) => z[2] - x[2]).slice(0, 25);
+  // 내 팀 동료 시즌 기록 (팀 내 평점 순위에 쓰인다)
+  if (lg.clubs.includes(ss.club)) ss.myAgg = list.filter(x => x.club === ss.club).map(x => ({ id: x.id, pos: x.pos, apps: x.apps, g: x.g, a: x.a, r: +(x.rs / x.apps).toFixed(2) }));
+  // 선수 시즌 기록 보관 (명단이 있는 구단의 선수 전원, 출전이 없어도 0경기로 남긴다)
+  w.ps = w.ps || {};
+  for (const id of lg.clubs) {
+    const c = w.clubs[id]; if (!c || c.lite || !c.sq) continue;
+    for (const e of c.sq) {
+      const pid = String(e[0]), o = e[2], tracked = !!w.ps[pid];
+      if (o < 50 && !tracked) continue;
+      const x = agg[pid];
+      const apps = x ? x.apps : 0;
+      C.psDirty = true;
+      const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
+      if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
+      Pp.pos = e[1];
+      Pp.h += [y - 2000, cix(w, id), apps, x ? x.g : 0, x ? x.a : 0, apps ? Math.round(x.rs / apps * 100) : 0, o, e[3]].concat(e[7] ? [1] : []).join(',') + ';';
+    }
+  }
+  return { sc, as, best };
+}
+// 리그 데이터가 없는 실명 구단(대륙 대회만 나오는 구단): 같은 나라 가상 상대와 30경기를 치른 것으로 경기 기록을 만든다
+function otherClubSeason(S, cid) {
+  const w = S.w, ss = S.ss, y = ss.year, c = w.clubs[cid], MD = C.MD;
+  const me = MD.clubSide(w, cid, y), agg = {}, out = [];
+  const opps = Array.from({ length: 15 }, (_, k) => { const str = c.str - 3 + (k - 7) * .6; const o = { id: 'OPP_' + cid + '_' + k, nat: c.nat, str, lite: true }; return { str, side: { key: o.id, sq: C.squadOf(w, o, y).map(x => ({ id: '~' + o.id + '~' + x.n, n: x.n, pos: x.pos, ovr: x.ovr })) } }; });
+  for (let k = 0; k < 30; k++) {
+    const o = opps[k % 15], home = k < 15;
+    const [ga, gb] = C.quickMatch(home ? c.str : o.str, home ? o.str : c.str, 1);
+    const res = MD.play(ss.mx, home ? me : o.side, home ? o.side : me, ga, gb, null);
+    MD.addAgg(agg, cid, res.P[home ? 0 : 1]);
+    out.push([home ? cix(w, cid) : o.side.key, home ? o.side.key : cix(w, cid), ga, gb, res.ev, res.ln]);
+  }
+  ss.mx.L['_' + cid] = MD.packL(out, 1, true);
+  w.ps = w.ps || {};
+  for (const e of c.sq) {
+    const pid = String(e[0]); if (e[2] < 50 && !w.ps[pid]) continue;
+    const x = agg[pid], apps = x ? x.apps : 0;
+    C.psDirty = true;
+    const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
+    if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
+    Pp.pos = e[1];
+    Pp.h += [y - 2000, cix(w, cid), apps, x ? x.g : 0, x ? x.a : 0, apps ? Math.round(x.rs / apps * 100) : 0, e[2], e[3]].concat(e[7] ? [1] : []).join(',') + ';';
+  }
+}
 // ---------- 각국 컵 ----------
 const KOR = ['8강', '4강', '결승'];
 const stageIdx = s => s === '우승' ? 3 : KOR.indexOf(s);
@@ -142,6 +215,16 @@ function simCup(S, nat, kind, name) {
   }
   const fin = rounds[2].m[0];
   const winner = cur[0], runner = fin[0] === winner ? fin[1] : fin[0];
+  // 경기 기록 (득점자·카드·라인업)
+  if (C.MD && ss.mx) {
+    const out = [];
+    rounds.forEach((rd, ri) => rd.m.forEach(([a, b, ga, gb, pw]) => {
+      const u = uIn && (a === ss.club || b === ss.club) ? um[KOR[ri]] : null;
+      const res = C.MD.play(ss.mx, C.MD.clubSide(w, a, ss.year), C.MD.clubSide(w, b, ss.year), ga, gb, u ? { side: a === ss.club ? 0 : 1, rec: u, pos: S.p.pos, ovr: C.effOvr(S.p) } : null);
+      out.push([KOR[ri], cix(w, a), cix(w, b), ga, gb, res.ev, res.ln, pw ? cix(w, pw) : null]);
+    }));
+    ss.mx.CUP[nat + ':' + kind] = out;
+  }
   // 사용자가 8강 전에 탈락했다면 8강 이전 성적은 기록에 남지 않는다
   void out; void stageIdx;
   return { n: name, k: kind, r: rounds, w: winner, ru: runner };
@@ -171,6 +254,7 @@ function koSize(n) { return n >= 48 ? 32 : n >= 24 ? 16 : n >= 12 ? 8 : 4; }
 function seedOrder(K) { let o = [1]; while (o.length < K) { const L = o.length * 2 + 1; o = o.flatMap(s => [s, L - s]); } return o; }
 const KONAME = { 32: '32강', 16: '16강', 8: '8강', 4: '4강', 2: '결승' };
 
+let curPools = null;
 function simTournament(S, key, strengths, user) {
   const def = TDEF[key], ss = S.ss, y = ss.year + 1;
   // 참가국 선발
@@ -198,6 +282,12 @@ function simTournament(S, key, strengths, user) {
   const res = { userIn: field.includes(user.nat), stage: null, won: false };
   const d0 = C.day(y, 6, 12);
   // 경기 하나
+  const mxOut = ss.mx ? (ss.mx.INTL[key] = []) : null;
+  const rec1 = (stageName, m, urec) => {
+    if (!mxOut || !C.MD) return;
+    const res = C.MD.play(ss.mx, C.MD.natSide(S.w, m[0], curPools, ss.year), C.MD.natSide(S.w, m[1], curPools, ss.year), m[2], m[3], urec ? { side: m[0] === user.nat ? 0 : 1, rec: urec, pos: S.p.pos, ovr: C.effOvr(S.p) } : null);
+    mxOut.push([stageName, m[0], m[1], m[2], m[3], res.ev, res.ln, m[4] || null]);
+  };
   const play = (a, b, ko, stageName, dd) => {
     const amp = x => 72 + (x - 72) * 1.45, sa = amp(strengths[a]) + N(0, 1), sb = amp(strengths[b]) + N(0, 1);
     if (user.on && (a === user.nat || b === user.nat)) {
@@ -206,11 +296,14 @@ function simTournament(S, key, strengths, user) {
       const gf = rec.gf, ga = rec.ga; let pw = 0;
       let win = null;
       if (ko) { if (gf === ga) { win = R() < 1 / (1 + Math.exp(-(strengths[user.nat] - strengths[opp]) * .06)); rec.pens = win ? 'W' : 'L'; pw = win ? user.nat : opp; } else win = gf > ga; rec.koWin = win; }
-      return { m: me ? [a, b, gf, ga, pw] : [a, b, ga, gf, pw], win: ko ? (win ? user.nat : opp) : null };
+      const m = me ? [a, b, gf, ga, pw] : [a, b, ga, gf, pw];
+      rec1(stageName, m, rec);
+      return { m, win: ko ? (win ? user.nat : opp) : null };
     }
     const [ga, gb] = C.quickMatch(sa, sb, 0);
     let win = null, pw = 0;
     if (ko) { win = C.koWinner(sa, sb, ga, gb) === 0 ? a : b; if (ga === gb) pw = win; }
+    rec1(stageName, [a, b, ga, gb, pw], null);
     return { m: [a, b, ga, gb, pw], win };
   };
   // 조별 리그
@@ -249,6 +342,7 @@ function simIntl(S) {
   const keys = tournamentsOf(y);
   if (!keys.length) return null;
   const pools = ss.pools || C.nationPools(w);
+  curPools = pools;
   const strengths = {};
   for (const n in pools) if (pools[n].all.length >= 8) strengths[n] = C.nationStrength(pools[n]);
   // 명단 데이터가 적은 국가는 기본 전력으로 보완
@@ -310,13 +404,17 @@ function archiveSeason(S, tables) {
   for (const id in tables) {
     const lg = w.lg[id], rows = tables[id];
     const L = { t: rows.map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) };
-    Object.assign(L, leagueLeaders(S, id, rows, myLg && myLg.id === id ? me : null));
+    const ml = ss.lgM && ss.lgM[id];
+    const fm = C.MD && ml && ml.length ? leagueFromMatches(S, id, rows, ml) : null;
+    Object.assign(L, fm || leagueLeaders(S, id, rows, myLg && myLg.id === id ? me : null));
+    if (fm) L.md = 1; // 경기 기록 기반
     L.n = lg.name;
     A.lg[id] = L;
   }
   // 리그 시뮬 밖의 실명 구단(대륙 대회만 나오는 구단 등)도 선수 시즌 기록은 남긴다
   { const inT = new Set(); for (const id in tables) for (const r of tables[id]) inT.add(r.id);
     for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite || !c.sq || !c.sq.length || inT.has(id)) continue;
+      if (C.MD && ss.mx) { otherClubSeason(S, id); continue; }
       const pg = 30, gf = Math.round(pg * 1.45 * Math.exp((c.str - 70) * .025) * C.rnd(.85, 1.15)), pts = Math.round(pg * clamp(1.5 + (c.str - 70) * .04 + N(0, .2), .8, 2.5));
       leagueLeaders(S, null, [{ id, p: pg, gf, ga: 0, pts }], null); } }
   // 각국 컵
@@ -329,6 +427,38 @@ function archiveSeason(S, tables) {
   for (const k in ss.allCont) {
     const cs = ss.allCont[k];
     A.cont[k] = { n: cs.name, w: cs.winner, ph: cs.table ? C.sortTable(cs.table).slice(0, 36).map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null, r: (cs.ties || []).map((ts, i) => ({ n: (cs.rounds[i] || [])[2] || '', t: (ts || []).map(t => [t[0], t[1], t.win || null, t.sc ? t.sc[0] : null, t.sc ? t.sc[1] : null, t.pen ? 1 : 0]) })) };
+  }
+  // 대륙 대회 경기 기록: 리그 페이즈 + 토너먼트(1·2차전)
+  if (C.MD && ss.mx) {
+    const y = ss.year, side = id => C.MD.clubSide(w, id, y), U0 = rec => rec ? { rec, pos: p.pos, ovr: C.effOvr(p) } : null;
+    for (const k in ss.allCont) {
+      const cs = ss.allCont[k], out = [];
+      for (const m of (cs.table && cs.table._m) || []) {
+        const [a, b, ga, gb, ui] = m, rec = ui != null ? ss.matches[ui] : null;
+        const u = U0(rec); if (u) u.side = a === ss.club ? 0 : 1;
+        const res = C.MD.play(ss.mx, side(a), side(b), ga, gb, u);
+        out.push(['리그 페이즈', cix(w, a), cix(w, b), ga, gb, res.ev, res.ln]);
+      }
+      (cs.ties || []).forEach((ts, ri) => (ts || []).forEach(t => {
+        const nm = (cs.rounds[ri] || [])[2] || '', two = !!(cs.rounds[ri] || [])[1];
+        const legs = [];
+        if (t.ui && t.ui.length) t.ui.forEach((ix, j) => { const rec = ss.matches[ix]; if (!rec) return; const h = two ? (j === 0 ? t[0] : t[1]) : t[0], a2 = h === t[0] ? t[1] : t[0]; const hg = h === ss.club ? rec.gf : rec.ga, ag = h === ss.club ? rec.ga : rec.gf; legs.push([h, a2, hg, ag, rec, j]); });
+        else if (t.l) t.l.forEach((l, j) => { const h = j === 0 ? t[0] : t[1], a2 = h === t[0] ? t[1] : t[0]; legs.push([h, a2, l[0], l[1], null, j]); });
+        for (const [h, a2, hg, ag, rec, j] of legs) {
+          const u = U0(rec); if (u) u.side = h === ss.club ? 0 : 1;
+          const res = C.MD.play(ss.mx, side(h), side(a2), hg, ag, u);
+          const last = j === legs.length - 1;
+          out.push([nm + (two ? (j === 0 ? ' 1차전' : ' 2차전') : ''), cix(w, h), cix(w, a2), hg, ag, res.ev, res.ln, last && t.pen && t.win ? cix(w, t.win) : null]);
+        }
+      }));
+      ss.mx.CONT[k] = out;
+    }
+    delete ss.mx._pm;
+    w.mxPending = w.mxPending || {}; w.mxPending[ss.label] = ss.mx;
+    w.mxKeys = (w.mxKeys || []).filter(x => x !== ss.label).concat(ss.label);
+    // 경기 상세 기록은 최근 3시즌만 보관 (시즌당 약 4~6MB)
+    while (w.mxKeys.length > 3) { const old = w.mxKeys.shift(); if (w.mxPending[old]) delete w.mxPending[old]; (w.mxDrop = w.mxDrop || []).push(old); }
+    ss.mx = null;
   }
   w.arch[ss.label] = A;
   // 용량 관리: 3시즌 지난 기록은 1부 리그만 전체 순위, 나머지는 우승팀만

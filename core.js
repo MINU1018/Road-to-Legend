@@ -140,8 +140,12 @@ function newPlayer(opt) {
   const target = clamp(Math.round(50 + 4.2 * T + N(0, 2.5)), 42, 65);
   let lv = target;
   for (let i = 0; i < 30; i++) { for (const k of AK) p.a[k] = clamp(lv + apt[k], 8, 99); const o = posOvr(p.a, pos); lv += (target - o) * .9; if (Math.abs(target - o) < .05) break; }
-  p.hid.pot = target + 21 + Math.round(N(0, 1.5));
-  p.hid.startOvr = target; p.hid.dyn = 1;
+  // 재능 한계는 난이도 분포에서 한 번 정해진다. 성장 한계(pot)는 그 아래에서 활약에 따라 오르내린다
+  const dk = C.diffKey(opt.difficulty || C.curDiff);
+  p.hid.cap = Math.max(target + 6, sampleCap(dk, null, T * .55 + N(0, .835)));
+  p.hid.pot = clamp(p.hid.cap - rnd(1, 5), target + 4, p.hid.cap);
+  p.hid.startOvr = target; p.hid.dyn = 2; p.hid.diff = dk;
+  if (pos === 'GK') p.hid.peak = clamp(Math.round(N(29.5, 1.5)), 26, 33);
   return p;
 }
 C.newPlayer = newPlayer;
@@ -166,15 +170,23 @@ function applyOvrDelta(p, d, focus, posOverride) {
   if (tgt) for (const k of AK) { if (mix[k] < .05) continue; const gap = tgt[k] - p.a[k]; mix[k] *= clamp(1 + gap / 9, .3, 3.2); if (!w[k] && gap > 6) mix[k] += Math.min(1.2, gap / 25); }
   else { let ws = 0, wn = 0; for (const k of AK) if (w[k]) { ws += p.a[k] * w[k]; wn += w[k]; } const avg = wn ? ws / wn : 60; for (const k of AK) { if (mix[k] < .1) continue; const lag = clamp((avg - p.a[k]) / 14, 0, 1.4); mix[k] *= 1 + lag * (w[k] ? .9 : .5); } }
   for (const k of AK) sw += (w[k] || 0) * mix[k];
+  const hr = d > 0 ? headroom(p, pos) : 1;
   for (const k of AK) {
     let inc = d * mix[k] / sw * N(1, .25);
-    if (inc > 0) inc *= clamp((99 - p.a[k]) / 22, .04, 1);
+    if (inc > 0) inc *= clamp((99 - p.a[k]) / 22, .04, 1) * hr;
     p.a[k] = clamp(p.a[k] + inc, 5, 99);
   }
 }
 C.applyOvrDelta = applyOvrDelta;
+// 재능 한계에 가까울수록 오르는 폭이 줄어든다 (한계를 넘으면 거의 오르지 않음)
+function headroom(p, pos) {
+  const cap = p.hid && p.hid.cap; if (!cap) return 1;
+  const o = posOvr(p.a, pos || p.pos);
+  return clamp((cap + 1 - o) / 2.2, .05, 1);
+}
+C.headroom = headroom;
 // 개별 능력치 변화
-function bump(p, k, v) { if (v > 0) v *= clamp((99 - p.a[k]) / 22, .04, 1); p.a[k] = clamp(p.a[k] + v, 5, 99); }
+function bump(p, k, v) { if (v > 0) { v *= clamp((99 - p.a[k]) / 22, .04, 1); if (POSW[p.pos] && POSW[p.pos][k]) v *= headroom(p); } p.a[k] = clamp(p.a[k] + v, 5, 99); }
 C.bump = bump;
 
 // ---------- 시즌 성장·노화 ----------
@@ -212,22 +224,23 @@ const INTENSITY = { light: ['가볍게', .82, .7], normal: ['보통', 1, 1], har
 C.FOCUS = FOCUS; C.INTENSITY = INTENSITY;
 
 // 나이별 한 시즌 최대 성장폭 (OVR). 잠재력과의 격차가 12 이상이면 전부, 작으면 비례해서 줄어듦
-function ageFactor(age, peak) {
-  const a = age - (peak - 27.5) * .6;
-  return a <= 18 ? 5.2 : a <= 20 ? 4.2 : a <= 22 ? 3.1 : a <= 24 ? 2.1 : a <= 26 ? 1.2 : a <= 28 ? .5 : .15;
+function ageFactor(age, peak, gk) {
+  const a = age - (peak - 27.5) * .6 + (gk ? 2 : 0); // 골키퍼는 늦게 여문다
+  return a <= 18 ? 5.8 : a <= 20 ? 4.8 : a <= 22 ? 3.5 : a <= 24 ? 2.3 : a <= 26 ? 1.3 : a <= 28 ? .55 : .15;
 }
 // ctx: { minShare, rating, focus, intensity, clubLv }
 function seasonGrowth(p, ctx) {
   const before = { ...p.a }, o0 = ovrOf(p);
   const h = p.hid, age = p.age;
   const gap = h.pot - o0;
-  const af = ageFactor(age, h.peak);
+  const gk = p.pos === 'GK';
+  const af = ageFactor(age, h.peak, gk);
   const play = clamp(.55 + .55 * clamp(ctx.minShare * 1.35, 0, 1) + ((ctx.rating || 6.6) - 6.8) * .22, .4, 1.15);
   const it = INTENSITY[ctx.intensity || 'normal'];
   const fac = .93 + clamp((ctx.clubLv || 65) - 60, -10, 28) / 240;
   const care = ctx.focus === 'care';
   const luck = Math.exp(N(0, C.diff().luck)); // 시즌별 운: 정체기도, 폭풍 성장도 있다
-  let g = gap > 0 ? af * clamp(gap / 12, .12, 1) * h.grow * play * it[1] * fac * (care ? .75 : 1) * luck : gap * .1;
+  let g = gap > 0 ? af * clamp(gap / 9, .15, 1) * h.grow * play * it[1] * fac * (care ? .75 : 1) * luck : gap * .1;
   g += N(0, .6);
   if (age <= 23 && R() < .035 * h.grow) g += rnd(1.5, 3.5); // 깜짝 성장
   if (age <= 24 && R() < .06) g -= rnd(1, 2.5); // 성장 정체
@@ -241,12 +254,16 @@ function seasonGrowth(p, ctx) {
     const fb = (age <= 23 ? .6 : age <= 29 ? .4 : .25) * it[1] * play;
     for (const k in foc) bump(p, k, foc[k] * fb * rnd(.4, 1.2));
   }
-  // 노쇠화
+  // 노쇠화: 관리(이벤트·상점·몸 관리)로 늦출 수는 있어도 멈출 수는 없다
   const dAge = h.peak + 3;
-  if (age >= dAge - 1) {
-    let dl = (age - dAge + 1.6) * .72 * h.lon * rnd(.55, 1.45);
-    if (care) dl *= .65;
-    if (ctx.intensity === 'light') dl *= .9;
+  {
+    const lonE = clamp(h.lon, .7, 2.4);
+    let dl = age >= dAge - 1 ? (age - dAge + 1.6) * .72 * lonE * rnd(.55, 1.45) : 0;
+    if (care) dl *= .85;
+    if (ctx.intensity === 'light') dl *= .95;
+    const fa = gk ? 33 : 32; // 이 나이부터는 관리와 상관없이 매년 떨어진다
+    if (age >= fa) dl = Math.max(dl, (age - fa + 1) * .75 * rnd(.75, 1.3));
+    if (gk) dl *= .9;
     if (dl > 0) for (const k of AK) {
       const c = ACAT[k] || 2;
       const amt = c === 1 ? dl * 1.55 : c === 1.5 ? dl * 1.1 : c === 2.5 ? dl * .75 : c === 3 ? -dl * .12 : dl * .55;
@@ -266,10 +283,11 @@ function seasonGrowth(p, ctx) {
     // 기대 평점(자기 능력치·팀 수준 기준) 대비 활약으로 판단 → 잘나가는 선수도 계속 폭주하지 않고, 부진한 선수도 회복 여지가 있다
     const expR = 6.72 + clamp(o0 - (ctx.clubLv || 70), -15, 15) * .03; // 팀 내 위치 대비 기대 평점
     drift = (clamp(((ctx.rating || 6.6) - expR) * 2.4, -1.8, 2.2) + clamp((ctx.minShare - .4) * 1.6, -.7, 1)) * youthBoost + N(0, 1.1) - .3;
-    if (h.pot - o0 > 14) drift -= (h.pot - o0 - 14) * .25; // 성장 한계가 지나치게 앞서가지 않도록
+    if (!h.cap && h.pot - o0 > 14) drift -= (h.pot - o0 - 14) * .25; // (예전 저장) 성장 한계가 지나치게 앞서가지 않도록
 
     if (ctx.intensity === 'hard') drift += .35; if (ctx.intensity === 'light') drift -= .25;
-    h.pot = clamp(h.pot + drift, ovrOf(p) - 1, 99);
+    const cap = h.cap || 99;
+    h.pot = clamp(h.pot + drift, Math.min(cap, Math.max(ovrOf(p) - 1, cap - 12)), cap + 1);
   }
   return { before, o0, o1: ovrOf(p), drift };
 }
@@ -298,14 +316,37 @@ C.marketValue = marketValue;
 // ---------- 설정 ----------
 const CFG_DEFAULT = {
   currency: 'KRW', rates: { KRW: 1500, USD: 1.08, GBP: .85, JPY: 162 }, wageMode: 'week',
-  difficulty: 'real', moments: 'normal', events: 'normal', injuries: 'normal', showOdds: true,
+  difficulty: 'normal', moments: 'normal', events: 'normal', injuries: 'normal', showOdds: true,
   anim: 'full', confetti: true, ceremonies: true, simSpeed: 'auto', autoSave: true
 };
 C.CFG_DEFAULT = CFG_DEFAULT;
 C.cfg = JSON.parse(JSON.stringify(CFG_DEFAULT));
 C.setCfg = o => { C.cfg = Object.assign(JSON.parse(JSON.stringify(CFG_DEFAULT)), o || {}); C.cfg.rates = Object.assign({}, CFG_DEFAULT.rates, (o && o.rates) || {}); };
-const DIFF = { easy: { g: 1.18, inj: .7, off: 1.25, luck: .36 }, real: { g: 1, inj: 1, off: 1, luck: .42 }, hard: { g: .88, inj: 1.25, off: .85, luck: .48 }, hardcore: { g: .78, inj: 1.5, off: .7, luck: .55 } };
-C.diff = () => DIFF[C.cfg.difficulty] || DIFF.real;
+// 난이도: 커리어마다 시작할 때 정한다. cap = 재능 한계(최고 도달 가능 OVR)의 분포 [OVR, 그 이상일 확률]
+// 현실 = FC27 실제 프로 선수 분포(25~30세 OVR 80+ 4.1%, 85+ 0.8%, 90+ 0.1%)에 맞춤
+const DIFF = {
+  easy: { name: '쉬움', g: 1.1, inj: .7, off: 1.25, luck: .36, cap: [[62, 1], [70, .95], [75, .82], [80, .6], [85, .45], [88, .36], [90, .3], [93, .2], [95, .1], [97, 0]] },
+  normal: { name: '보통', g: 1, inj: 1, off: 1, luck: .42, cap: [[60, 1], [70, .88], [75, .66], [80, .38], [85, .2], [88, .13], [90, .09], [93, .035], [96, 0]] },
+  hard: { name: '어려움', g: .93, inj: 1.2, off: .85, luck: .48, cap: [[58, 1], [65, .9], [70, .72], [75, .46], [80, .2], [85, .085], [88, .045], [90, .028], [93, .01], [96, 0]] },
+  real: { name: '현실', g: .88, inj: 1.3, off: .72, luck: .52, cap: [[55, 1], [60, .9], [65, .72], [70, .48], [75, .22], [80, .07], [85, .018], [88, .008], [90, .004], [93, .001], [96, 0]] }
+};
+C.DIFF = DIFF;
+// 예전 설정값 호환: 예전 '현실'(기본값)은 지금의 '보통', 예전 '하드코어'는 지금의 '현실'
+C.diffKey = k => ({ easy: 'easy', normal: 'normal', hard: 'hard', real: 'real', hardcore: 'real' })[k] || 'normal';
+C.curDiff = 'normal';
+C.diff = () => DIFF[C.curDiff] || DIFF.normal;
+// 재능 한계 뽑기. minO를 주면 그 이상인 경우만 (실존 선수로 시작할 때)
+function capSurv(t, x) { if (x <= t[0][0]) return 1; for (let i = 1; i < t.length; i++) if (x <= t[i][0]) { const [x0, y0] = t[i - 1], [x1, y1] = t[i]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0); } return 0; }
+const Phi = z => { const t = 1 / (1 + .2316419 * Math.abs(z)), d = .3989423 * Math.exp(-z * z / 2); const q = d * t * (.3193815 + t * (-.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - q : q; };
+// z: 재능 점수(표준정규). 시작 능력치가 높은 선수일수록 한계도 높게 나오도록 상관을 준다
+function sampleCap(key, minO, z) {
+  const t = (DIFF[key] || DIFF.normal).cap;
+  const top = minO != null ? capSurv(t, minO) : 1;
+  const u = (z != null ? 1 - Phi(z) : R()) * top;
+  for (let i = 1; i < t.length; i++) { const [x0, y0] = t[i - 1], [x1, y1] = t[i]; if (u >= y1) return Math.round((x0 + (x1 - x0) * (y0 - u) / Math.max(1e-9, y0 - y1)) * 10) / 10; }
+  return t[t.length - 1][0];
+}
+C.capSurv = capSurv; C.sampleCap = sampleCap;
 const CUR = { KRW: '₩', EUR: '€', USD: '$', GBP: '£', JPY: '¥' };
 C.CUR = CUR;
 // 내부 금액은 모두 EUR. 표시할 때만 설정 통화로 바꾼다

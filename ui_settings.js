@@ -47,7 +47,7 @@ U.viewSettings = function () {
     row('예시', '시장 가치 4,500만 유로 · 주급 8만 5천 유로', sample)));
   // 게임 밸런스
   root.append(card('게임 밸런스', '새 시즌부터 적용됩니다.',
-    row('난이도', '성장 속도·운의 폭·부상·이적 관심도에 영향을 줍니다', seg('diff', cfg.difficulty, [['easy', '쉬움'], ['real', '현실'], ['hard', '어려움'], ['hardcore', '하드코어']], v => { cfg.difficulty = v; saveCfg(); })),
+    row('난이도', '커리어를 시작할 때 정하며, 진행 중인 커리어에서는 바꿀 수 없습니다', h('b', null, (() => { const S0 = U.S(); return S0 && S0.diff ? ((C.DIFF[S0.diff] || {}).name || '보통') + ' (현재 커리어)' : '새 커리어 화면에서 선택'; })())),
     row('부상 빈도', null, seg('inj', cfg.injuries, [['low', '적게'], ['normal', '보통'], ['high', '많이']], v => { cfg.injuries = v; saveCfg(); })),
     row('시즌 이벤트 빈도', '프리시즌·겨울 휴식기마다 나오는 선택지 개수', seg('evf', cfg.events, [['off', '끄기'], ['low', '적게'], ['normal', '보통'], ['high', '많이']], v => { cfg.events = v; saveCfg(); })),
     row('결정적 순간 빈도', '경기 중 직접 차고 막는 장면', seg('mom', cfg.moments, [['off', '끄기'], ['low', '적게'], ['normal', '보통'], ['high', '많이']], v => { cfg.moments = v; saveCfg(); })),

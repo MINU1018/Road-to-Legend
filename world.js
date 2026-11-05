@@ -10,7 +10,7 @@ const START_YEAR = 2026;
 const NAT = Object.assign({}, WD.NATIONS, F.nat || {});
 const NATX = { BHR: '바레인', VIE: '베트남', KUW: '쿠웨이트', KGZ: '키르기스스탄', TJK: '타지키스탄', MAS: '말레이시아', PHI: '필리핀', SIN: '싱가포르', HKG: '홍콩', YEM: '예멘', TKM: '투르크메니스탄' };
 const natName = c => (NAT[c] || [NATX[c] || c])[0];
-C.natName = natName; C.NAT = NAT; C.START_YEAR = START_YEAR;
+C.natName = natName; C.NAT = NAT; C.START_YEAR = START_YEAR; C.POSMAP = POSMAP; C.dayOf = (y, m, d) => dayOf(y, m, d);
 
 // 대륙 연맹
 const UEFA = 'ENG SCO WAL NIR IRL ESP ITA GER AUT SUI FRA BEL NED POR TUR GRE CZE SVK DEN NOR SWE ISL FIN CRO SRB BIH SVN MNE MKD ALB KOS UKR POL HUN ROU BUL GEO LUX ARM LTU LVA EST CYP MLT MDA BLR RUS KAZ ISR FRO AND AZE LIE'.split(' ');
@@ -399,12 +399,14 @@ function simLeague(w, lg) {
 }
 C.simLeague = simLeague;
 function newTable(ids) { const t = {}; for (const id of ids) t[id] = { id, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 }; return t; }
-function addResult(t, a, b, ga, gb) {
+// 순위표에 결과 반영 + 경기 목록(_m)에 기록. ui = 내 선수가 뛴 경기면 시즌 경기 기록의 번호
+function addResult(t, a, b, ga, gb, ui) {
   const A = t[a], B = t[b]; if (!A || !B) return;
+  (t._m = t._m || []).push(ui != null ? [a, b, ga, gb, ui] : [a, b, ga, gb]);
   A.p++; B.p++; A.gf += ga; A.ga += gb; B.gf += gb; B.ga += ga;
   if (ga > gb) { A.w++; B.l++; A.pts += 3; } else if (ga < gb) { B.w++; A.l++; B.pts += 3; } else { A.d++; B.d++; A.pts++; B.pts++; }
 }
-function sortTable(t) { return Object.values(t).sort((x, y) => y.pts - x.pts || (y.gf - y.ga) - (x.gf - x.ga) || y.gf - x.gf || R() - .5); }
+function sortTable(t) { return Object.values(t).filter(r => r && r.id).sort((x, y) => y.pts - x.pts || (y.gf - y.ga) - (x.gf - x.ga) || y.gf - x.gf || R() - .5); }
 Object.assign(C, { newTable, addResult, sortTable });
 
 // 승강 규칙: 국가별 상·하위 리그

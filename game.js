@@ -8,10 +8,57 @@ const GM = G.TCG = {};
 const evCount = () => { const f = C.cfg.events; return f === 'off' ? 0 : f === 'low' ? (R() < .5 ? 1 : 0) : f === 'high' ? (R() < .5 ? 3 : 2) : (R() < .55 ? 2 : 1); };
 GM.newGame = function (opt) {
   C.psDirty = true;
+  const dk = C.diffKey(opt.difficulty || 'normal'); C.curDiff = dk;
   const w = C.buildWorld();
-  const p = C.newPlayer(Object.assign({ year: w.year }, opt));
-  const S = { v: 1, w, p, car: { club: null, status: 'youth', contract: 0, wage: 0, trust: 50, years: 0, focus: 'balance', intensity: 'normal' }, hist: [], flags: {}, phase: 'academy', vh: [], trophies: [], awards: [], evLog: [], created: Date.now() };
+  const p = C.newPlayer(Object.assign({ year: w.year }, opt, { difficulty: dk }));
+  const S = { v: 1, diff: dk, w, p, car: { club: null, status: 'youth', contract: 0, wage: 0, trust: 50, years: 0, focus: 'balance', intensity: 'normal' }, hist: [], flags: {}, phase: 'academy', vh: [], trophies: [], awards: [], evLog: [], created: Date.now() };
   S.academies = academyOptions(S);
+  return S;
+};
+// ---------- 실존 선수로 시작 ----------
+const realRef = () => C.dayOf(C.START_YEAR, 8, 1);
+GM.realList = function () {
+  const F = G.FC27, ok = new Set();
+  for (const l of F.leagues) for (const id of l.clubs) ok.add(id);
+  for (const [id] of F.other) ok.delete(id);
+  const ref = realRef(), out = [];
+  F.P.forEach((p, i) => { const c = F.clubs[p[4]]; if (!c || !ok.has(c[0])) return; out.push({ i, n: p[1], pos: C.POSMAP[p[2]] || 'CM', age: Math.floor((ref - p[9]) / 365.25), o: p[11], nat: p[5], club: c[1], cid: c[0] }); });
+  return out.sort((a, b) => b.o - a.o);
+};
+const FCMAP = { pace: 'sprint', positioning: 'attPos', freeKick: 'fkAcc', marking: 'defAware', gkPositioning: 'gkPos' };
+GM.newGameReal = function (idx, diff) {
+  const F = G.FC27, P = F.P[idx]; if (!P) return null;
+  C.psDirty = true;
+  const dk = C.diffKey(diff || 'normal'); C.curDiff = dk;
+  const w = C.buildWorld();
+  const fc = F.clubs[P[4]]; const c = fc && w.clubs[fc[0]];
+  if (!c || c.lite || !c.lg || !w.lg[c.lg]) return null;
+  const pos = C.POSMAP[P[2]] || 'CM', o = P[11];
+  const age = clamp(Math.floor((realRef() - P[9]) / 365.25), 15, 42);
+  // FC27 능력치 → 게임 능력치 (침착성·GK 스피드는 FC27 데이터에 없어 비슷한 능력치로 채움)
+  const raw = [...P[13]].map(ch => ch.charCodeAt(0) - 32), a = {};
+  F.stats.forEach((k, j) => { const key = FCMAP[k] || k; if (C.AK.includes(key)) a[key] = raw[j]; });
+  if (a.composure == null) a.composure = Math.round(((a.reactions || 60) + (a.ballControl || 60)) / 2 + (age >= 27 ? 4 : 0));
+  if (a.gkSpeed == null) a.gkSpeed = pos === 'GK' ? Math.round(((a.accel || 40) + (a.sprint || 40)) / 2) : 10;
+  for (const k of C.AK) if (a[k] == null) a[k] = 40;
+  // 게임의 포지션 OVR 공식이 FC27 OVR과 같도록 핵심 능력치를 조금 맞춘다
+  const d = o - C.posOvr(a, pos); for (const k in C.POSW[pos]) a[k] = clamp(a[k] + d, 5, 99);
+  const p = C.newPlayer({ name: P[1], nat: P[5], num: 9, foot: P[6] === 'L' ? 'L' : 'R', pos, height: pos === 'GK' ? 190 : 181, style: 0, year: w.year, difficulty: dk });
+  p.a = a; p.age = age; p.born = w.year - age;
+  p.weak = clamp(+P[7] || 3, 1, 5); p.skill = clamp(+P[8] || 2, 1, 5);
+  const h = p.hid;
+  h.cap = Math.max(o + .5, C.sampleCap(dk, o + .5));
+  h.pot = clamp(h.cap - rnd(0, 3), o, h.cap); h.startOvr = o; h.real = idx;
+  if (age >= 24) h.peak = clamp(Math.max(h.peak, age - 1), 24, 33);
+  p.rep = clamp(Math.round((o - 55) * 2.4), 5, 95);
+  // AI 명단에서 본인은 빠진다
+  c.sq = c.sq.filter(e => e[0] !== idx); c.str = C.xiStrength(c.sq);
+  const youth = age < 18 && o < c.str - 12;
+  const wage = youth ? 400 : C.wageFor(c, o, w.lg[c.lg].nation);
+  p.money = youth ? 0 : Math.round(wage * 20);
+  const S = { v: 1, diff: dk, w, p, car: { club: c.id, status: youth ? 'youth' : 'first', contract: w.year + (youth ? 2 : rint(1, 4)), wage, trust: 55, years: 1, focus: 'balance', intensity: 'normal', joined: w.year - 1 },
+    hist: [], flags: { real: idx }, phase: 'training', vh: [], trophies: [], awards: [], evLog: [], created: Date.now(), clubsJoined: [{ club: c.id, y: w.year, type: youth ? 'youth' : 'pro' }] };
+  pushValue(S);
   return S;
 };
 function academyOptions(S) {
@@ -144,7 +191,7 @@ GM.endSeason = function (S) {
   // 겨울 이적 시 이전 리그의 나머지 경기
   if (ss.oldTables) for (const id in ss.oldTables) if (!ss.tables[id]) {
     const lgO = w.lg[id]; const t = ss.oldTables[id];
-    const done = Object.values(t).reduce((a, r) => a + r.p, 0) / 2, total = (C.leagueRounds(lgO).length + C.splitCount(lgO)) * Math.floor(lgO.clubs.length / 2);
+    const done = Object.values(t).filter(r => r && r.id).reduce((a, r) => a + r.p, 0) / 2, total = (C.leagueRounds(lgO).length + C.splitCount(lgO)) * Math.floor(lgO.clubs.length / 2);
     let k = 0; const ids = lgO.clubs;
     for (let i = 0; i < ids.length && k < total - done; i++) for (let j = 0; j < ids.length && k < total - done; j++) if (i !== j && R() < .55) { const [a, b] = C.quickMatch(w.clubs[ids[i]].str, w.clubs[ids[j]].str, 1); C.addResult(t, ids[i], ids[j], a, b); k++; }
     ss.tables[id] = t;
@@ -176,6 +223,17 @@ GM.endSeason = function (S) {
   // 일시 보정 감소
   p.mods = p.mods.filter(m => --m.seasons > 0);
   ss.growth = { before: g.before, after: { ...p.a }, o0, o1: C.ovrOf(p) };
+  // 지난 시즌 활약 → 다음 시즌 자신감(컨디션 보정)·감독 신뢰. 기준은 팀 내 위치 대비 기대 평점
+  ss.carry = null;
+  if (ss.total.rated >= 8 && ss.status !== 'youth') {
+    // 기준: 최근 두 시즌 평균 평점 (기록이 없으면 OVR로 추정한 평점)
+    const prev = S.hist.filter(x => x.status !== 'youth' && x.total && x.total.rated >= 8 && x.rating).slice(-2).map(x => x.rating);
+    const expR = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 6.62 + (o0 - 72) * .035 + .15, d = rating - expR;
+    const lv = d >= .55 ? 2 : d >= .25 ? 1 : d <= -.55 ? -2 : d <= -.25 ? -1 : 0;
+    if (lv) { p.mods.push({ ovr: lv, seasons: 1, why: lv > 0 ? '지난 시즌 활약 · 자신감' : '지난 시즌 부진 · 자신감 하락' }); C.news(S, lv > 0 ? `지난 시즌 활약으로 자신감 상승 (다음 시즌 컨디션 +${lv})` : `지난 시즌 부진으로 자신감 하락 (다음 시즌 컨디션 ${lv})`, 'info'); }
+    car.trust = clamp(car.trust + clamp(d * 12, -8, 8), 0, 100);
+    ss.carry = { lv, d: Math.round(d * 100) / 100, exp: Math.round(expR * 100) / 100 };
+  }
   // 수입
   let income = Math.round(car.wage * 52 + (ss.trophies.length * car.wage * 4));
   ss.perfBonus = 0;
@@ -198,6 +256,7 @@ GM.endSeason = function (S) {
     table: lg && ss.final[lg.id] ? ss.final[lg.id].map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null,
     cupOut: ss.CWon ? '우승' : ss.COut || '', lcupOut: ss.LCWon ? '우승' : ss.LCOut || '', contOut: ss.contWon ? '우승' : ss.contOut || '', contName: ss.cont ? ss.allCont[ss.cont].name : '', cupName: ss.cupName, lcupName: ss.lcupName,
     focus: car.focus, intensity: car.intensity, role: ss.role, money: p.money, perfBonus: ss.perfBonus || 0, income: ss.income,
+    carry: ss.carry, ntA: C.totalAgg(ss.matches.filter(m => m.comp === 'nt')), ntY: C.totalAgg(ss.matches.filter(m => m.comp === 'ntY')),
     goal: ss.goalRes ? { label: ss.goalRes.goal.label, d: ss.goalRes.goal.d, ok: ss.goalRes.ok, v: ss.goalRes.v } : null
   };
   S.hist.push(rec);
@@ -290,7 +349,7 @@ GM.serialize = function (S, full) {
   const o = Object.assign({}, S); delete o.ss; delete o.lastSeason; delete o.pend; delete o.winterOffers; delete o.newsQ;
   if (o.phase === 'review') o.phase = 'reviewDone';
   // 선수 기록(용량이 큰 부분)은 따로 저장한다: full=true면 포함 (파일 내보내기용)
-  if (o.w && o.w.ps && !full) { o.w = Object.assign({}, o.w); delete o.w.ps; }
+  if (o.w && ((o.w.ps && !full) || o.w.mxPending || o.w.mxDrop)) { o.w = Object.assign({}, o.w); if (!full) delete o.w.ps; delete o.w.mxPending; delete o.w.mxDrop; } // 경기 상세 기록도 따로 (시즌별 'mx:시즌')
   return JSON.stringify(o);
 };
 GM.parse = function (t) { try { return JSON.parse(t); } catch (e) { return null; } };

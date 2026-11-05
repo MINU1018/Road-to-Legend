@@ -33,7 +33,7 @@ const POOL = [
   { id: 'skill', name: '프리스타일 코치', cat: '훈련', desc: '개인기 ★+1 (성공률 60%)', limit: 1, price: S => round(annual(S) * .32 * S.p.skill), can: S => S.p.skill < 5 && S.p.pos !== 'GK', run: S => R() < .6 ? (S.p.skill++, [true, `개인기 ★${S.p.skill}`]) : [false, '화려한 기술은 아직 몸에 붙지 않았다'] },
   { id: 'chef', name: '전담 셰프·영양사', cat: '몸 관리', desc: '다음 경기들 컨디션 +2 (1시즌)', limit: 1, price: S => round(annual(S) * .16), run: S => { S.p.mods.push({ ovr: 2, seasons: 1, why: '전담 셰프' }); return [true, '컨디션 +2 (1시즌)']; } },
   { id: 'cryo', name: '회복 장비 투자', cat: '몸 관리', desc: '부상 위험 영구 감소 (커리어 3회)', limit: 1, career: 3, price: S => round(annual(S) * .3), run: S => { S.p.hid.inj = clamp(S.p.hid.inj * .86, .4, 2.5); if (S.ss && S.ss.inj > 0) S.ss.inj = Math.ceil(S.ss.inj * .6); return [true, '부상 위험 감소']; } },
-  { id: 'science', name: '스포츠 과학', cat: '몸 관리', desc: '노쇠화 지연 (커리어 4회)', limit: 1, career: 4, can: S => S.p.age >= 27, price: S => round(annual(S) * (S.p.age >= 30 ? .45 : .3)), run: S => { S.p.hid.lon = clamp(S.p.hid.lon * (S.p.age >= 30 ? .86 : .93), .35, 2.2); return [true, '노쇠화 지연']; } },
+  { id: 'science', name: '스포츠 과학', cat: '몸 관리', desc: '노쇠화 지연 (커리어 2회)', limit: 1, career: 2, can: S => S.p.age >= 27, price: S => round(annual(S) * (S.p.age >= 30 ? .45 : .3)), run: S => { S.p.hid.lon = clamp(S.p.hid.lon * (S.p.age >= 30 ? .9 : .94), .6, 2.4); return [true, '노쇠화 지연']; } },
   { id: 'analyst', name: '전담 영상 분석관', cat: '경기', desc: '이번 시즌 결정적 순간 선택지 1개 감소', limit: 1, price: S => round(annual(S) * .2), run: S => { S.flags.analystY = S.ss ? S.ss.year : S.w.year; return [true, '이번 시즌 결정적 순간이 쉬워진다']; } },
   { id: 'tactic', name: '감독과 전술 과외', cat: '경기', desc: '감독 신뢰 +10', limit: 1, price: S => round(annual(S) * .1), can: S => ['first', 'loan'].includes(S.car.status), run: S => { S.car.trust = clamp(S.car.trust + 10, 0, 100); return [true, '감독 신뢰 +10']; } }
 ];
@@ -66,8 +66,9 @@ SH.stockItems = S => { const st = state(S); const l = st.stock.ids.map(SH.item).
 // 개인 코치: 능력치 최대 3개를 한 번에. 많이 고를수록 개당 효과는 조금 줄고 가격은 묶음 할인
 function coachGain(S, k, n) {
   const a = S.p.age, v = S.p.a[k];
-  const base = a <= 21 ? rnd(2.6, 4) : a <= 25 ? rnd(2, 3.2) : a <= 29 ? rnd(1.4, 2.4) : rnd(.8, 1.6);
-  return base * clamp((97 - v) / 25, .25, 1.1) * (n >= 3 ? .85 : n === 2 ? .92 : 1);
+  const base = a <= 21 ? rnd(1.7, 2.8) : a <= 25 ? rnd(1.3, 2.2) : a <= 29 ? rnd(.9, 1.6) : rnd(.4, 1);
+  // 골키퍼 능력치는 OVR에 직접 크게 반영되므로 효과를 낮춘다. 재능 한계 근처에서는 bump가 추가로 줄인다
+  return base * clamp((97 - v) / 25, .25, 1.1) * (n >= 3 ? .85 : n === 2 ? .92 : 1) * (C.AGROUP[k] === 'GK' ? .7 : 1);
 }
 SH.coachPrice = (S, ks) => { ks = [].concat(ks).filter(Boolean); const one = k => annual(S) * .14 * (1 + Math.max(0, S.p.a[k] - 55) / 22); const sum = ks.reduce((a, k) => a + one(k), 0); return round(sum * (ks.length >= 3 ? .8 : ks.length === 2 ? .9 : 1)); };
 SH.priceOf = (S, it, k) => { if (it.id === 'coach') return SH.coachPrice(S, k); const p = it.price(S), sale = state(S).stock.sale[it.id]; return sale ? round(p * sale) : p; };

@@ -131,6 +131,26 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .styles button b { display: block; font-size: 13px; }
 .styles button span { font-size: 12px; color: var(--mute); }
 .cfoot { display: flex; justify-content: space-between; padding: 14px 20px; border-top: 1px solid var(--line); gap: 10px; }
+.diffsec { display: grid; gap: 10px; padding: 16px 20px; border-top: 1px solid var(--line); }
+.diffpick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.diffpick button { display: grid; gap: 4px; text-align: left; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); cursor: pointer; font: inherit; }
+.diffpick button b { font-size: 15px; }
+.diffpick button .pr { font-size: 12px; color: var(--fg); }
+.diffpick button .mute { font-size: 11px; }
+.diffpick button.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+@media (max-width: 760px) { .diffpick { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.realgrid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.realgrid > section { padding: 16px 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.realgrid > section + section { border-left: 1px solid var(--line); }
+@media (max-width: 860px) { .realgrid { grid-template-columns: 1fr; } .realgrid > section + section { border-left: 0; border-top: 1px solid var(--line); } }
+.reallist { display: grid; gap: 2px; max-height: 420px; overflow-y: auto; }
+.reallist button { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 44px minmax(0, 120px) 40px; gap: 8px; align-items: center; padding: 7px 8px; border-radius: 8px; border: 0; background: transparent; color: var(--fg); text-align: left; cursor: pointer; font: inherit; font-size: 13px; }
+.reallist button:hover { background: var(--panel2); }
+.reallist button.on { background: var(--panel3); box-shadow: inset 0 0 0 1px var(--gold); }
+.reallist .n { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reallist .cl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+@media (max-width: 560px) { .reallist button { grid-template-columns: 22px minmax(0, 1fr) auto 40px; } .reallist .cl, .reallist button > .mute:not(.cl) { display: none; } }
+.realpick { display: grid; gap: 6px; }
 
 /* 아카데미 선택 */
 .acad { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
@@ -547,6 +567,57 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .wsgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .wsitem { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--panel2); }
 .wsitem.gold { box-shadow: inset 0 0 0 1px rgba(242,193,78,.35); }
+
+/* 리그·대회: 하위 탭, 경기 목록, 경기 상세 */
+.lsub { margin-top: -4px; }
+.rnav { display: flex; align-items: center; gap: 6px; }
+.fxlist { display: grid; gap: 4px; }
+.fx { display: grid; grid-template-columns: 36px minmax(0, 1fr) 64px minmax(0, 1fr) 36px; gap: 10px; align-items: center; width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.fx:hover { border-color: var(--mute); }
+.fx.me { box-shadow: inset 3px 0 0 var(--gold); }
+.fx .fh { justify-self: end; min-width: 0; overflow: hidden; display: flex; justify-content: flex-end; }
+.fx .fh .cc, .fx .fa .cc { min-width: 0; }
+.fx .fa { min-width: 0; overflow: hidden; }
+.fx .fs { text-align: center; font-family: var(--font-display); font-size: 17px; }
+.fx .fr { font-size: 11px; min-width: 28px; }
+.fx .res { padding: 1px 8px; border-radius: 6px; font-size: 12px; }
+.fx .cc span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bm.click, .gms .click { cursor: pointer; }
+.bm.click:hover { outline: 1px solid var(--mute); }
+.gms .click:hover { background: var(--panel3); }
+.mhead { display: grid; gap: 8px; position: relative; }
+.mclose { position: absolute; right: 0; top: 0; }
+.mscore { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; padding-top: 4px; }
+.mscore .mt { display: flex; justify-content: flex-end; min-width: 0; }
+.mscore .mt.r { justify-content: flex-start; }
+.mscore .mt .cc b { font-size: 16px; }
+.mscore .ms { font-family: var(--font-display); font-size: 34px; font-weight: 800; text-align: center; white-space: nowrap; }
+.mbody { display: grid; gap: 16px; }
+.mgoals { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 13px; }
+.mgoals > div { display: grid; gap: 2px; align-content: start; text-align: right; }
+.mgoals > div.r { text-align: left; }
+.msec h4 { margin: 0 0 8px; font-size: 13px; color: var(--mute); font-weight: 600; }
+.mtl { display: grid; gap: 4px; }
+.mev { display: grid; grid-template-columns: 40px 22px minmax(0, 1fr); gap: 6px; align-items: center; font-size: 13px; padding: 4px 8px; border-radius: 8px; background: var(--panel2); }
+.mev.r { border-left: 3px solid var(--mute); }
+.mev.l { border-left: 3px solid var(--gold); }
+.mev .mm { font-family: var(--font-display); color: var(--mute); }
+.mi { display: inline-flex; justify-content: center; font-size: 13px; }
+.mi.ky { color: #f2c14e; } .mi.kr, .mi.k2 { color: #e5484d; } .mi.ka { font-size: 10px; font-weight: 800; color: var(--mute); }
+.mstat { display: grid; grid-template-columns: 44px 1fr 80px 1fr 44px; gap: 8px; align-items: center; font-size: 12px; padding: 3px 0; }
+.mstat > span { text-align: center; color: var(--mute); }
+.mstat > b:last-child { text-align: right; }
+.mbar { height: 6px; border-radius: 3px; background: var(--panel3); display: flex; justify-content: flex-end; overflow: hidden; }
+.mbar.r { justify-content: flex-start; }
+.mbar i { display: block; height: 100%; background: var(--gold); }
+.mbar.r i { background: var(--mute); }
+.mlus { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.mlu { min-width: 0; }
+.mlr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; font-size: 12px; padding: 3px 0; border-top: 1px solid var(--line); }
+.mlr > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mic { display: inline-flex; gap: 2px; }
+.meName { color: var(--gold); font-weight: 700; cursor: pointer; }
+@media (max-width: 600px) { .mlus { grid-template-columns: 1fr; } .fx { grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr); } .fx .fr, .fx .res { display: none; } .mscore .ms { font-size: 26px; } }
 </style>
 
 <div id="app"></div>
@@ -559,6 +630,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 <script src="world.js"></script>
 <script src="season.js"></script>
 <script src="history.js"></script>
+<script src="matchdb.js"></script>
 <script src="events.js"></script>
 <script src="moments.js"></script>
 <script src="game.js"></script>
@@ -572,6 +644,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 <script src="ui.js"></script>
 <script src="ui_pages.js"></script>
 <script src="ui_world.js"></script>
+<script src="ui_match.js"></script>
 <script src="ui_db.js"></script>
 <script src="ui_explore.js"></script>
 <script src="ui_wsim.js"></script>
