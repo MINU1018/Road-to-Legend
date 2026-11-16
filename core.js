@@ -381,7 +381,10 @@ function fmtEUR(v) {
 }
 const fmtKR = fmtEUR;
 // 주급 표시 (설정에 따라 주급·월급·연봉)
-C.fmtWage = v => C.cfg.wageMode === 'year' ? fmtEUR(v * 52) + ' /년' : C.cfg.wageMode === 'month' ? fmtEUR(v * 52 / 12) + ' /월' : fmtEUR(v) + ' /주';
+// 급여: 내부 값은 주급(유로). 설정 단위(일급·주급·월급·연봉)와 통화로 표시
+C.wageIn = (v, m) => { m = m || C.cfg.wageMode; return m === 'year' ? v * 52 : m === 'month' ? v * 52 / 12 : m === 'day' ? v / 7 : v; };
+C.wageUnit = m => ({ year: '연봉', month: '월급', day: '일급', week: '주급' })[m || C.cfg.wageMode] || '주급';
+C.fmtWage = (v, short) => { const m = C.cfg.wageMode; return fmtEUR(C.wageIn(v, m)) + (short ? '' : ({ year: ' /년', month: ' /월', day: ' /일', week: ' /주' })[m] || ' /주'); };
 C.fmtEUR = fmtEUR; C.fmtKR = fmtKR;
 
 // 스카우트 잠재력 평가 (나이 들수록 정확해짐)

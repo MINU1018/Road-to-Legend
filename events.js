@@ -670,7 +670,9 @@ function applyMoment(S, rec, mc, res) {
 C.applyMoment = applyMoment;
 
 // ================= 이적 제안 =================
+// 내 선수 주급도 AI 선수와 같은 기준 (구단 수입 규모 × 팀 내 위상)
 function wageFor(club, ovr, nation) {
+  if (club.rev && C.aiWage) return Math.max(300, Math.round(C.aiWage(club, ovr, 25) / 100) * 100);
   const lm = { SAU: 3.2, ENG: 1.25, CHN: 1.5, USA: 1.05, TUR: 1.1, KOR: .75, IND: .6, AUS: .7, IRL: .5, ARG: .6, MEX: .9, SCO: .7 }[nation] || 1;
   return Math.round(600 * Math.exp((club.str - 55) * .17 + (ovr - club.str) * .12) * lm / 100) * 100;
 }

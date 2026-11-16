@@ -239,24 +239,20 @@ function setupSeason(S) {
   if (car.status === 'youth' || ss.reserve) {
     for (let i = 0; i < 22; i++) ss.fx.push({ d: nextDow(start + 7 + Math.round(i * (end - start - 20) / 22), 0), k: 'Y' });
   }
-  // 국내 컵
+  // 국내 컵: 그 나라 모든 구단이 참가하는 전 라운드 대진. 내 구단은 리그 등급에 맞는 라운드부터 들어간다
   const nat = lg ? lg.nation : club.nat;
-  if (C.CUPNAME[nat]) {
-    const dates = [day(y, 9, 17), day(y, 10, 29), day(y + 1, 1, 10), day(y + 1, 2, 7), day(y + 1, 3, 7), day(y + 1, 4, 18), day(y + 1, 5, 23)];
-    const names = ['1라운드', '2라운드', '3라운드', '4라운드', '8강', '4강', '결승'];
-    const entry = lg ? Math.min(2, lg.tier - 1 >= 0 ? 3 - Math.min(lg.tier, 3) : 0) : 0;
-    ss.cupRounds = dates.slice(entry).map((d, i) => ({ d: nextDow(d, 3), name: names[entry + i] }));
-    ss.cupRounds.forEach((r, i) => ss.fx.push({ d: r.d, k: 'C', r: i }));
-    ss.alive.C = true; ss.cupName = C.CUPNAME[nat];
-  }
-  if (C.LCUPNAME[nat] && lg && lg.tier <= 4) {
-    const dates = [day(y, 8, 13), day(y, 8, 27), day(y, 9, 24), day(y, 10, 29), day(y, 12, 17), day(y + 1, 1, 14), day(y + 1, 3, 15)];
-    const names = ['1라운드', '2라운드', '3라운드', '16강', '8강', '4강', '결승'];
-    const entry = lg.tier === 1 ? 2 : lg.tier === 2 ? 1 : 0;
-    ss.lcupRounds = dates.slice(entry).map((d, i) => ({ d: nextDow(d, 2), name: names[entry + i] }));
-    ss.lcupRounds.forEach((r, i) => ss.fx.push({ d: r.d, k: 'LC', r: i }));
-    ss.alive.LC = true; ss.lcupName = C.LCUPNAME[nat];
-  }
+  ss.cupSt = {};
+  const cupSetup = (kind, k, name, dow) => {
+    const st = C.cupBuild(w, nat, kind, name); if (!st) return;
+    ss.cupSt[kind + ':' + nat] = st;
+    const e = C.cupEntry(st, club.id); if (e < 0) return;
+    const rs = st.rounds.slice(e).map((r, i) => ({ d: nextDow(day(r.d[0] >= 7 ? y : y + 1, r.d[0], r.d[1]), dow), name: r.n, ri: e + i }));
+    ss[k === 'C' ? 'cupRounds' : 'lcupRounds'] = rs;
+    rs.forEach((r, i) => ss.fx.push({ d: r.d, k, r: i }));
+    ss.alive[k] = true; ss[k === 'C' ? 'cupName' : 'lcupName'] = name; ss[k === 'C' ? 'cupKey' : 'lcupKey'] = kind + ':' + nat;
+  };
+  if (C.CUPNAME[nat]) cupSetup('cup', 'C', C.CUPNAME[nat], 3);
+  if (C.LCUPNAME[nat] && lg && lg.tier <= 4) cupSetup('lcup', 'LC', C.LCUPNAME[nat], 2);
   // 대륙 대회
   const parts = C.contParticipants(w);
   ss.allCont = {};
@@ -545,16 +541,27 @@ async function doCup(S, fx, hooks, k) {
   const ss = S.ss, w = S.w;
   if (!ss.alive[k]) return;
   const rounds = k === 'C' ? ss.cupRounds : ss.lcupRounds, rd = rounds[fx.r];
-  const nat = w.clubs[ss.club].nat;
-  const final = fx.r === rounds.length - 1;
-  const left = rounds.length - fx.r;
-  const pool = Object.values(w.clubs).filter(c => c.lg && w.lg[c.lg].nation === nat && c.id !== ss.club && (left > 3 ? true : w.lg[c.lg].tier <= (left > 2 ? 3 : 2)));
-  const opp = wpick(pool, c => Math.exp((c.str - 70) * (left <= 3 ? .18 : .05)));
+  let st = ss.cupSt && ss.cupSt[k === 'C' ? ss.cupKey : ss.lcupKey];
+  if (!st) { // 이전 버전 저장(시즌 도중): 지금 대진을 만들고 결승 날짜에 맞춰 라운드를 맞춘다
+    const nat = C.leagueOf(S, ss.club) ? C.leagueOf(S, ss.club).nation : w.clubs[ss.club].nat, kind = k === 'C' ? 'cup' : 'lcup';
+    st = C.cupBuild(w, nat, kind, k === 'C' ? ss.cupName : ss.lcupName); if (!st) { ss.alive[k] = false; return; }
+    ss.cupSt = ss.cupSt || {}; ss.cupSt[kind + ':' + nat] = st; ss[k === 'C' ? 'cupKey' : 'lcupKey'] = kind + ':' + nat;
+    const e = Math.max(0, C.cupEntry(st, ss.club)); rounds.forEach((r, i) => { r.ri = Math.max(e, st.rounds.length - (rounds.length - i)); r.name = st.rounds[r.ri].n; });
+  }
+  // 내가 들어가기 전 라운드는 먼저 치른다
+  while (st.ri < rd.ri) C.cupResolve(w, st, null);
+  const cur = C.cupDraw(st); if (!cur) { ss.alive[k] = false; return; }
+  const pair = cur.pairs.find(x => x[0] === ss.club || x[1] === ss.club);
+  if (!pair) { C.cupResolve(w, st, null); if (!st.alive.includes(ss.club)) { ss.alive[k] = false; ss[k + 'Out'] = rd.name; } return; } // 부전승
+  const home = pair[0] === ss.club, oid = home ? pair[1] : pair[0], opp = w.clubs[oid];
+  const final = st.ri === st.rounds.length - 1, left = st.rounds.length - st.ri;
   const name = k === 'C' ? ss.cupName : ss.lcupName;
-  const rec = await userMatch(S, { d: fx.d, kind: k, compKey: k === 'C' ? 'cup' : 'lcup', compName: name, stage: rd.name, opp: opp.id, oppName: opp.name, oppStr: opp.str, home: final ? null : R() < .5, imp: final ? 3 : left <= 3 ? 2 : 0 }, hooks);
+  const rec = await userMatch(S, { d: fx.d, kind: k, compKey: k === 'C' ? 'cup' : 'lcup', compName: name, stage: rd.name, opp: oid, oppName: opp.name, oppStr: opp.str, home: final ? null : home, imp: final ? 3 : left <= 3 ? 2 : opp.str > w.clubs[ss.club].str + 3 ? 1 : 0 }, hooks);
   let win = rec.gf > rec.ga;
   if (rec.gf === rec.ga) { win = C.koWinner(w.clubs[ss.club].str, opp.str, 0, 0) === 0; rec.pens = win ? 'W' : 'L'; }
   rec.koWin = win;
+  const ga = home ? rec.gf : rec.ga, gb = home ? rec.ga : rec.gf;
+  C.cupResolve(w, st, { a: pair[0], b: pair[1], ga, gb, win: win ? ss.club : oid, ui: ss.matches.indexOf(rec) });
   if (!win) { ss.alive[k] = false; ss[k + 'Out'] = rd.name; }
   else if (final) { ss[k + 'Won'] = true; ss.alive[k] = false; }
 }

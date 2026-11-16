@@ -99,6 +99,8 @@ function leagueFromMatches(S, lgId, rows, mlist) {
   const live = lg.clubs.some(id => w.clubs[id] && !w.clubs[id].lite && w.clubs[id].sq && w.clubs[id].sq.length) || lg.clubs.includes(ss.club);
   const sides = {}; const sideOf = id => sides[id] || (sides[id] = MD.clubSide(w, id, y));
   const agg = {}, out = [];
+  // 출전 명단(선발·교체·평점)은 1·2부 리그와 내 리그만 경기별로 보관 (용량). 하부 리그도 득점·도움·카드는 경기별로 보관하고, 출전·평점은 시즌 합계에 그대로 반영
+  const keepLn = (lg.tier || 1) <= 2 || lg.clubs.includes(ss.club);
   mlist.forEach((m, i) => {
     const [a, b, ga, gb, ui] = m, r = Math.floor(i / per);
     void r;
@@ -107,7 +109,7 @@ function leagueFromMatches(S, lgId, rows, mlist) {
     const u = rec ? { side: a === ss.club ? 0 : 1, rec, pos: S.p.pos, ovr: C.effOvr(S.p) } : null;
     const res = MD.play(st, sideOf(a), sideOf(b), ga, gb, u);
     MD.addAgg(agg, a, res.P[0]); MD.addAgg(agg, b, res.P[1]);
-    out.push([C.cix(w, a), C.cix(w, b), ga, gb, res.ev, res.ln]);
+    out.push([C.cix(w, a), C.cix(w, b), ga, gb, res.ev, keepLn ? res.ln : '']);
   });
   if (st) st.L[lgId] = MD.packL(out, per, live);
   if (!live) return null;
@@ -132,10 +134,11 @@ function leagueFromMatches(S, lgId, rows, mlist) {
       const x = agg[pid];
       if (o < 50 && !tracked && !x) continue; // 경기에 나온 선수는 OVR과 관계없이 기록 (팀 득점 = 선수 득점 합)
       const apps = x ? x.apps : 0;
+      if (!apps && (lg.tier || 1) >= 3) { e[11] = 0; continue; } // 3부 이하 리그에서 한 경기도 안 뛴 시즌은 기록하지 않는다 (용량)
       C.psDirty = true;
       const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
       if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
-      Pp.pos = e[1];
+      Pp.pos = e[1]; e[11] = apps;
       Pp.h += [y - 2000, cix(w, id), apps, x ? x.g : 0, x ? x.a : 0, apps ? Math.round(x.rs / apps * 100) : 0, o, e[3]].concat(e[7] ? [1] : []).join(',') + ';';
     }
   }
@@ -165,69 +168,27 @@ function otherClubSeason(S, cid) {
     Pp.h += [y - 2000, cix(w, cid), apps, x ? x.g : 0, x ? x.a : 0, apps ? Math.round(x.rs / apps * 100) : 0, e[2], e[3]].concat(e[7] ? [1] : []).join(',') + ';';
   }
 }
-// ---------- 각국 컵 ----------
-const KOR = ['8강', '4강', '결승'];
-const stageIdx = s => s === '우승' ? 3 : KOR.indexOf(s);
-// 사용자가 뛴 컵이면 실제 결과와 맞춘다
+// ---------- 각국 컵 (전 라운드) ----------
+// 시즌 중 내가 뛴 컵은 그 대진을 이어서 끝내고, 나머지 나라 컵은 여기서 처음부터 끝까지 치른다
 function simCup(S, nat, kind, name) {
-  const w = S.w, ss = S.ss, maxTier = kind === 'lcup' ? 4 : 3;
-  const pool = Object.values(w.clubs).filter(c => c.lg && w.lg[c.lg] && w.lg[c.lg].nation === nat && w.lg[c.lg].tier <= maxTier);
-  if (pool.length < 8) return null;
-  const mine = ss.club && w.clubs[ss.club] && w.lg[w.clubs[ss.club].lg] && w.lg[w.clubs[ss.club].lg].nation === nat && ss.alive && (kind === 'cup' ? ss.cupName : ss.lcupName);
-  const um = {}; if (mine) for (const m of ss.matches) if (m.comp === kind && KOR.includes(m.stage)) um[m.stage] = m;
-  const out = mine ? (kind === 'cup' ? (ss.CWon ? '우승' : ss.COut || '') : (ss.LCWon ? '우승' : ss.LCOut || '')) : '';
-  const uIn = mine && um['8강'];
-  const fixed = new Set();
-  const slots = new Array(8).fill(null);
-  if (uIn) {
-    slots[0] = ss.club; slots[1] = um['8강'].opp; fixed.add(ss.club); fixed.add(um['8강'].opp);
-    if (um['4강']) { slots[2] = um['4강'].opp; fixed.add(um['4강'].opp); }
-    if (um['결승']) { slots[4] = um['결승'].opp; fixed.add(um['결승'].opp); }
-  }
-  const rest = pool.filter(c => !fixed.has(c.id) && c.id !== ss.club);
-  for (let i = 0; i < 8; i++) if (!slots[i]) { const c = wpick(rest, x => Math.exp((x.str - 70) * .13)); slots[i] = c.id; rest.splice(rest.indexOf(c), 1); }
-  // 사용자가 없는 대진이면 섞는다
-  const order = uIn ? slots : shuffle(slots);
-  const rounds = []; let cur = order;
-  for (let ri = 0; ri < 3; ri++) {
-    const ms = [], next = [];
-    for (let i = 0; i < cur.length; i += 2) {
-      const a = cur[i], b = cur[i + 1];
-      let ga, gb, pw = 0, win;
-      const u = uIn && (a === ss.club || b === ss.club) ? um[KOR[ri]] : null;
-      if (u) {
-        ga = a === ss.club ? u.gf : u.ga; gb = a === ss.club ? u.ga : u.gf;
-        const uw = u.koWin != null ? u.koWin : (u.gf > u.ga || u.pens === 'W');
-        win = uw ? ss.club : (a === ss.club ? b : a);
-        if (ga === gb) pw = win;
-      } else {
-        const sa = w.clubs[a].str, sb = w.clubs[b].str;
-        [ga, gb] = C.quickMatch(sa, sb, 0);
-        // 사용자가 상대할 팀은 반드시 올라와야 한다
-        const must = uIn ? (ri === 0 ? [slots[2], slots[4]] : ri === 1 ? [slots[4]] : []) : [];
-        if (must.includes(a) || must.includes(b)) { const m = must.includes(a) ? a : b; win = m; if ((m === a && ga < gb) || (m === b && gb < ga)) [ga, gb] = [gb, ga]; }
-        else win = C.koWinner(sa, sb, ga, gb) === 0 ? a : b;
-        if (ga === gb) pw = win;
-      }
-      ms.push([a, b, ga, gb, pw]); next.push(win);
-    }
-    rounds.push({ n: KOR[ri], m: ms }); cur = next;
-  }
-  const fin = rounds[2].m[0];
-  const winner = cur[0], runner = fin[0] === winner ? fin[1] : fin[0];
-  // 경기 기록 (득점자·카드·라인업)
+  const w = S.w, ss = S.ss, key = kind + ':' + nat;
+  let st = ss.cupSt && ss.cupSt[key];
+  if (!st) st = C.cupBuild(w, nat, kind, name);
+  if (!st) return null;
+  C.cupFinish(w, st);
+  const sum = C.cupSummary(st); if (!sum) return null;
+  // 경기 기록 (득점자·카드·라인업). 내 경기는 실제로 뛴 기록 그대로
   if (C.MD && ss.mx) {
     const out = [];
-    rounds.forEach((rd, ri) => rd.m.forEach(([a, b, ga, gb, pw]) => {
-      const u = uIn && (a === ss.club || b === ss.club) ? um[KOR[ri]] : null;
+    st.res.forEach(rd => rd.m.forEach(([a, b, ga, gb, pw, ui]) => {
+      const u = ui != null ? ss.matches[ui] : null;
       const res = C.MD.play(ss.mx, C.MD.clubSide(w, a, ss.year), C.MD.clubSide(w, b, ss.year), ga, gb, u ? { side: a === ss.club ? 0 : 1, rec: u, pos: S.p.pos, ovr: C.effOvr(S.p) } : null);
-      out.push([KOR[ri], cix(w, a), cix(w, b), ga, gb, res.ev, res.ln, pw ? cix(w, pw) : null]);
+      out.push([rd.n, cix(w, a), cix(w, b), ga, gb, res.ev, res.ln, pw ? cix(w, pw) : null]);
     }));
     ss.mx.CUP[nat + ':' + kind] = out;
   }
-  // 사용자가 8강 전에 탈락했다면 8강 이전 성적은 기록에 남지 않는다
-  void out; void stageIdx;
-  return { n: name, k: kind, r: rounds, w: winner, ru: runner };
+  if (ss.cupSt) delete ss.cupSt[key];
+  return sum;
 }
 
 // ---------- 국제 대회 ----------
@@ -484,7 +445,7 @@ function archiveSeason(S, tables) {
       else a.lg[id] = { n: L.n, t: L.t.slice(0, lg && lg.tier === 1 ? 4 : 1), sc: (L.sc || []).slice(0, lg && lg.tier === 1 ? 3 : 1), as: (L.as || []).slice(0, lg && lg.tier === 1 ? 3 : 0), slim: 1 };
     }
     for (const k in a.cont) a.cont[k].ph = null;
-    for (const grp of [a.cup, a.lcup]) for (const n in grp) grp[n].r = grp[n].r.slice(-1);
+    for (const grp of [a.cup, a.lcup]) for (const n in grp) grp[n].r = grp[n].r.slice(-3);
     a.slim = 1;
   });
   return A;

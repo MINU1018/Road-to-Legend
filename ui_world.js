@@ -208,6 +208,73 @@ function teamStatsSec(s, root, lg, label, live, tableRows) {
 }
 const resOf = (r, id) => { const f = r.a === id ? r.ga : r.gb, a = r.a === id ? r.gb : r.ga; return f > a ? 'W' : f < a ? 'L' : 'D'; };
 
+// ---------- 대회 기록 (컵·대륙·국제 대회 공통): 경기 기록을 더해서 개인·팀 순위 ----------
+const _csCache = {};
+function compAgg(st, rows, nat, ck) {
+  if (ck && _csCache[ck] && _csCache[ck].rows === rows) return _csCache[ck].v;
+  const w = S().w, tid = x => nat ? x : (typeof x === 'number' ? w.cix[x] : x);
+  const P = {}, T = {};
+  const p0 = (id, team) => P[id] || (P[id] = { id, team, apps: 0, st: 0, g: 0, pk: 0, a: 0, y: 0, r: 0, rs: 0 });
+  const t0 = id => T[id] || (T[id] = { id, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, cs: 0, pw: 0, yc: 0, rc: 0 });
+  for (const row of rows) {
+    const a = tid(row[1]), b = tid(row[2]), ga = row[3], gb = row[4];
+    for (const [id, f, x] of [[a, ga, gb], [b, gb, ga]]) { const t = t0(id); t.p++; t.gf += f; t.ga += x; if (f > x) t.w++; else if (f < x) t.l++; else t.d++; if (!x) t.cs++; }
+    if (row[7] != null) { const t = T[tid(row[7])]; if (t) t.pw++; }
+    const d = C.MD.decode(st, row), teams = [a, b];
+    if (d.ln) d.ln.forEach((side, k) => side.forEach(x => { if (!x.id || x.id[0] === '~') return; const q = p0(x.id, teams[k]); q.team = teams[k]; q.apps++; if (x.start) q.st++; q.rs += x.rt; }));
+    for (const e of d.ev) {
+      const team = teams[e.s];
+      if (e.k === 'y' || e.k === 'r' || e.k === '2') { const t = T[team]; if (e.k === 'y') t.yc++; else t.rc++; }
+      if (!e.p || e.p[0] === '~') continue;
+      if (e.k === 'g' || e.k === 'p') { const q = p0(e.p, team); q.g++; if (e.k === 'p') q.pk++; if (e.a && e.a[0] !== '~') p0(e.a, team).a++; }
+      else if (e.k === 'y') p0(e.p, team).y++;
+      else if (e.k === 'r' || e.k === '2') p0(e.p, team).r++;
+    }
+  }
+  const v = { P: Object.values(P), T: Object.values(T), n: rows.length };
+  if (ck) _csCache[ck] = { rows, v };
+  return v;
+}
+function compRecSec(s, root, label, rowsOf, nat, ck, note) {
+  const w = s.w, v = wv();
+  if (!(w.mxKeys || []).includes(label)) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '개인 기록·팀 통계는 경기 기록이 보관된 최근 3시즌만 볼 수 있습니다. (선수별 대회 기록은 선수 정보에서 계속 볼 수 있습니다)'))); return; }
+  const st = stOf(label);
+  if (!st) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '경기 기록을 불러오는 중…'))); return; }
+  const rows = rowsOf(st);
+  if (!rows || !rows.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '이 대회의 경기 기록이 없습니다.'))); return; }
+  const A = compAgg(st, rows, nat, ck);
+  const pn = id => id === 'ME' ? s.p.name + ' (나)' : C.MD.nameOf(id, s);
+  const team = id => nat ? h('span', { class: 'cc' }, natCrest(id, 14), h('span', null, C.natName(id))) : clubCell(w, id, 14);
+  const pcell = q => h('div', { style: { display: 'grid', gap: '1px' } }, h('b', { class: q.id === 'ME' ? '' : 'lnk', onclick: q.id === 'ME' ? () => U.setTab('profile') : () => U.openPlayer(q.id) }, pn(q.id)), h('span', { class: 'mute', style: { fontSize: '11px' } }, team(q.team)));
+  const KS = [['g', '득점'], ['a', '도움'], ['ga', '공격포인트'], ['rt', '평점'], ['apps', '출전'], ['card', '경고·퇴장']];
+  if (!KS.some(k => k[0] === v.crk)) v.crk = 'g';
+  const maxApps = Math.max(1, ...A.P.map(q => q.apps));
+  const minApps = Math.max(1, Math.ceil(maxApps * .5));
+  const val = (q, k) => k === 'ga' ? q.g + q.a : k === 'rt' ? (q.apps ? q.rs / q.apps : 0) : k === 'card' ? q.y + q.r * 3 : q[k];
+  let list = A.P.filter(q => v.crk === 'rt' ? q.apps >= minApps : val(q, v.crk) > 0);
+  list.sort((x, y) => val(y, v.crk) - val(x, v.crk) || (v.crk === 'g' ? y.a - x.a || x.apps - y.apps : v.crk === 'a' ? y.g - x.g : y.apps - x.apps));
+  const tg = A.P.reduce((a, q) => a + q.g, 0), og = A.T.reduce((a, t) => a + t.gf, 0) - tg;
+  root.append(h('div', { class: 'sec' }, h('h3', null, '개인 기록', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${A.n}경기 · 선수 득점 ${tg} + 자책골 ${og} = 총 ${tg + og}골`)),
+    h('div', { class: 'in' }, h('div', { class: 'fchips' }, ...KS.map(([k, l]) => h('button', { class: v.crk === k ? 'on' : '', onclick: () => { v.crk = k; rerender(); } }, l))),
+      list.length ? h('div', { class: 'tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, ...['#', '선수', '경기', '선발', '골', 'PK', '도움', '경고', '퇴장', '평점'].map(x => h('th', null, x)))),
+        h('tbody', null, ...list.slice(0, 30).map((q, i) => h('tr', { class: q.id === 'ME' ? 'me' : '' }, h('td', null, i + 1), h('td', null, pcell(q)), h('td', null, q.apps), h('td', null, q.st), h('td', null, v.crk === 'g' ? h('b', null, q.g) : q.g), h('td', null, q.pk || ''), h('td', null, v.crk === 'a' ? h('b', null, q.a) : q.a), h('td', null, q.y || ''), h('td', null, q.r || ''), h('td', null, q.apps ? (v.crk === 'rt' ? h('b', null, U.rt2(q.rs / q.apps)) : U.rt2(q.rs / q.apps)) : '-')))))) : h('div', { class: 'empty' }, '기록 없음'),
+      h('div', { class: 'mute', style: { fontSize: '11px', marginTop: '6px' } }, (v.crk === 'rt' ? `평점 순위는 ${minApps}경기 이상 출전 선수. ` : '') + (note || '모든 숫자는 이 대회 경기 기록(득점자·도움·카드·출전 명단)을 더한 값입니다.')))));
+  // 팀 통계
+  const TK = [['gf', '득점'], ['ga', '실점'], ['gpg', '경기당 득점'], ['cs', '클린시트'], ['w', '승리'], ['yc', '경고']];
+  if (!TK.some(k => k[0] === v.ctk)) v.ctk = 'gf';
+  const tv = (t, k) => k === 'gpg' ? t.gf / t.p : t[k];
+  const tl = A.T.slice().sort((x, y) => (v.ctk === 'ga' ? tv(x, 'ga') - tv(y, 'ga') : tv(y, v.ctk) - tv(x, v.ctk)) || y.p - x.p);
+  root.append(h('div', { class: 'sec' }, h('h3', null, '팀 통계', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${A.T.length}팀 · 열을 고르면 정렬 (승부차기 경기는 무승부로 계산)`)),
+    h('div', { class: 'in' }, h('div', { class: 'fchips' }, ...TK.map(([k, l]) => h('button', { class: v.ctk === k ? 'on' : '', onclick: () => { v.ctk = k; rerender(); } }, l))),
+      h('div', { class: 'tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '620px' } }, h('thead', null, h('tr', null, ...['#', '팀', '경기', '승', '무', '패', '득점', '실점', '경기당 득점', '클린시트', '승부차기 승', '경고', '퇴장'].map(x => h('th', null, x)))),
+        h('tbody', null, ...tl.slice(0, 64).map((t, i) => h('tr', null, h('td', null, i + 1), h('td', null, team(t.id)), h('td', null, t.p), h('td', null, t.w), h('td', null, t.d), h('td', null, t.l), h('td', null, h('b', null, t.gf)), h('td', null, t.ga), h('td', null, (t.gf / t.p).toFixed(2)), h('td', null, t.cs), h('td', null, t.pw || ''), h('td', null, t.yc), h('td', null, t.rc || '')))))),
+      tl.length > 64 ? h('div', { class: 'mute', style: { fontSize: '11px' } }, `상위 64팀 표시 (전체 ${tl.length}팀)`) : null)));
+}
+function subTabs(key, list) {
+  const v = wv(); if (!list.some(x => x[0] === v[key])) v[key] = list[0][0];
+  return h('div', { class: 'seg lsub' }, ...list.map(([k, l]) => h('button', { class: v[key] === k ? 'on' : '', onclick: () => { v[key] = k; rerender(); } }, l)));
+}
+
 // ---------- 컵 ----------
 function bracket(nameOf, rounds, finalWinner, onMatch) {
   return h('div', { class: 'bracket' }, ...rounds.map(r => h('div', { class: 'bcol' }, h('div', { class: 'lbl' }, r.n), h('div', { class: 'bms' }, ...r.m.map(m => {
@@ -237,12 +304,36 @@ function cupView(s, root) {
   if (!v.cseason) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '컵 대회 기록은 첫 시즌이 끝난 뒤 쌓입니다.'))); return; }
   const A = w.arch[v.cseason];
   const nm = id => clubCell(w, id, 16);
-  const st = stOf(v.cseason);
-  for (const cup of [A.cup[v.cnat], A.lcup[v.cnat]]) if (cup) {
-    const list = st && st.CUP[v.cnat + ':' + cup.k];
-    const on = list ? (r, m) => { const row = findRow(list, r.n, m[0], m[1]); if (row) showRow(st, row, `${cup.n} ${v.cseason} · ${r.n}`); } : null;
-    root.append(h('div', { class: 'sec' }, h('h3', null, h('span', { class: 'cc' }, U.trophy ? U.trophy(cup.k === 'cup' ? 'cup' : 'lcup', 18, '#f2c14e') : null, `${cup.n} ${v.cseason}`), h('span', { class: 'chip gold' }, '우승 ', w.clubs[cup.w] ? w.clubs[cup.w].name : '')), h('div', { class: 'sub' }, mxNote(v.cseason) + ' · 8강부터 표시'), h('div', { class: 'in tscroll' }, bracket(nm, cup.r, cup.w, on))));
-  }
+  const st = stOf(v.cseason), myId = userClubOf(s, v.cseason);
+  const cups = [A.cup[v.cnat], A.lcup[v.cnat]].filter(Boolean);
+  if (!cups.some(c => c.k === v.ckind)) v.ckind = cups[0].k;
+  if (cups.length > 1) root.append(h('div', { class: 'seg lsub' }, ...cups.map(c => h('button', { class: v.ckind === c.k ? 'on' : '', onclick: () => { v.ckind = c.k; rerender(); } }, c.n))));
+  const cup = cups.find(c => c.k === v.ckind);
+  root.append(subTabs('csub', [['br', '대진'], ['fx', '라운드별 결과'], ['rec', '개인 기록·팀 통계']]));
+  const list = st && st.CUP[v.cnat + ':' + cup.k];
+  const on = list ? (r, m) => { const row = findRow(list, r.n, m[0], m[1]); if (row) showRow(st, row, `${cup.n} ${v.cseason} · ${r.n}`); } : null;
+  const head = h('h3', null, h('span', { class: 'cc' }, U.trophy ? U.trophy(cup.k === 'cup' ? 'cup' : 'lcup', 18, '#f2c14e') : null, `${cup.n} ${v.cseason}`), h('span', { class: 'chip gold' }, '우승 ', w.clubs[cup.w] ? w.clubs[cup.w].name : ''));
+  const meta = `${cup.N ? cup.N + '팀 참가 · ' : ''}${cup.r.length}라운드 (${cup.r.map(r => r.n).join(' → ')})`;
+  if (v.csub === 'br') {
+    const br = cup.r.slice(-5);
+    root.append(h('div', { class: 'sec' }, head, h('div', { class: 'sub' }, `${meta} · ${mxNote(v.cseason)} · 대진표는 ${br[0].n}부터 (앞 라운드는 '라운드별 결과')`), h('div', { class: 'in tscroll' }, bracket(nm, br, cup.w, on))));
+    // 내 구단의 컵 여정
+    if (myId && cup.r.some(r => r.m.some(m => m[0] === myId || m[1] === myId))) {
+      const ms = []; cup.r.forEach(r => r.m.forEach(m => { if (m[0] === myId || m[1] === myId) ms.push([r, m]); }));
+      root.append(h('div', { class: 'sec' }, h('h3', null, '내 구단 경기'), h('div', { class: 'in fxlist' }, ...ms.map(([r, m]) => fxRow(w, m[0], m[1], m[2], m[3], r.n, resOf({ a: m[0], b: m[1], ga: m[2], gb: m[3] }, myId) === 'D' ? (m[4] === myId ? 'W' : 'L') : resOf({ a: m[0], b: m[1], ga: m[2], gb: m[3] }, myId), true, on ? () => on(r, m) : null)))));
+    }
+  } else if (v.csub === 'fx') {
+    const key = v.cnat + cup.k + v.cseason; if (v.cfxK !== key) { v.cfxK = key; v.cfxR = Math.max(0, cup.r.length - 1); v.cfxT = ''; }
+    if (v.cfxR >= cup.r.length) v.cfxR = cup.r.length - 1;
+    const teams = [...new Set(cup.r.flatMap(r => r.m.flatMap(m => [m[0], m[1]])))].sort((a, b) => clubName(w, a).localeCompare(clubName(w, b), 'ko'));
+    root.append(h('div', { class: 'wfilter' },
+      h('div', { class: 'seg', style: { flex: '0 0 auto' } }, h('button', { class: !v.cfxT ? 'on' : '', onclick: () => { v.cfxT = ''; rerender(); } }, '라운드별'), h('button', { class: v.cfxT ? 'on' : '', onclick: () => { v.cfxT = v.cfxT || (teams.includes(myId) ? myId : cup.w); rerender(); } }, '팀별')),
+      !v.cfxT ? sel(v.cfxR, cup.r.map((r, i) => [i, `${r.n} (${r.m.length}경기)`]), x => { v.cfxR = +x; rerender(); }) : sel(v.cfxT, teams.map(id => [id, clubName(w, id)]), x => { v.cfxT = x; rerender(); }, true)));
+    const items = []; cup.r.forEach((r, ri) => r.m.forEach(m => { if (v.cfxT ? (m[0] === v.cfxT || m[1] === v.cfxT) : ri === v.cfxR) items.push([r, m]); }));
+    const tag = (r, m) => v.cfxT ? r.n : (m[4] ? 'PK' : '');
+    root.append(h('div', { class: 'sec' }, h('h3', null, v.cfxT ? `${clubName(w, v.cfxT)} (${items.length}경기)` : `${cup.r[v.cfxR].n} · ${items.length}경기`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' ' + mxNote(v.cseason))),
+      h('div', { class: 'in fxlist' }, ...items.map(([r, m]) => fxRow(w, m[0], m[1], m[2], m[3], tag(r, m) + (v.cfxT && m[4] ? ' PK' : ''), v.cfxT ? (m[2] === m[3] ? (m[4] === v.cfxT ? 'W' : 'L') : resOf({ a: m[0], b: m[1], ga: m[2], gb: m[3] }, v.cfxT)) : '', m[0] === myId || m[1] === myId, on ? () => on(r, m) : null)))));
+  } else compRecSec(s, root, v.cseason, x => x.CUP[v.cnat + ':' + cup.k], false, 'cup|' + v.cseason + '|' + v.cnat + cup.k);
   const hist = (w.hist.cup[v.cnat] || []).slice(-12).reverse();
   if (hist.length) root.append(h('div', { class: 'sec' }, h('h3', null, `${C.CUPNAME[v.cnat] || ''} 역대 우승`), h('div', { class: 'in' }, h('table', { class: 'ltable lc' }, h('tbody', null, ...hist.map(x => h('tr', null, h('td', null, x.y), h('td', null, clubCell(w, x.c)))))))));
 }
@@ -259,6 +350,8 @@ function contView(s, root) {
   const K = w.arch[v.ckseason].cont[v.ck];
   const myId = userClubOf(s, v.ckseason);
   if (K.w) root.append(h('div', { class: 'wchamp', style: U.tintStyle ? U.tintStyle(w.clubs[K.w], .3) : null }, crest(w.clubs[K.w], 52), h('div', null, h('div', { class: 'lbl' }, `${K.n} ${v.ckseason} 우승`), h('h2', null, w.clubs[K.w] ? w.clubs[K.w].name : ''))));
+  root.append(subTabs('ksub', [['br', '대진·순위'], ['rec', '개인 기록·팀 통계']]));
+  if (v.ksub === 'rec') { compRecSec(s, root, v.ckseason, x => x.CONT[v.ck], false, 'cont|' + v.ckseason + '|' + v.ck, '모든 숫자는 이 대회 경기 기록(리그 페이즈·토너먼트 1·2차전)을 더한 값입니다.'); return; }
   const rounds = (K.r || []).filter(r => r.t.length);
   const st = stOf(v.ckseason), list = st && st.CONT[v.ck];
   // 토너먼트 한 판(1·2차전)을 누르면 두 경기를 차례로
@@ -303,7 +396,10 @@ function intlView(s, root) {
   const me = s.p.nat;
   const nm = c => h('span', { class: 'cc' + (c === me ? ' mine' : '') }, natCrest(c, 16), h('span', null, C.natName(c)));
   root.append(h('div', { class: 'wchamp' }, natCrest(T.w, 56), h('div', null, h('div', { class: 'lbl' }, `${T.n} ${T.y} 우승`), h('h2', null, C.natName(T.w)), h('div', { class: 'mute', style: { fontSize: '13px' } }, `준우승 ${C.natName(T.ru)}` + (T.teams ? ` · ${T.teams}개국 참가` : '')))));
-  const ilabel = `${+v.iy - 1}/${String(v.iy).slice(2)}`, ist = stOf(ilabel), ilist = ist && ist.INTL[v.ik];
+  const ilabel = `${+v.iy - 1}/${String(v.iy).slice(2)}`;
+  root.append(subTabs('isub', [['br', '대진·조별리그'], ['rec', '개인 기록·팀 통계']]));
+  if (v.isub === 'rec') { compRecSec(s, root, ilabel, x => x.INTL[v.ik], true, 'intl|' + ilabel + '|' + v.ik, '모든 숫자는 이 대회 경기 기록(조별리그·토너먼트)을 더한 값입니다.'); return; }
+  const ist = stOf(ilabel), ilist = ist && ist.INTL[v.ik];
   const iopen = (stage, a, b) => { if (!ilist) return; const row = findRow(ilist, stage, a, b, true); if (row) showRow(ist, row, `${T.n} ${T.y} · ${row[0]}`, true); };
   root.append(h('div', { class: 'sec' }, h('h3', null, '토너먼트 대진'), h('div', { class: 'sub' }, mxNote(ilabel)), h('div', { class: 'in tscroll' }, bracket(nm, T.ko, T.w, ilist ? (r, m) => iopen(r.n, m[0], m[1]) : null))));
   if (T.g && T.g.length) {
@@ -319,26 +415,51 @@ function intlView(s, root) {
 }
 
 // ---------- 이적시장 (전체) ----------
-const TXN = { buy: '이적', free: '자유계약', loan: '임대', lret: '임대 복귀', rel: '방출', ret: '은퇴', yth: '유스 승격', new: '외부 영입' };
+const TXN = { buy: '이적', free: '자유계약', loan: '임대', lret: '임대 복귀', ext: '재계약', rel: '방출', ret: '은퇴', yth: '유스 승격', new: '외부 영입' };
 function txView(s, root) {
   const w = s.w, v = wv(), labels = (w.txKeys || []).slice().reverse();
   if (!labels.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 시즌이 끝난 뒤 여름 이적시장부터 기록됩니다.'))); return; }
   if (!v.txl || !labels.includes(v.txl)) v.txl = labels[0];
   const nats = nationList(s);
   v.txn = v.txn == null ? (C.leagueOf(s) ? C.leagueOf(s).nation : '') : v.txn; v.txk = v.txk || 'buy';
+  root.append(subTabs('txm', [['list', '이적 목록'], ['bal', '구단별 수지']]));
+  const T = U.withTx(v.txl, () => rerender());
+  const natOf = id => { const c = w.clubs[id]; return c && c.lg && w.lg[c.lg] ? w.lg[c.lg].nation : c ? c.nat : ''; };
+  if (v.txm === 'bal') {
+    if (!v.txn) v.txn = nats[0];
+    const lgs = Object.values(w.lg).filter(l => l.nation === v.txn).sort((a, b) => a.tier - b.tier);
+    if (!v.txlg || !lgs.some(l => l.id === v.txlg)) v.txlg = lgs[0] && lgs[0].id;
+    root.append(h('div', { class: 'wfilter' }, sel(v.txl, labels.map(l => [l, `${l} 여름`]), x => { v.txl = x; rerender(); }), sel(v.txn, nats.map(n => [n, C.natName(n)]), x => { v.txn = x; v.txlg = null; rerender(); }), sel(v.txlg, lgs.map(l => [l.id, `${l.tier}부 · ${l.name}`]), x => { v.txlg = x; rerender(); }, true)));
+    if (!T) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '이적 기록을 불러오는 중…'))); return; }
+    const lg = w.lg[v.txlg]; if (!lg) return;
+    const by = {}; for (const id of lg.clubs) by[id] = { id, inn: [], out: [], ext: 0 };
+    for (const r of T) { if (r[3] === 'ext') { if (by[r[1]]) by[r[1]].ext++; continue; } if (by[r[2]]) by[r[2]].inn.push(r); if (by[r[1]]) by[r[1]].out.push(r); }
+    const rows = Object.values(by).map(x => Object.assign(x, U.windowTotals(x.inn, x.out)));
+    if (!v.txbs) v.txbs = 'spent';
+    const sv = { spent: x => x.spent, got: x => x.got, net: x => x.spent - x.got, nIn: x => x.nIn, nOut: x => x.nOut }[v.txbs];
+    rows.sort((a, b) => sv(b) - sv(a));
+    const E = x => x ? C.fmtEUR(x * 1e4) : '-';
+    const th = (k, l) => h('th', { class: k ? 'lnk' + (v.txbs === k ? ' on' : '') : '', onclick: k ? () => { v.txbs = k; rerender(); } : null }, l);
+    const tot = rows.reduce((a, x) => (a.s += x.spent, a.g += x.got, a), { s: 0, g: 0 });
+    root.append(h('div', { class: 'sec' }, h('h3', null, `${lg.name} · ${v.txl} 여름 이적시장`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` 리그 전체 지출 ${E(tot.s)} · 수입 ${E(tot.g)} · 구단을 누르면 상세`)),
+      h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '760px' } }, h('thead', null, h('tr', null, th(null, '#'), th(null, '구단'), th('spent', '총 지출'), th('got', '총 수입'), th('net', '순지출'), th('nIn', '영입'), th(null, '임대 영입'), th('nOut', '방출'), th(null, '임대 보냄'), th(null, '재계약'))),
+        h('tbody', null, ...rows.map((x, i) => h('tr', { class: 'click', onclick: () => { U.openClub(x.id); } }, h('td', null, i + 1), h('td', null, clubCell(w, x.id, 16)), h('td', null, h('b', null, E(x.spent))), h('td', null, E(x.got)), h('td', { style: { color: x.spent - x.got > 0 ? '#e5484d' : x.spent - x.got < 0 ? '#2fbf71' : null } }, (x.spent - x.got < 0 ? '+' : '') + E(Math.abs(x.spent - x.got))), h('td', null, x.nIn), h('td', null, x.nLoanIn || ''), h('td', null, x.nOut), h('td', null, x.nLoanOut || ''), h('td', null, x.ext || ''))))))));
+    root.append(h('div', { class: 'mute', style: { fontSize: '12px', padding: '0 4px' } }, '지출·수입에는 이적료와 임대료가 모두 들어갑니다. 순지출이 빨간색이면 쓴 돈이 더 많고, 초록색이면 번 돈이 더 많습니다.'));
+    return;
+  }
   root.append(h('div', { class: 'wfilter' }, sel(v.txl, labels.map(l => [l, `${l} 여름`]), x => { v.txl = x; rerender(); }),
     sel(v.txn, [['', '전체 나라']].concat(nats.map(n => [n, C.natName(n)])), x => { v.txn = x; rerender(); }),
     sel(v.txk, [['all', '전체 종류']].concat(Object.entries(TXN)), x => { v.txk = x; rerender(); })));
-  const T = U.withTx(v.txl, () => rerender());
   if (!T) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '이적 기록을 불러오는 중…'))); return; }
-  const natOf = id => { const c = w.clubs[id]; return c && c.lg && w.lg[c.lg] ? w.lg[c.lg].nation : c ? c.nat : ''; };
   const list = T.filter(r => (v.txk === 'all' || r[3] === v.txk) && (!v.txn || natOf(r[1]) === v.txn || natOf(r[2]) === v.txn)).sort((a, b) => b[4] - a[4] || (b[5] || 0) - (a[5] || 0));
   const sum = list.reduce((a, r) => a + r[4], 0);
-  root.append(h('div', { class: 'sec' }, h('h3', null, `${v.txl} 여름 이적시장`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${list.length}건 · 이적료 합계 ${C.fmtEUR(sum * 1e4)} · 상위 150건 표시`)),
-    h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '720px' } }, h('thead', null, h('tr', null, ...['선수', '나이', 'OVR', '보낸 구단', '', '받은 구단', '형태', '이적료'].map(x => h('th', null, x)))),
+  const wch = r => r[3] === 'ext' && r[9] ? h('span', { class: 'mute', style: { fontSize: '11px' } }, ` (${r[7] >= r[9] ? '+' : ''}${Math.round((r[7] - r[9]) / Math.max(1, r[9]) * 100)}%)`) : null;
+  root.append(h('div', { class: 'sec' }, h('h3', null, `${v.txl} 여름 이적시장`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${list.length}건 · 이적료 합계 ${C.fmtEUR(sum * 1e4)} · 상위 150건 표시`)), T.trim ? h('div', { class: 'sub' }, '오래된 시즌이라 이적료가 있었던 이동과 OVR 75 이상 선수만 보관합니다.') : null,
+    h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '860px' } }, h('thead', null, h('tr', null, ...['선수', '나이', 'OVR', '보낸 구단', '', '받은 구단', '형태', '이적료', '계약', C.wageUnit()].map(x => h('th', null, x)))),
       h('tbody', null, ...list.slice(0, 150).map(r => h('tr', null, h('td', null, h('span', { class: 'lnk', onclick: () => U.openPlayer(r[0]) }, C.MD.nameOf(r[0]))), h('td', null, r[6]), h('td', null, r[5]),
-        h('td', null, r[1] ? clubCell(w, r[1], 16) : h('span', { class: 'mute' }, r[3] === 'yth' ? '유스' : '외부')), h('td', { class: 'mute' }, '→'), h('td', null, r[2] ? clubCell(w, r[2], 16) : h('span', { class: 'mute' }, r[3] === 'ret' ? '은퇴' : '무소속')),
-        h('td', null, TXN[r[3]] || r[3]), h('td', null, r[4] ? h('b', null, C.fmtEUR(r[4] * 1e4)) : h('span', { class: 'mute' }, '-')))))))));
+        h('td', null, r[1] ? clubCell(w, r[1], 16) : h('span', { class: 'mute' }, r[3] === 'yth' ? '유스' : '외부')), h('td', { class: 'mute' }, '→'), h('td', null, r[3] === 'ext' ? h('span', { class: 'mute' }, '잔류') : r[2] ? clubCell(w, r[2], 16) : h('span', { class: 'mute' }, r[3] === 'ret' ? '은퇴' : '무소속')),
+        h('td', null, TXN[r[3]] || r[3]), h('td', null, r[4] ? h('b', null, C.fmtEUR(r[4] * 1e4)) : h('span', { class: 'mute' }, '-')),
+        h('td', { class: 'mute', style: { fontSize: '12px' } }, r[3] === 'loan' ? '임대' : r[2] && r[8] && !['lret', 'ret', 'rel'].includes(r[3]) ? `${r[8]}년` : ''), h('td', null, r[2] && r[7] && !['ret', 'rel'].includes(r[3]) ? C.fmtWage(r[7], true) : '', wch(r)))))))));
 }
 U.fxRow = fxRow; U.ppgStr = ppgStr;
 U.pages.table = function () {

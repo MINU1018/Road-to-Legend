@@ -49,6 +49,9 @@ async function flushMx(o) {
   // 이적 기록 (시즌 이적시장별)
   if (w.txPending) for (const lb of Object.keys(w.txPending)) { txCache[lb] = w.txPending[lb]; try { await kvSet('tx:' + lb, JSON.stringify(w.txPending[lb])); } catch (e) { console.error('tx save', e); } delete w.txPending[lb]; }
   if (w.txDrop) { for (const lb of w.txDrop) { delete txCache[lb]; await kvDel('tx:' + lb); } w.txDrop = []; }
+  // 10시즌 지난 이적 기록은 이적료가 있었던 이동과 OVR 75 이상 선수만 남긴다 (용량)
+  const old = (w.txKeys || []).slice(0, -10).filter(lb => !(w.txTrim || {})[lb]);
+  for (const lb of old.slice(0, 2)) { try { const t = await kvGet('tx:' + lb); const v = t ? GM.parse(t) : null; if (Array.isArray(v)) { const r = v.filter(x => x[4] > 0 || x[5] >= 75); await kvSet('tx:' + lb, JSON.stringify({ trim: 1, r })); delete txCache[lb]; } (w.txTrim = w.txTrim || {})[lb] = 1; } catch (e) { console.error('tx trim', e); } }
 }
 const txCache = {};
 U.getTx = async function (label) {
@@ -56,7 +59,7 @@ U.getTx = async function (label) {
   if (S.w.txPending && S.w.txPending[label]) return S.w.txPending[label];
   if (txCache[label]) return txCache[label];
   const t = await kvGet('tx:' + label); if (!t) return null;
-  const v = GM.parse(t); if (v) txCache[label] = v; return v;
+  let v = GM.parse(t); if (v && !Array.isArray(v) && v.r) { const a = v.r; a.trim = 1; v = a; } if (v) txCache[label] = v; return v;
 };
 U.txCached = label => (S && S.w && S.w.txPending && S.w.txPending[label]) || txCache[label] || null;
 U.withTx = function (label, onReady) { const v = U.txCached(label); if (v) return v; U._txL = U._txL || {}; if (!U._txL[label]) { U._txL[label] = 1; U.getTx(label).then(x => { delete U._txL[label]; if (x && onReady) onReady(); }); } return null; };
@@ -312,6 +315,8 @@ function repairSave(o) {
   const ext = {}; for (const c of ((G.TC_EXT && G.TC_EXT.clubs) || [])) ext[c[0]] = c;
   for (const id in o.w.clubs) { const c = o.w.clubs[id]; const e = ext[id]; if (!c.c1) c.c1 = (e && e[3]) || '#3a4252'; if (!c.c2) c.c2 = (e && e[4]) || '#e9eef5'; }
   for (const r of o.hist || []) { if (!r.c1) r.c1 = (o.w.clubs[r.club] || {}).c1 || '#3a4252'; if (!r.c2) r.c2 = (o.w.clubs[r.club] || {}).c2 || '#e9eef5'; }
+  // 이전 버전 저장: 모든 구단에 실제 명단·계약·주급·재정을 채운다
+  if (o.w && o.w.clubs) { let need = false; for (const id in o.w.clubs) { const c = o.w.clubs[id]; if (c.lite && C.materialize) C.materialize(o.w, c); if (c.rev == null) need = true; } if (need && C.initFinance) C.initFinance(o.w); }
 }
 U.startWorld = async function () {
   if (S && S.phase !== 'retired') {

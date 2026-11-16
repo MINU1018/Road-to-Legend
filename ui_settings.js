@@ -42,7 +42,7 @@ U.viewSettings = function () {
   upd();
   root.append(card('돈 표시', '게임 안의 금액은 유로 기준으로 계산하고, 표시할 때만 환율을 곱합니다.',
     row('통화', null, seg('cur', cfg.currency, [['KRW', '원'], ['EUR', '€'], ['USD', '$'], ['GBP', '£'], ['JPY', '¥']], v => { cfg.currency = v; saveCfg(); upd(); })),
-    row('급여 단위', '이적 제안과 계약에 표시되는 급여', seg('wage', cfg.wageMode, [['week', '주급'], ['month', '월급'], ['year', '연봉']], v => { cfg.wageMode = v; saveCfg(); upd(); })),
+    row('급여 단위', '계약·선수 정보·이적 기록에 표시되는 급여 (통화 설정을 따름)', seg('wage', cfg.wageMode, [['day', '일급'], ['week', '주급'], ['month', '월급'], ['year', '연봉']], v => { cfg.wageMode = v; saveCfg(); upd(); })),
     row('환율', '기본값은 대략적인 값입니다. 원하는 값으로 바꿀 수 있습니다.', h('div', { style: { display: 'grid', gap: '6px' } }, rateIn('KRW', '원'), rateIn('USD', '$'), rateIn('GBP', '£'), rateIn('JPY', '¥'))),
     row('예시', '시장 가치 4,500만 유로 · 주급 8만 5천 유로', sample)));
   // 게임 밸런스
