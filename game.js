@@ -13,6 +13,7 @@ GM.newGame = function (opt) {
   const p = C.newPlayer(Object.assign({ year: w.year }, opt, { difficulty: dk }));
   const S = { v: 1, diff: dk, w, p, car: { club: null, status: 'youth', contract: 0, wage: 0, trust: 50, years: 0, focus: 'balance', intensity: 'normal' }, hist: [], flags: {}, phase: 'academy', vh: [], trophies: [], awards: [], evLog: [], created: Date.now() };
   S.academies = academyOptions(S);
+  C.calInit(S);
   return S;
 };
 // ---------- 실존 선수로 시작 ----------
@@ -58,6 +59,7 @@ GM.newGameReal = function (idx, diff) {
   p.money = youth ? 0 : Math.round(wage * 20);
   const S = { v: 1, diff: dk, w, p, car: { club: c.id, status: youth ? 'youth' : 'first', contract: w.year + (youth ? 2 : rint(1, 4)), wage, trust: 55, years: 1, focus: 'balance', intensity: 'normal', joined: w.year - 1 },
     hist: [], flags: { real: idx }, phase: 'training', vh: [], trophies: [], awards: [], evLog: [], created: Date.now(), clubsJoined: [{ club: c.id, y: w.year, type: youth ? 'youth' : 'pro' }] };
+  C.calInit(S);
   pushValue(S);
   return S;
 };
@@ -140,15 +142,21 @@ GM.resolve = function (S, idx) {
   if (!S.pend.length) S.phase = S.phase === 'preEvents' ? 'h1' : S.phase === 'midEvents' ? (S.winterOffers && S.winterOffers.length ? 'winter' : 'h2') : S.phase;
   return log;
 };
-// 전반기/후반기 시뮬
-GM.simHalf = async function (S, hooks) {
+// 날짜 단위 진행: toDay(포함)까지, 단 이번 반기(전반기 끝 = 겨울/여름 휴식기, 후반기 끝 = 시즌 종료)를 넘지 않는다
+GM.simTo = async function (S, toDay, hooks, onDay, stop) {
+  const ss = S.ss, end = C.halfEnd(S);
+  const target = Math.min(toDay, end - 1);
+  await C.simUntil(S, target + 1, hooks, onDay, stop);
+  if (S.w.cal.d >= end - 1) GM.halfDone(S);
+};
+GM.simHalf = async function (S, hooks) { return GM.simTo(S, C.halfEnd(S) - 1, hooks); };
+GM.halfDone = function (S) {
   const ss = S.ss;
-  await C.simUntil(S, C.halfEnd(S), hooks);
   if (ss.half === 1) {
     ss.half = 2; C.updateRole(S);
     if (C.cfg.moments !== 'off') ss.momentsLeft += Math.max(1, Math.round(C.ROLE && ss.role === 'reserve' ? 0 : 1)) + (ss.role === 'key' ? 1 : 0);
     S.pend = C.drawEvents(S, 'mid', evCount());
-    // 겨울 이적시장 (임대 요청 또는 벤치 신세의 젊은 선수)
+    // 시즌 중 이적시장 (임대 요청 또는 벤치 신세의 젊은 선수)
     S.winterOffers = null;
     if (S.car.status !== 'youth' && (S.flags.loanReq || (['backup', 'reserve'].includes(ss.role) && S.p.age <= 23 && R() < .5) || (S.flags.transferReq && R() < .5))) { S.lastRole = ss.role; S.winterOffers = C.genOffers(S, 'winter').slice(0, 3); }
     S.phase = 'mid';
@@ -157,30 +165,20 @@ GM.simHalf = async function (S, hooks) {
   }
 };
 GM.toMidEvents = function (S) { S.phase = S.pend && S.pend.length ? 'midEvents' : (S.winterOffers && S.winterOffers.length ? 'winter' : 'h2'); };
-// 겨울 이적: 새 팀 일정으로 교체
+// 시즌 중 이적: 새 구단으로 옮겨 남은 시즌을 뛴다 (새 구단 리그는 이미 세계 달력에서 진행 중). 컵·대륙 대회는 등록 불가
 GM.winterMove = function (S, i) {
   if (i == null || i < 0) { S.phase = 'h2'; return; }
   const o = S.winterOffers[i], w = S.w, car = S.car, ss = S.ss;
-  const prevMatches = ss.matches, prevClub = ss.club, oldCont = ss.allCont, oldTables = ss.tables;
+  const prevClub = ss.club;
   if (o.type === 'loan') { car.parent = car.status === 'loan' ? car.parent : car.club; car.status = 'loan'; car.loanUntil = w.year; }
   else { car.parent = null; car.status = 'first'; car.contract = w.year + o.years - 1; car.wage = o.wage; S.feeLog = (S.feeLog || []).concat({ y: w.year, from: car.club, to: o.club, fee: o.fee }); }
   C.materialize(w, w.clubs[o.club]);
   car.club = o.club; car.years = 0; car.trust = { key: 62, starter: 56, rotation: 50, backup: 45, reserve: 42 }[o.role] || 50;
   S.clubsJoined.push({ club: o.club, y: w.year, type: o.type, fee: o.fee || 0, winter: true });
-  const keep = { inj: ss.inj, susp: ss.susp, moments: ss.moments, momentsLeft: ss.momentsLeft, events: ss.events, injuries: ss.injuries, recent: ss.recent };
-  C.setupSeason(S);
-  const ns = S.ss;
-  // 기존 대륙 대회 상태는 유지 (새 팀 대륙 대회는 등록 불가로 처리)
-  ns.allCont = oldCont; ns.cont = null;
-  ns.fx = ns.fx.filter(f => f.k !== 'E');
-  // 새 리그 전반기 결과는 빠르게 시뮬
   const lg = C.leagueOf(S);
-  for (const f of ns.fx) if (f.d < ns.split && f.k === 'L') { for (const [a, b] of (ns.rounds[f.r] || [])) { const [x, y] = C.quickMatch(w.clubs[a].str, w.clubs[b].str, 1); C.addResult(ns.tables[lg.id], a, b, x, y); } }
-  // 이전 리그 테이블은 남은 경기를 빠르게 시뮬하도록 보관
-  ns.oldTables = oldTables; ns.oldClub = prevClub;
-  ns.fx = ns.fx.filter(f => f.d >= ns.split && !(f.k === 'C' || f.k === 'LC'));
-  ns.alive = {};
-  ns.i = 0; ns.half = 2; ns.matches = prevMatches; Object.assign(ns, keep); ns.winter = { from: prevClub, to: o.club, type: o.type };
+  ss.club = o.club; ss.lgId = lg ? lg.id : null; ss.tables = {}; if (lg && w.cal.lg[lg.id]) ss.tables[lg.id] = w.cal.lg[lg.id].tb;
+  ss.alive = {}; ss.noCont = true; ss.noCup = true; ss.lgDone = null;
+  ss.winter = { from: prevClub, to: o.club, type: o.type };
   C.updateRole(S);
   S.phase = 'h2';
 };
@@ -188,14 +186,6 @@ GM.winterMove = function (S, i) {
 // ---------- 시즌 종료 ----------
 GM.endSeason = function (S) {
   const ss = S.ss, p = S.p, w = S.w, car = S.car;
-  // 겨울 이적 시 이전 리그의 나머지 경기
-  if (ss.oldTables) for (const id in ss.oldTables) if (!ss.tables[id]) {
-    const lgO = w.lg[id]; const t = ss.oldTables[id];
-    const done = Object.values(t).filter(r => r && r.id).reduce((a, r) => a + r.p, 0) / 2, total = (C.leagueRounds(lgO).length + C.splitCount(lgO)) * Math.floor(lgO.clubs.length / 2);
-    let k = 0; const ids = lgO.clubs;
-    for (let i = 0; i < ids.length && k < total - done; i++) for (let j = 0; j < ids.length && k < total - done; j++) if (i !== j && R() < .55) { const [a, b] = C.quickMatch(w.clubs[ids[i]].str, w.clubs[ids[j]].str, 1); C.addResult(t, ids[i], ids[j], a, b); k++; }
-    ss.tables[id] = t;
-  }
   C.finishSeason(S);
   try { ss.tr = C.teamRank(S, ss); } catch (e) { ss.tr = null; }
   ss.goalRes = null;
@@ -254,7 +244,7 @@ GM.endSeason = function (S) {
     log: ss.matches.map(m => ({ ...C.logExtra(m), y: m.comp === 'youth' ? 1 : 0, d: m.d, c: m.comp, cn: m.compName, s: m.stage, o: m.oppName, h: m.home, gf: m.gf, ga: m.ga, p: m.played ? 1 : 0, st: m.start ? 1 : 0, mi: m.min || 0, r: m.rating || 0, g: m.played ? m.st.goals : 0, a: m.played ? m.st.assists : 0, mo: m.motm ? 1 : 0, w: m.why || '', pen: m.pens || '', ko: m.koWin, mm: m.moment ? m.moment.ok : undefined, yc: m.played ? m.st.yellow : 0, rc: m.played ? m.st.red : 0 })),
     shots: ss.matches.filter(m => m.played && m.shots && !['nt', 'ntY', 'youth'].includes(m.comp)).flatMap(m => m.shots).slice(0, 260),
     table: lg && ss.final[lg.id] ? ss.final[lg.id].map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null,
-    cupOut: ss.CWon ? '우승' : ss.COut || '', lcupOut: ss.LCWon ? '우승' : ss.LCOut || '', contOut: ss.contWon ? '우승' : ss.contOut || '', contName: ss.cont ? ss.allCont[ss.cont].name : '', cupName: ss.cupName, lcupName: ss.lcupName,
+    cupOut: ss.CWon ? '우승' : ss.COut || '', lcupOut: ss.LCWon ? '우승' : ss.LCOut || '', contOut: ss.contWon ? '우승' : ss.contOut || '', contName: ss.cont ? C.COMPS[ss.cont].name : '', cupName: ss.cupName, lcupName: ss.lcupName,
     focus: car.focus, intensity: car.intensity, role: ss.role, money: p.money, perfBonus: ss.perfBonus || 0, income: ss.income,
     carry: ss.carry, ntA: C.totalAgg(ss.matches.filter(m => m.comp === 'nt')), ntY: C.totalAgg(ss.matches.filter(m => m.comp === 'ntY')),
     goal: ss.goalRes ? { label: ss.goalRes.goal.label, d: ss.goalRes.goal.d, ok: ss.goalRes.ok, v: ss.goalRes.v } : null
@@ -264,8 +254,8 @@ GM.endSeason = function (S) {
   S.lastRole = ss.role;
   // 다음 시즌 준비
   car.years++;
-  C.advanceWorld(w, ss.resAdj);
-  p.age++;
+  // 나이는 세계 연도(8월 1일 기준)마다 한 살 (시즌 길이가 달라도 1년에 한 번)
+  if (S.ageY !== w.year) { p.age++; S.ageY = w.year; }
   pushValue(S);
   S.lastSeason = ss; // 리뷰 화면용
   if (C.ach) C.ach.fire(S, 'season', rec);
@@ -304,16 +294,17 @@ GM.nextSeason = function (S) {
   GM.openWindow(S);
 };
 function shouldForceRetire(S) { const p = S.p; return p.age >= 44 || (p.age >= 33 && C.ovrOf(p) < 50) || (S.freeYears || 0) >= 2; }
-GM.freeYear = function (S) {
-  // 무소속 시즌: 개인 훈련만
+GM.freeYear = async function (S, onDay) {
+  // 무소속 시즌: 개인 훈련만 (세계는 1년 진행)
   const p = S.p;
+  await C.calRun(S, S.w.cal.d + 365, null, onDay);
   S.freeYears = (S.freeYears || 0) + 1;
   if (C.ach) C.ach.fire(S, 'free');
   const g = C.seasonGrowth(p, { minShare: 0, rating: 6.5, focus: S.car.focus, intensity: 'normal', clubLv: 55 });
   p.mods = p.mods.filter(m => --m.seasons > 0);
   S.hist.push({ y: S.w.year, label: `${S.w.year}/${String(S.w.year + 1).slice(2)}`, age: p.age, club: null, clubName: '무소속', short: 'FA', c1: '#555', c2: '#999', status: 'free', pos: p.pos, ovr0: g.o0, ovr1: C.ovrOf(p), total: C.blankStats(), agg: {}, nt: C.blankStats(), rating: 0, minShare: 0, trophies: [], awards: [], log: [], shots: [], moments: [], injuries: [] });
-  C.advanceWorld(S.w, {});
-  p.age++; pushValue(S);
+  if (S.ageY !== S.w.year) { p.age++; S.ageY = S.w.year; }
+  pushValue(S);
   S.lastSeason = null;
   GM.nextSeason(S);
 };
@@ -345,9 +336,14 @@ GM.summary = function (S) {
 const KEY = 'tc.save.v1', HOF = 'tc.hof.v1';
 // 시즌 도중(경기 진행 중)에는 저장하지 않고, 단계 사이에서만 직렬화
 GM.serialize = function (S, full) {
-  if (!['window', 'training', 'review', 'reviewDone', 'retired', 'academy', 'freeYear', 'world'].includes(S.phase)) return null;
-  const o = Object.assign({}, S); delete o.ss; delete o.lastSeason; delete o.pend; delete o.winterOffers; delete o.newsQ;
+  if (S.phase === 'endSeason') return null;
+  const o = Object.assign({}, S); delete o.lastSeason; delete o.newsQ;
+  if (o.ss) { o.ss = Object.assign({}, o.ss); delete o.ss.tables; } // 순위표는 세계 달력에 있는 것을 불러올 때 다시 연결
+  if (!['preEvents', 'midEvents', 'goal'].includes(S.phase)) delete o.pend;
+  if (S.phase !== 'winter') delete o.winterOffers;
   if (o.phase === 'review') o.phase = 'reviewDone';
+  // 세계 달력의 진행 중 경기 기록은 따로 저장 ('calh')
+  if (o.w && o.w.cal && !full) { o.w = Object.assign({}, o.w); o.w.cal = Object.assign({}, o.w.cal); delete o.w.cal.h; }
   // 선수 기록(용량이 큰 부분)은 따로 저장한다: full=true면 포함 (파일 내보내기용)
   if (o.w && ((o.w.ps && !full) || o.w.mxPending || o.w.mxDrop || o.w.txPending || o.w.txDrop)) { o.w = Object.assign({}, o.w); if (!full) delete o.w.ps; delete o.w.mxPending; delete o.w.mxDrop; delete o.w.txPending; delete o.w.txDrop; delete o.w._tx; } // 경기 상세 기록도 따로 (시즌별 'mx:시즌')
   return JSON.stringify(o);
@@ -363,30 +359,28 @@ GM.saveHof = function (S, sum) {
   } catch (e) { }
 };
 // ---------- 관전(시뮬레이션) 모드: 내 선수 없이 세계만 진행 ----------
-GM.newWorld = function () {
+GM.newWorld = function (startLg) {
   C.psDirty = true;
   const w = C.buildWorld();
-  return { v: 1, mode: 'world', w, p: { name: '', nat: 'ENG', pos: 'ST', age: 0, a: {}, mods: [], hid: { inj: 1, lon: 1, pot: 0, peak: 27 }, traits: [], money: 0, rep: 0, morale: 60, weak: 1, skill: 1, num: 0 },
+  const S = { v: 1, mode: 'world', w, p: { name: '', nat: 'ENG', pos: 'ST', age: 0, a: {}, mods: [], hid: { inj: 1, lon: 1, pot: 0, peak: 27 }, traits: [], money: 0, rep: 0, morale: 60, weak: 1, skill: 1, num: 0 },
     car: { club: null, status: 'none', trust: 50 }, hist: [], flags: {}, phase: 'world', vh: [], trophies: [], awards: [], evLog: [], ws: [], created: Date.now() };
+  C.calInit(S);
+  S.startLg = startLg || null;
+  return S;
 };
-GM.simWorldSeason = function (S) {
-  const w = S.w, y = w.year;
-  const ss = S.ss = { year: y, label: `${y}/${String(y + 1).slice(2)}`, club: null, status: 'none', fx: [], i: 0, matches: [], tables: {}, alive: {}, allCont: {}, cont: null, events: [], moments: [], injuries: [] };
-  ss.pools = C.nationPools(w);
-  const parts = C.contParticipants(w);
-  for (const k in parts) ss.allCont[k] = C.setupCont(w, k, parts[k], y);
-  C.finishSeason(S);
-  const bd = C.ballonDor(S);
-  // 시즌 요약
-  const tier1 = Object.values(w.lg).filter(l => l.tier === 1);
-  const champs = {}; for (const l of tier1) champs[l.id] = ss.final[l.id] && ss.final[l.id][0] ? ss.final[l.id][0].id : null;
-  const cont = {}; for (const k in ss.allCont) cont[k] = ss.allCont[k].winner || null;
-  const A = w.arch && w.arch[ss.label];
-  const boots = {}; if (A) for (const l of tier1) { const L = A.lg[l.id]; if (L && L.sc && L.sc[0]) boots[l.id] = [L.sc[0][0], L.sc[0][1], L.sc[0][2], L.sc[0][5] || '']; }
-  S.ws = (S.ws || []).concat({ y, label: ss.label, champs, cont, boots, bd: bd.top.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.ovr]), intl: (w.intl && w.intl[y + 1] || []).map(t => [t.k, t.n, t.w, t.ru]), tx: 0 });
-  C.advanceWorld(w, ss.resAdj);
-  { const L = S.ws[S.ws.length - 1]; L.tx = w.lastTx || 0; L.txs = w.txStat || null; L.big = (w.bigTx || []).slice().sort((x, z) => z[5] - x[5]).slice(0, 20); }
-  S.lastSeason = ss; S.ss = null;
-  return S.ws[S.ws.length - 1];
+// 관전 모드 시작일: 고른 리그의 개막 직전까지 조용히 진행 (유럽식 리그는 바로, 캘린더 리그는 다음 해 개막 전까지)
+GM.worldStartDay = function (S, lgId) {
+  const w = S.w, LS = lgId && w.cal.lg[lgId];
+  if (!LS) return w.cal.d;
+  let d = LS.dates[LS.ri] != null && LS.ri === 0 ? LS.dates[0] - 1 : null;
+  if (d == null) { const nat = w.lg[lgId].nation, rg = C.seasonRange(nat, C.ymd(w.cal.d)[0] + 1); d = rg.start - 1; }
+  return Math.max(w.cal.d, d);
+};
+// 관전: toDay(포함)까지 진행
+GM.worldRun = async function (S, toDay, onDay, stop) { await C.calRun(S, toDay, null, onDay, stop); };
+// 한 해(다음 8월 1일 마감)까지
+GM.simWorldSeason = async function (S) {
+  await C.calRun(S, C.day(S.w.year + 1, 8, 1));
+  return (S.ws || [])[S.ws.length - 1];
 };
 })(typeof window !== 'undefined' ? window : globalThis);

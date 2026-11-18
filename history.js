@@ -15,7 +15,7 @@ function liteName(c, i, y) {
 }
 const LITEPOS = ['ST', 'ST', 'LW', 'RW', 'CAM', 'CM', 'CM', 'CDM', 'LB', 'RB', 'CB', 'CB', 'GK', 'ST', 'CM', 'RW'];
 function squadOf(w, c, y) {
-  if (!c.lite && c.sq && c.sq.length) return c.sq.map(e => ({ id: String(e[0]), n: C.pName(w, e), pos: e[1], ovr: e[2], age: e[3], nat: e[5] }));
+  if (!c.lite && c.sq && c.sq.length) return c.sq.map(e => ({ id: String(e[0]), n: C.pName(w, e), pos: e[1], ovr: e[2], age: e[3], nat: e[5], yb: C.youthBoost(e) }));
   const used = new Set();
   return LITEPOS.map((pos, i) => {
     const r = C.seeded(c.id + '|o|' + i + '|' + y);
@@ -25,6 +25,8 @@ function squadOf(w, c, y) {
   });
 }
 C.squadOf = squadOf;
+// 출전 기회 가산: 잠재력이 높은 21세 이하 유망주, 임대에서 잘하고 돌아온 선수 (e[13] = 임대 복귀 기대주 표시)
+C.youthBoost = e => { let b = 0; if (e[3] <= 21 && e[4] >= e[2] + 5) b += 1.4 + Math.min(2.2, (e[4] - e[2]) / 6); if (e[13]) b += 2.2; return b; };
 // 구단 번호 (선수 기록 용량 절약)
 function cix(w, id) { w.cix = w.cix || []; if (!w._cm) { w._cm = {}; w.cix.forEach((x, i) => w._cm[x] = i); Object.defineProperty(w, '_cm', { enumerable: false, value: w._cm, writable: true }); } let i = w._cm[id]; if (i == null) { i = w.cix.length; w.cix.push(id); w._cm[id] = i; } return i; }
 C.cix = cix;
@@ -352,7 +354,7 @@ function simIntl(S) {
   for (const yy in w.intl) if (+yy < y - 12) w.intl[yy] = w.intl[yy].map(t => ({ k: t.k, n: t.n, y: t.y, w: t.w, ru: t.ru, ko: t.ko.slice(-1), g: [], slim: 1 }));
   return userT;
 }
-C.simIntl = simIntl;
+C.simIntl = simIntl; C.NTBASE = NTBASE;
 
 // ---------- 시즌 보관 ----------
 function archiveSeason(S, tables) {

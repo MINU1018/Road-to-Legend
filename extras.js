@@ -64,7 +64,7 @@ const statOf = (t, k) => k === 'ga' ? t.goals + t.assists : k === 'def' ? t.tack
 X.makeGoals = function (S) {
   const ss = S.ss, role = C.ROLE[S.p.pos], youth = S.car.status === 'youth';
   const lg = C.leagueOf(S);
-  const L = youth ? 22 : lg ? (C.leagueRounds ? ss.rounds.length + (C.splitCount ? C.splitCount(lg) : 0) : 34) : 30;
+  const L = youth ? 22 : lg ? Math.max(6, C.userFixtures ? C.userFixtures(S).filter(f => f.k === 'L').length : 34) : 30;
   const comp = youth ? 'youth' : 'league', compName = youth ? '유스 리그' : '리그';
   let E = youth ? L * .8 : L * (SHARE[ss.role] || .5);
   const lvl = clamp((C.effOvr(S.p) - S.w.clubs[ss.club].str) / 10, -.6, .6);

@@ -54,7 +54,7 @@ U.showMatch = function (o) {
       body.append(h('div', { class: 'msec' }, h('h4', null, '출전 명단 · 평점'), h('div', { class: 'mlus' }, col(d.ln[0], 0), col(d.ln[1], 1))));
     } else body.append(h('div', { class: 'mute', style: { fontSize: '12px' } }, '하부 리그 구단끼리의 경기라 출전 명단은 기록하지 않습니다. (득점·카드는 기록)'));
     return [head, body];
-  }, { clickClose: true });
+  }, { clickClose: true, reopen: o._re || (o._re = () => U.showMatch(o)) });
 };
 
 // 시즌 경기 기록 불러오기 (화면이 먼저 그려지고, 다 불러오면 다시 그린다)

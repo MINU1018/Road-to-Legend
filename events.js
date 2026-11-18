@@ -884,13 +884,13 @@ function computeAwards(S) {
   const role = C.ROLE[p.pos];
   if (lg && ss.status !== 'youth') {
     // 개인상은 같은 리그 경쟁자(시뮬된 득점·도움·평점)와 비교해 정한다
-    const A = w.arch && w.arch[ss.label] && w.arch[ss.label].lg[lg.id];
+    const A = ss.lgDone && w.arch && w.arch[ss.lgDone.wl] && w.arch[ss.lgDone.wl].lg[ss.lgDone.id];
     const others = (list) => (list || []).filter(x => !x[4]);
     const aiG = others(A && A.sc)[0], aiA = others(A && A.as)[0];
     const bestG = aiG ? aiG[2] : Math.round(N(big ? 24 : 19, 3.5)), bestA = aiA ? aiA[2] : Math.round(N(11, 2.2));
     if (L.goals >= 8 && (L.goals > bestG || (L.goals === bestG && R() < .5))) awards.push({ t: `${lg.name} 득점왕`, k: 'boot', v: `${L.goals}골` });
     if (L.assists >= 6 && (L.assists > bestA || (L.assists === bestA && R() < .5))) awards.push({ t: `${lg.name} 도움왕`, k: 'assist', v: `${L.assists}도움` });
-    const rounds = Math.max(10, (ss.rounds ? ss.rounds.length : (lgN - 1) * 2));
+    const rounds = Math.max(10, ss.lgDone && ss.lgDone.t[0] ? ss.lgDone.t[0][1] : (lgN - 1) * 2);
     const full = apps >= rounds * .6;
     const best = (A && A.best) || [];
     const myR = lr + N(0, .06) + (L.goals + L.assists) * .004;
@@ -904,73 +904,117 @@ function computeAwards(S) {
     const tr = ss.tr || (C.teamRank ? C.teamRank(S, ss) : null);
     if (tot.apps >= 25 && tr && tr.rank === 1 && R() < clamp(.55 + (tr.myR - (tr.top[1] ? tr.top[1].r : tr.myR)) * 2.5, .25, .95)) awards.push({ t: `${w.clubs[ss.club].name} 올해의 선수`, k: 'club' });
     // 유러피언 골든슈
-    if (C.confOf(lg.nation) === 'UEFA' && lg.tier === 1) { const pts = L.goals * (big ? 2 : 1.5); if (pts >= N(58, 5)) awards.push({ t: '유러피언 골든슈', k: 'goldshoe', v: `${L.goals}골` }); }
+
   }
   if (ss.wonder && R() < .2 * ss.wonder) awards.push({ t: 'FIFA 푸스카스상', k: 'puskas' });
-  // 발롱도르 순위
-  const bd = ballonDor(S);
-  ss.ballon = bd;
-  if (bd.rank === 1) awards.push({ t: '발롱도르', k: 'ballon' });
-  if (bd.youngRank === 1) awards.push({ t: '골든보이', k: 'golden' });
-  if (role === 'GK' && bd.rank && bd.rank <= 6 && R() < .55) awards.push({ t: '야신 트로피', k: 'yashin' });
+  // 발롱도르 순위 (8월 1일 시상: 이번 시즌 기간 안에 시상식이 있었으면)
+  const bd = ss.ballon || null;
+  if (bd && bd.rank === 1) awards.push({ t: '발롱도르', k: 'ballon' });
+  if (bd && bd.youngRank === 1) awards.push({ t: '골든보이', k: 'golden' });
+  if (bd && bd.gsRank === 1) { const g = bd.gs[0]; awards.push({ t: '유러피언 골든슈', k: 'goldshoe', v: `${g[3]}골 (${g[4]}점)` }); }
+  if (bd && role === 'GK' && bd.rank && bd.rank <= 6 && R() < .55) awards.push({ t: '야신 트로피', k: 'yashin' });
   if (ss.tourn && ss.tourn.won && ss.tourn.matches.filter(m => m.played).length >= 4) { const tr = C.totalAgg(ss.tourn.matches); if (C.avgRating(tr) >= 7.3) awards.push({ t: `${ss.tourn.name} 골든볼`, k: 'ball' }); }
   ss.awards = awards;
   return awards;
 }
 C.computeAwards = computeAwards;
 function trophyPts(list) { let s = 0; for (const t of list) s += t.k === 'cont' ? (t.t.includes('챔피언스') || t.t.includes('리베르타') ? 6 : 2) : t.k === 'nt' ? (t.t.includes('월드컵') ? 8 : 4) : t.k === 'league' ? 3 : 1; return s; }
+// 발롱도르: 지난 1년(8월~7월) 동안의 모든 클럽 대회 기록 + 국제 대회, 포지션별로 공정하게
+// 점수 = 기량(OVR) + 같은 포지션 후보 대비 평점 + 포지션별 공격 기여(수비수·미드필더·골키퍼는 클린시트·기본 가산) + 트로피(리그·UCL·월드컵 등)
+const RG = { ST: 'F', W: 'F', AM: 'F', CM: 'M', DM: 'M', CB: 'D', FB: 'D', GK: 'G' };
+function bdStats(w, pid, yOff, intlKeys) {
+  const P = w.ps && w.ps[pid]; const o = { apps: 0, g: 0, a: 0, rs: 0, cs: 0, ng: 0, na: 0, napps: 0, nt: {} };
+  if (!P) return o;
+  for (const x of C.psHist(P)) if (x[0] === yOff) { o.apps += x[2]; o.g += x[3]; o.a += x[4]; o.rs += x[5] / 100 * x[2]; o.cs += x[10] || 0; }
+  for (const seg of String(P.c || '').split(';')) { if (!seg) continue; const f = seg.split('|'); if (+f[0] !== yOff) continue;
+    const ap = +f[2], g = +f[3], a = +f[4], rt = +f[5] / 100, cs = +f[7] || 0;
+    if (f[1].startsWith('nt:')) { const k = f[1].slice(3); if (!intlKeys.has(k)) continue; o.napps += ap; o.ng += g; o.na += a; o.nt[k] = ap; continue; }
+    o.apps += ap; o.g += g; o.a += a; o.rs += rt * ap; o.cs += cs; }
+  return o;
+}
 function ballonDor(S) {
   const ss = S.ss, p = S.p, w = S.w, world = S.mode === 'world';
-  // AI 후보: 이번 시즌 실제로 기록된 리그 성적(선수 기록)을 바탕으로 점수 계산
-  const yOff = ss.year - 2000;
-  const seasonOf = pid => { const P = w.ps && w.ps[pid]; if (!P || typeof P.h !== 'string') return null; const seg = P.h.slice(0, -1).split(';').pop(); if (!seg) return null; const x = seg.split(',').map(Number); return x[0] === yOff ? x : null; };
-  const cands = [];
-  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg || c.lite) continue; for (const e of c.sq) if (e[2] >= 80) cands.push([e, c]); }
-  const champs = new Set(Object.values(ss.final || {}).map(t => t[0] && t[0].id));
-  const ucl = ss.allCont && ss.allCont.UCL && ss.allCont.UCL.winner;
+  const yOff = w.year - 2000, lb = C.wLabel(w.year), A = (w.arch || {})[lb] || { lg: {}, cont: {} };
+  const tours = Object.values(w.intl || {}).flat().filter(t => t.mxl === lb);
+  const intlKeys = new Set(tours.map(t => t.k));
+  const champ = new Set(); for (const id in A.lg) { const lg = w.lg[id], L = A.lg[id]; if (lg && lg.tier === 1 && L.t && L.t[0]) champ.add(L.t[0][0]); }
+  const contPts = {}; for (const k in A.cont) { const c = A.cont[k]; if (!c.w) continue; contPts[c.w] = (contPts[c.w] || 0) + (k === 'UCL' ? 7 : C.COMPS[k] && C.COMPS[k].tier === 1 ? 3.5 : 1.2);
+    const f = c.r && c.r[c.r.length - 1] && c.r[c.r.length - 1].t[0]; if (f && k === 'UCL') { const ru = f[2] === f[0] ? f[1] : f[0]; contPts[ru] = (contPts[ru] || 0) + 2.5; } }
+  const ntPts = {}; for (const t of tours) { const big = t.k === 'WC'; ntPts[t.w] = (ntPts[t.w] || 0) + (big ? 8 : 4); ntPts[t.ru] = (ntPts[t.ru] || 0) + (big ? 3 : 1.5); }
   const lgFOf = c => { const l = w.lg[c.lg]; return l ? (BIG5.includes(l.nation) && l.tier === 1 ? 1 : l.tier === 1 && C.confOf(l.nation) === 'UEFA' ? .8 : .55) : .5; };
-  let list = cands.map(([e, c]) => {
-    const at = ['ST', 'LW', 'RW', 'CAM', 'LM', 'RM'].includes(e[1]);
-    const rec = seasonOf(String(e[0]));
-    let rr, g, a, apps;
-    if (rec) { apps = rec[2]; g = rec[3] * 1.28; a = rec[4] * 1.25; rr = rec[5] / 100 || 6.6; }
-    else { rr = 6.75 + (e[2] - 80) * .055 + N(0, .28); g = at ? Math.max(0, (e[2] - 75) * 1.9 + N(0, 7)) : Math.max(0, N(3, 2)); a = at ? g * .4 : N(3, 2); apps = 30; }
-    const ga = at ? g + a * .6 : e[1] === 'GK' ? 8 : g * 1.5 + a;
-    const tp = (champs.has(c.id) && w.lg[c.lg].tier === 1 ? 3 : 0) + (ucl === c.id ? 6 : 0);
-    const appF = apps >= 25 ? 1 : apps >= 15 ? .85 : .6;
-    return { n: C.pName(w, e), pid: String(e[0]), club: c.name, cid: c.id, ovr: e[2], age: e[3], g: Math.round(rec ? rec[3] : g), s: (e[2] * .3 + (rr - 6.8) * 10 + ga * .32 * lgFOf(c) + tp * 1.5 + (c.str - 80) * .12) * (e[1] === 'GK' || ['CB', 'CDM'].includes(e[1]) ? .9 : 1) * appF + N(0, 1.6) };
+  const cands = [];
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg || c.lite || !c.sq) continue; for (const e of c.sq) if (e[2] >= 79) cands.push([e, c]); }
+  const rows = cands.map(([e, c]) => { const pid = String(e[0]); return { e, c, pid, rg: RG[C.ROLE[e[1]]] || 'M', st: bdStats(w, pid, yOff, intlKeys) }; });
+  let maxG = null; for (const r of rows) if (!maxG || r.st.g > maxG.g) maxG = { g: r.st.g, n: C.pName(w, r.e), pid: r.pid, cid: r.c.id };
+  // 같은 포지션 후보들의 평균 평점 (공격수 평점이 원래 높게 나오는 차이를 지운다)
+  const mean = {}; for (const g of ['F', 'M', 'D', 'G']) { const l = rows.filter(r => r.rg === g && r.st.apps >= 20); mean[g] = l.length ? l.reduce((a, r) => a + r.st.rs / r.st.apps, 0) / l.length : 6.9; }
+  const contrib = (rg, st) => { const g = st.g + st.ng * .8, a = st.a + st.na * .8;
+    return rg === 'F' ? (g + a * .55) * .3 : rg === 'M' ? (g * 1.4 + a * 1.1) * .3 + 2.4 : rg === 'D' ? (g * 1.6 + a * 1.2) * .3 + 2.4 + st.cs * .07 : 1.4 + st.cs * .2; };
+  const appF = n => n >= 40 ? 1 : n >= 28 ? .93 : n >= 18 ? .78 : .5;
+  let list = rows.map(r => {
+    const { e, c, st } = r, rt = st.apps ? st.rs / st.apps : 6.6;
+    const tp = (champ.has(c.id) ? 3 * (lgFOf(c) >= 1 ? 1 : .6) : 0) + (contPts[c.id] || 0) + ((ntPts[e[5]] && Object.keys(st.nt).length && Object.values(st.nt).some(v => v >= 3)) ? ntPts[e[5]] : 0);
+    const s = (e[2] * .3 + (rt - mean[r.rg]) * 12 + contrib(r.rg, st) * lgFOf(c) + tp * 1.6 + (c.str - 80) * .1) * appF(st.apps) + N(0, 1.4);
+    return { n: C.pName(w, e), pid: r.pid, club: c.name, cid: c.id, ovr: e[2], age: e[3], pos: e[1], g: st.g + st.ng, a: st.a + st.na, apps: st.apps + st.napps, rt: +rt.toFixed(2), s };
   }).sort((a, b) => b.s - a.s).slice(0, 60);
   // 같은 팀 선수끼리는 표가 갈린다
-  const seen = {}; list.forEach(x => { const k = seen[x.cid] = (seen[x.cid] || 0) + 1; if (k > 1) x.s -= (k - 1) * 2.4; });
+  const seen = {}; list.forEach(x => { const k = seen[x.cid] = (seen[x.cid] || 0) + 1; if (k > 1) x.s -= (k - 1) * 1.6; });
   list = list.sort((a, b) => b.s - a.s).slice(0, 30);
-  let all = list, me = null, r = 0, ga = 0, tot = null;
-  if (!world) {
-    tot = ss.total; r = C.avgRating(tot);
-    const role = C.ROLE[p.pos], lg = C.leagueOf(S, ss.club);
-    const lgF = lg ? (BIG5.includes(lg.nation) && lg.tier === 1 ? 1 : lg.tier === 1 && C.confOf(lg.nation) === 'UEFA' ? .8 : .55) : .5;
-    const att = ['ST', 'W', 'AM'].includes(role);
-    // AI 후보와 같은 기준: 리그 기록 × 컵·대륙 대회 보정(골 ×1.28, 도움 ×1.25)
-    const lt = C.totalAgg(ss.matches.filter(m => m.comp === 'league' && m.played));
-    const lg_g = lt.goals * 1.28, lg_a = lt.assists * 1.25;
-    ga = att ? lg_g + lg_a * .6 : role === 'GK' ? (lt.cs || 0) * 1.1 : lg_g * 1.5 + lg_a + (lt.cs || 0) * .3;
-    const tpMe = trophyPts(ss.trophies);
-    const myScore = (C.ovrOf(p) * .3 + (r - 6.8) * 10 + ga * .32 * lgF + tpMe * 1.5 + (w.clubs[ss.club].str - 80) * .12) * (tot.apps >= 25 ? 1 : tot.apps >= 15 ? .82 : .55) * (ss.status === 'youth' ? .3 : 1) + N(0, 1.6);
-    me = { n: p.name, club: w.clubs[ss.club].name, cid: ss.club, ovr: C.ovrOf(p), age: p.age, s: myScore, me: true };
-    me.s -= list.filter(x => x.cid === ss.club).length * .8;
+  let all = list, me = null;
+  if (!world && S.car && S.car.club) {
+    // 내 선수: 같은 기간(지난 8월 1일 ~ 7월 31일)의 경기 기록
+    const d0 = C.day(w.year, 8, 1), d1 = C.day(w.year + 1, 8, 1);
+    const logs = [];
+    for (const h of S.hist.slice(-2)) for (const m of h.log || []) if (m.d >= d0 && m.d < d1 && m.p && !m.y) logs.push({ c: m.c, g: m.g || 0, a: m.a || 0, r: m.r || 0, cs: m.cs || 0, cn: m.cn });
+    if (ss) for (const m of ss.matches) if (m.d >= d0 && m.d < d1 && m.played && m.comp !== 'youth') logs.push({ c: m.comp, g: m.st.goals, a: m.st.assists, r: m.rating || 0, cs: m.st.cs || 0, cn: m.compName });
+    const club = logs.filter(m => m.c !== 'nt' && m.c !== 'ntY'), ntl = logs.filter(m => m.c === 'nt' && tours.some(t => t.n === m.cn));
+    const st = { apps: club.length, g: club.reduce((a, m) => a + m.g, 0), a: club.reduce((a, m) => a + m.a, 0), rs: club.reduce((a, m) => a + m.r, 0), cs: club.reduce((a, m) => a + m.cs, 0), ng: ntl.reduce((a, m) => a + m.g, 0), na: ntl.reduce((a, m) => a + m.a, 0), napps: ntl.length, nt: {} };
+    const rg = RG[C.ROLE[p.pos]] || 'M', c = w.clubs[S.car.club], rt = st.apps ? st.rs / st.apps : 6.6;
+    // 내 트로피: 이번 시즌 진행 중 기록 (리그 우승·컵·대륙 대회·국제 대회)
+    let tpMe = 0;
+    if (ss) { if (ss.lgDone && ss.lgDone.pos === 1) tpMe += 3 * (c ? (lgFOf(c) >= 1 ? 1 : .6) : .6); if (ss.CWon) tpMe += 1; if (ss.LCWon) tpMe += .5; if (ss.contWon && ss.cont) tpMe += ss.cont === 'UCL' ? 7 : C.COMPS[ss.cont].tier === 1 ? 3.5 : 1.2; if (ss.tourn && ss.tourn.won) tpMe += ss.tourn.k === 'WC' ? 8 : 4; }
+    const myScore = (C.ovrOf(p) * .3 + (rt - mean[rg]) * 12 + contrib(rg, st) * (c ? lgFOf(c) : .5) + tpMe * 1.6 + ((c ? c.str : 70) - 80) * .1) * appF(st.apps) * (S.car.status === 'youth' ? .3 : 1) + N(0, 1.4);
+    me = { n: p.name, club: c ? c.name : '', cid: S.car.club, ovr: C.ovrOf(p), age: p.age, pos: p.pos, g: st.g + st.ng, a: st.a + st.na, apps: st.apps + st.napps, rt: +rt.toFixed(2), s: myScore, me: true, _st: st, _tp: tpMe };
+    me.s -= list.filter(x => x.cid === S.car.club).length * .8;
     all = list.concat(me).sort((a, b) => b.s - a.s);
   }
   const rank = me ? all.indexOf(me) + 1 : null;
-  // 골든보이 (21세 이하)
-  let youngRank = null;
-  if (!world && p.age <= 21) {
-    const yl = [];
-    for (const id in w.clubs) for (const e of w.clubs[id].sq) if (e[3] <= 21 && e[2] >= 74) yl.push({ s: e[2] * .55 + N(0, 1.3) + (e[2] - 74) * .2, n: C.pName(w, e) });
-    yl.sort((a, b) => b.s - a.s);
-    const mys = C.effOvr(p) * .55 + (r - 6.8) * 4 + ga * .1 + (C.effOvr(p) - 74) * .2 + (tot.apps >= 25 ? 1 : -2);
-    youngRank = yl.filter(x => x.s > mys).length + 1;
-  }
-  (w.bdHist = w.bdHist || []).push({ y: ss.year + 1, top: all.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr]) });
-  return { rank: rank && rank <= 30 ? rank : null, top: all.slice(0, 10), youngRank };
+  // 골든보이 (21세 이하): 포텐셜 + 지난 1년 성적
+  const tpOf = (c, e, st) => (champ.has(c.id) ? 2 * (lgFOf(c) >= 1 ? 1 : .6) : 0) + (contPts[c.id] || 0) * .6 + (st && Object.keys(st.nt).length ? (ntPts[e[5]] || 0) * .3 : 0);
+  const gb = goldenBoy(S, { yOff, intlKeys, tpOf, lgFOf, contrib, me: me && p.age <= 21 ? { st: me._st, rg: RG[C.ROLE[p.pos]] || 'M', c: w.clubs[S.car.club], ovr: C.ovrOf(p), pot: Math.round((p.hid && p.hid.pot) || C.ovrOf(p)), age: p.age, tp: me._tp, youth: S.car.status === 'youth' } : null });
+  (w.bdHist = w.bdHist || []).push({ y: w.year + 1, top: all.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr, x.pos || '']) });
+  (w.gbHist = w.gbHist || []).push({ y: w.year + 1, top: gb.top.map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr, x.pos || '', x.age, x.pot, x.apps, x.g, x.a, x.rt, x.napps || 0, x.ng || 0, x.na || 0]) });
+  // 유러피언 골든슈: 지난 시즌 유럽 1부 리그 득점 × 리그 계수 (빅5 2.0, 그 밖 유럽 1.5)
+  const gs = goldenShoe(S, A);
+  (w.gsHist = w.gsHist || []).push({ y: w.year + 1, top: gs.top });
+  return { rank: rank && rank <= 30 ? rank : null, top: all.slice(0, 10), youngRank: gb.rank, gb: gb.top, gsRank: gs.rank, gs: gs.top, maxG };
 }
 C.ballonDor = ballonDor;
+function goldenBoy(S, o) {
+  const w = S.w, rows = [];
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg || c.lite || !c.sq) continue;
+    for (const e of c.sq) { if (e[3] > 21 || (e[2] < 64 && (e[4] || 0) < 80)) continue; const st = bdStats(w, String(e[0]), o.yOff, o.intlKeys); if (st.apps < 8) continue; rows.push({ e, c, pid: String(e[0]), rg: RG[C.ROLE[e[1]]] || 'M', st }); } }
+  const mean = {}; for (const g of ['F', 'M', 'D', 'G']) { const l = rows.filter(r => r.rg === g && r.st.apps >= 12); mean[g] = l.length ? l.reduce((a, r) => a + r.st.rs / r.st.apps, 0) / l.length : 6.75; }
+  const appF = n => n >= 35 ? 1 : n >= 25 ? .94 : n >= 15 ? .8 : .6;
+  const score = (ovr, pot, age, rg, st, c, tp) => { const rt = st.apps ? st.rs / st.apps : 6.5;
+    return (ovr * .42 + Math.max(0, pot - ovr) * .22 + (pot - 80) * .12 + (rt - mean[rg]) * 9 + o.contrib(rg, st) * (c ? o.lgFOf(c) : .5) * .85 + Math.min(st.apps, 45) * .07 + tp + (21 - age) * .25) * appF(st.apps) + N(0, 1); };
+  const list = rows.map(r => { const { e, c, st } = r, rt = st.apps ? st.rs / st.apps : 0;
+    return { n: C.pName(w, e), pid: r.pid, cid: c.id, ovr: e[2], pot: Math.round(e[4] || e[2]), age: e[3], pos: e[1], apps: st.apps, g: st.g, a: st.a, napps: st.napps, ng: st.ng, na: st.na, rt: +rt.toFixed(2), s: score(e[2], e[4] || e[2], e[3], r.rg, st, c, o.tpOf(c, e, st)) }; });
+  let me = null;
+  if (o.me && o.me.st && o.me.st.apps >= 5) { const m = o.me;
+    me = { n: S.p.name, pid: '', cid: S.car.club, ovr: m.ovr, pot: m.pot, age: m.age, pos: S.p.pos, apps: m.st.apps, g: m.st.g, a: m.st.a, napps: m.st.napps, ng: m.st.ng, na: m.st.na, rt: +(m.st.rs / m.st.apps).toFixed(2), me: true, s: score(m.ovr, m.pot, m.age, m.rg, m.st, m.c, (m.tp || 0) * .6) * (m.youth ? .55 : 1) };
+    list.push(me); }
+  list.sort((a, b) => b.s - a.s);
+  const rank = me ? list.indexOf(me) + 1 : null;
+  return { top: list.slice(0, 10), rank: rank && rank <= 20 ? rank : null };
+}
+function goldenShoe(S, A) {
+  const w = S.w, out = [];
+  for (const id in (A && A.lg) || {}) { const lg = w.lg[id], L = A.lg[id]; if (!lg || lg.tier !== 1 || C.confOf(lg.nation) !== 'UEFA' || C.calType(lg.nation) !== 'eu') continue;
+    const k = BIG5.includes(lg.nation) ? 2 : 1.5;
+    for (const x of (L.sc || []).slice(0, 5)) out.push([x[0], x[1], x[5] || '', x[2], +(x[2] * k).toFixed(1), id, x[4] ? 1 : 0]); }
+  out.sort((a, b) => b[4] - a[4] || b[3] - a[3]);
+  const mi = out.findIndex(x => x[6]);
+  return { top: out.slice(0, 10), rank: mi >= 0 ? mi + 1 : null };
+}
 })(typeof window !== 'undefined' ? window : globalThis);

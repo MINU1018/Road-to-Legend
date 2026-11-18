@@ -13,6 +13,8 @@ const fmtDate = n => { const d = toDate(n); return `${d.getUTCMonth() + 1}월 ${
 const fmtDateY = n => { const d = toDate(n); return `${d.getUTCFullYear()}.${d.getUTCMonth() + 1}.${d.getUTCDate()}`; };
 Object.assign(C, { day, toDate, fmtDate, fmtDateY });
 const nextDow = (n, dow) => { while (toDate(n).getUTCDay() !== dow) n++; return n; };
+const ymdOf = n => { const t = toDate(n); return [t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()]; };
+C.ymd = ymdOf; C.nextDow = nextDow;
 
 // ---------- 경기 기록 항목 ----------
 const STATKEYS = ['apps', 'starts', 'min', 'goals', 'xg', 'xgot', 'npxg', 'shots', 'sot', 'headShots', 'penGoals', 'penTaken', 'assists', 'xa', 'passOk', 'passAtt', 'longOk', 'longAtt', 'thru', 'chances', 'bigCh', 'dribOk', 'dribAtt', 'duelW', 'duelA', 'aerW', 'aerA', 'touches', 'boxTouch', 'disp', 'foulsWon', 'defAct', 'tackles', 'ints', 'blocks', 'fouls', 'recov', 'ftRec', 'dribPast', 'clear', 'cs', 'concOn', 'xgaOn', 'yellow', 'red', 'saves', 'sotFaced', 'xgotFaced', 'gPrev', 'claims', 'ratingSum', 'rated', 'motm', 'wins', 'draws', 'losses'];
@@ -212,59 +214,48 @@ C.clubOf = clubOf;
 function leagueOf(S, id) { const c = S.w.clubs[id || S.car.club]; return c && c.lg ? S.w.lg[c.lg] : null; }
 C.leagueOf = leagueOf;
 
+// 내 시즌 = 내 리그 달력 기준 한 시즌 (유럽식: 8월 2일 ~ 다음 8월 1일, 캘린더식: 1월 2일 ~ 다음 1월 1일).
+// 세계 달력(calendar.js)이 모든 경기를 날짜대로 치르고, 내 구단 경기·국가대표·유스 경기만 내가 직접 뛴다
+function seasonWindow(nat, today) {
+  const cy = C.calType(nat) === 'cy', [ty] = ymdOf(today);
+  let end = cy ? day(ty + 1, 1, 2) : (today < day(ty, 8, 2) ? day(ty, 8, 2) : day(ty + 1, 8, 2));
+  if (end - today < 25) end = cy ? day(ty + 2, 1, 2) : end + (day(ty + 1, 8, 2) - day(ty, 8, 2));
+  // 시즌 중간 휴식기·이적시장: 유럽식은 1월 1일, 캘린더식은 7월 1일
+  const cands = [ty, ty + 1, ty + 2].map(y => cy ? day(y, 7, 1) : day(y, 1, 1));
+  const split = cands.find(x => x > today + 20 && x < end - 20) || null;
+  return { start: today, end, split, cy };
+}
+C.seasonWindow = seasonWindow;
 function setupSeason(S) {
-  const w = S.w, y = w.year, p = S.p, car = S.car;
+  const w = S.w, p = S.p, car = S.car;
+  if (!w.cal) C.calInit(S);
   const club = clubOf(S), lg = leagueOf(S);
-  const ss = { year: y, label: `${y}/${String(y + 1).slice(2)}`, club: club.id, status: car.status, fx: [], i: 0, half: 1, matches: [], tables: {}, alive: {}, cont: null, inj: 0, susp: 0, yellows: 0, events: [], moments: [], momentsLeft: 0, trustStart: car.trust };
+  const nat = lg ? lg.nation : club.nat;
+  const win = seasonWindow(nat, w.cal.d + 1);
+  const LS = lg ? w.cal.lg[lg.id] : null;
+  const label = LS && LS.start < win.end ? LS.label : C.wLabel(w.year);
+  const ss = { year: w.year, label, club: club.id, status: car.status, start: win.start, end: win.end, split: win.split, cy: win.cy, on: true, half: win.split ? 1 : 2, matches: [], tables: {}, alive: {}, cont: null, inj: 0, susp: 0, yellows: 0, events: [], moments: [], momentsLeft: 0, trustStart: car.trust, ufx: [], ui: 0, lgId: lg ? lg.id : null, nat };
   S.ss = ss;
   car.bias = N(0, 1.8); // 이번 시즌 감독이 나를 얼마나 선호하는지
   car.formAdj = clamp((p.morale - 60) / 25, -1.2, 1.2); // 사기가 시즌 초반 폼을 정한다
-  const start = day(y, 8, 9), end = day(y + 1, 5, 24);
-  // 리그
-  if (lg) {
-    const rounds = C.leagueRounds(lg);
-    ss.rounds = rounds; ss.tables[lg.id] = C.newTable(lg.clubs);
-    const nSplit = C.splitCount(lg), total = rounds.length + nSplit;
-    ss.lgFmt = C.lgFormat(lg); ss.splitDone = false;
-    for (let r = 0; r < total; r++) {
-      const d = nextDow(start + Math.round(r * (end - start) / total), 6);
-      if (r >= rounds.length) { ss.fx.push({ d, k: 'L', r, split: true, opp: null, home: false }); continue; }
-      const ms = rounds[r], m = ms.find(x => x[0] === club.id || x[1] === club.id);
-      ss.fx.push({ d, k: 'L', r, opp: m ? (m[0] === club.id ? m[1] : m[0]) : null, home: m ? m[0] === club.id : false });
-    }
-  }
+  if (LS) { ss.tables[lg.id] = LS.tb; ss.lgFmt = C.lgFormat(lg); }
   // 유스 리그 (유스 선수, 또는 출전이 적은 21세 이하 1군 선수의 U21·B팀 경기)
   const sr0 = car.status !== 'youth' ? squadRole(S, club.id) : null;
   ss.reserve = !!(sr0 && p.age <= 21 && ['backup', 'reserve'].includes(sr0.role));
   if (car.status === 'youth' || ss.reserve) {
-    for (let i = 0; i < 22; i++) ss.fx.push({ d: nextDow(start + 7 + Math.round(i * (end - start - 20) / 22), 0), k: 'Y' });
+    const a = Math.max(win.start + 7, LS ? LS.start : win.start), b = Math.min(win.end - 10, LS ? LS.end : win.end - 30);
+    for (let i = 0; i < 22 && b > a; i++) ss.ufx.push({ d: nextDow(a + Math.round(i * (b - a) / 22), 0), k: 'Y' });
   }
-  // 국내 컵: 그 나라 모든 구단이 참가하는 전 라운드 대진. 내 구단은 리그 등급에 맞는 라운드부터 들어간다
-  const nat = lg ? lg.nation : club.nat;
-  ss.cupSt = {};
-  const cupSetup = (kind, k, name, dow) => {
-    const st = C.cupBuild(w, nat, kind, name); if (!st) return;
-    ss.cupSt[kind + ':' + nat] = st;
-    const e = C.cupEntry(st, club.id); if (e < 0) return;
-    const rs = st.rounds.slice(e).map((r, i) => ({ d: nextDow(day(r.d[0] >= 7 ? y : y + 1, r.d[0], r.d[1]), dow), name: r.n, ri: e + i }));
-    ss[k === 'C' ? 'cupRounds' : 'lcupRounds'] = rs;
-    rs.forEach((r, i) => ss.fx.push({ d: r.d, k, r: i }));
-    ss.alive[k] = true; ss[k === 'C' ? 'cupName' : 'lcupName'] = name; ss[k === 'C' ? 'cupKey' : 'lcupKey'] = kind + ':' + nat;
-  };
-  if (C.CUPNAME[nat]) cupSetup('cup', 'C', C.CUPNAME[nat], 3);
-  if (C.LCUPNAME[nat] && lg && lg.tier <= 4) cupSetup('lcup', 'LC', C.LCUPNAME[nat], 2);
-  // 대륙 대회
-  const parts = C.contParticipants(w);
-  ss.allCont = {};
-  for (const k in parts) {
-    const cs = setupCont(w, k, parts[k], y);
-    ss.allCont[k] = cs;
-    if (parts[k].includes(club.id)) { ss.cont = k; cs.dates.forEach((d, i) => ss.fx.push({ d, k: 'E', r: i })); }
+  // 국내 컵: 이번 시즌 안에 열리는 우리나라 컵 (전 라운드 대진, 리그 등급에 맞는 라운드부터)
+  for (const k in w.cal.cup) {
+    const st = w.cal.cup[k]; if (st.nat !== nat || st.dates[st.dates.length - 1] < win.start || st.dates[0] >= win.end) continue;
+    const e = C.cupEntry(st, club.id); if (e < 0 && !st.alive.includes(club.id)) continue;
+    const kk = st.kind === 'cup' ? 'C' : 'LC';
+    ss.alive[kk] = true; ss[kk === 'C' ? 'cupName' : 'lcupName'] = st.n; ss[kk === 'C' ? 'cupKey' : 'lcupKey'] = k;
   }
   // 국가대표
   setupNational(S, ss);
-  ss.fx.sort((a, b) => a.d - b.d || (a.k === 'L' ? -1 : 1));
-  ss.split = day(y + 1, 1, 1);
+  ss.ufx.sort((a, b) => a.d - b.d);
   // 출전 확률 계산용 역할
   updateRole(S);
   ss.penTaker = isPenTaker(S); ss.fkTaker = isFkTaker(S);
@@ -291,37 +282,9 @@ function isPenTaker(S) { const a = S.p.a, r = roleOf(S.p); return a.penalties >=
 function isFkTaker(S) { const a = S.p.a; return (a.fkAcc + a.curve) / 2 >= 74 && ['key', 'starter'].includes(S.ss.role); }
 
 // 대륙 대회 구성
-function setupCont(w, k, teams, y) {
-  const def = C.COMPS[k];
-  const cs = { k, name: def.name, teams: teams.slice(), opp: {}, table: C.newTable(teams), done: false, ko: [], winner: null, userOut: false };
-  const pd = [day(y, 9, 17), day(y, 10, 1), day(y, 10, 22), day(y, 11, 5), day(y, 11, 26), day(y, 12, 10), day(y + 1, 1, 21), day(y + 1, 1, 28)].slice(0, def.phase);
-  // 리그 페이즈 대진
-  if (def.phase) {
-    for (const t of teams) cs.opp[t] = cs.opp[t] || [];
-    const order = shuffle(teams.slice());
-    for (const t of order) {
-      let guard = 0;
-      while (cs.opp[t].length < def.phase && guard++ < 200) {
-        const o = pick(teams);
-        if (o === t || cs.opp[t].some(x => x[0] === o) || cs.opp[o].length >= def.phase) continue;
-        if (w.clubs[o].nat === w.clubs[t].nat && guard < 120) continue;
-        const h = R() < .5; cs.opp[t].push([o, h]); cs.opp[o].push([t, !h]);
-      }
-    }
-  }
-  const kd = [[day(y + 1, 2, 17), day(y + 1, 2, 24), '플레이오프'], [day(y + 1, 3, 10), day(y + 1, 3, 17), '16강'], [day(y + 1, 4, 7), day(y + 1, 4, 14), '8강'], [day(y + 1, 4, 28), day(y + 1, 5, 5), '4강'], [day(y + 1, 5, 30), null, '결승']];
-  const nKO = Math.log2(def.ko);
-  const rounds = (def.playoff ? [kd[0]] : []).concat(kd.slice(1).slice(4 - nKO));
-  cs.rounds = rounds;
-  cs.dates = pd.slice();
-  for (const r of rounds) { cs.dates.push(r[0]); if (r[1]) cs.dates.push(r[1]); }
-  cs.phaseN = pd.length;
-  return cs;
-}
-
 // 국가대표 일정
 function setupNational(S, ss) {
-  const y = ss.year, p = S.p;
+  const p = S.p;
   const pools = C.nationPools(S.w); ss.pools = pools;
   const pool = pools[p.nat];
   const g = C.NTG[p.pos];
@@ -337,29 +300,38 @@ function setupNational(S, ss) {
   else if (age <= 22 && me >= ss.ntStr - 15) ss.nt = { lvl: 'U21', start: .7 };
   else ss.nt = null;
   if (!ss.nt) return;
+  if (ss.nt.lvl === 'A') return; // A대표: 세계 달력의 A매치(네이션스리그·친선전)로 치른다
+  // A매치 기간 (9·10·11·3·6월)에 두 경기씩: 이번 시즌 기간 안의 날짜만
   const wins = [[9, 5], [9, 9], [10, 10], [10, 14], [11, 14], [11, 18], [3, 26], [3, 30], [6, 6], [6, 10]];
-  wins.forEach(([m, d], i) => ss.fx.push({ d: day(m >= 8 ? y : y + 1, m, d), k: 'N', r: i }));
+  const [y0] = ymdOf(ss.start);
+  for (const yy of [y0, y0 + 1]) wins.forEach(([m, d], i) => { const dd = day(yy, m, d); if (dd >= ss.start && dd < ss.end) ss.ufx.push({ d: dd, k: 'N', r: i }); });
 }
 
 // ---------- 시즌 진행 ----------
 // hooks.moment(ctx) → Promise<{goal?, saved?, ok}>  (없으면 자동 처리)
-async function simUntil(S, untilDay, hooks) {
-  const ss = S.ss;
-  while (ss.i < ss.fx.length && ss.fx[ss.i].d < untilDay) {
-    const fx = ss.fx[ss.i++];
-    if (ss.inj > 0) ss.inj = Math.max(0, ss.inj - (fx.d - (ss.lastDay || fx.d)));
-    ss.lastDay = fx.d;
-    if (fx.k === 'L') await doLeague(S, fx, hooks);
-    else if (fx.k === 'Y') await doYouth(S, fx, hooks);
-    else if (fx.k === 'C') await doCup(S, fx, hooks, 'C');
-    else if (fx.k === 'LC') await doCup(S, fx, hooks, 'LC');
-    else if (fx.k === 'E') await doCont(S, fx, hooks);
-    else if (fx.k === 'N') await doNational(S, fx, hooks);
-  }
+// untilDay 전날까지 세계 달력을 진행 (내 경기는 달력 안에서 치른다)
+async function simUntil(S, untilDay, hooks, onDay, stop) {
+  S.ss.on = true;
+  await C.calRun(S, untilDay - 1, hooks, onDay, stop);
 }
 C.simUntil = simUntil;
-const halfEnd = S => S.ss.half === 1 ? S.ss.split : day(S.ss.year + 1, 7, 1);
+const halfEnd = S => S.ss.half === 1 && S.ss.split ? S.ss.split : S.ss.end;
 C.halfEnd = halfEnd;
+// 이번 시즌 내 일정 (화면용·남은 경기 계산용): 리그·컵·대륙 대회·국가대표·유스
+function userFixtures(S) {
+  const ss = S.ss, w = S.w; if (!ss || !w.cal) return [];
+  const me = ss.club, mi = C.cix(w, me), out = [];
+  const inWin = d => d >= ss.start && d < ss.end;
+  const LS = ss.lgId && w.cal.lg[ss.lgId];
+  if (LS) LS.dates.forEach((d, i) => { if (!inWin(d)) return; const m = (LS.R[i] || []).find(x => x[0] === mi || x[1] === mi); if (m || i >= LS.nreg) out.push({ d, k: 'L', done: i < LS.ri, opp: m ? C.cidOf(w, m[0] === mi ? m[1] : m[0]) : null, home: m ? m[0] === mi : null }); });
+  for (const k of [ss.cupKey, ss.lcupKey]) { const st = k && w.cal.cup[k]; if (!st) continue; const kk = st.kind === 'cup' ? 'C' : 'LC'; const e = C.cupEntry(st, me); st.dates.forEach((d, i) => { if (!inWin(d) || i < Math.max(0, e)) return; if (i >= st.ri && !ss.alive[kk]) return; out.push({ d, k: kk, done: i < st.ri, stage: st.rounds[i].n }); }); }
+  for (const k in w.cal.cont) { const cs = w.cal.cont[k]; if (!cs.teams.includes(me) || ss.noCont) continue; cs.dates.forEach((d, i) => { if (!inWin(d)) return; if (i < cs.phaseN) { if ((cs.md[i] || []).some(p => p[0] === me || p[1] === me)) out.push({ d, k: 'E', done: i < cs.di, comp: cs.k }); } else if (!cs.userOut) out.push({ d, k: 'E', done: i < cs.di, comp: cs.k }); }); }
+  for (const f of ss.ufx) { if (f.k === 'N' && ss.nt && ss.nt.lvl === 'A' && w.cal.am) continue; out.push({ d: f.d, k: f.k, done: ss.ufx.indexOf(f) < ss.ui }); }
+  const nat = S.p && S.p.nat;
+  if (ss.nt && ss.nt.lvl === 'A' && w.cal.am) for (const f of w.cal.am.fx) if ((f.a === nat || f.b === nat) && inWin(f.d)) out.push({ d: f.d, k: 'N', done: !!f.done, opp: f.a === nat ? f.b : f.a, home: f.n ? null : f.a === nat, stage: f.stage, nat: 1, comp: f.c });
+  return out.sort((a, b) => a.d - b.d);
+}
+C.userFixtures = userFixtures;
 
 function teamStr(S, clubId, withMe) {
   const c = S.w.clubs[clubId];
@@ -421,7 +393,7 @@ async function userMatch(S, o, hooks) {
     const close = Math.abs(rec.gf - rec.ga) <= 1;
     const meaningful = o.kind !== 'Y' && o.stage !== '친선전' && close && ((o.imp || 0) >= 1 || o.ko || o.stage === '결승' || R() < .5);
     if (hooks && meaningful && ss.momentsLeft > 0 && sel.minutes >= 25) {
-      const remaining = ss.fx.length - ss.i + 1;
+      const remaining = userFixtures(S).filter(f => !f.done && f.d >= o.d).length + 1;
       const chance = clamp(ss.momentsLeft / Math.max(3, remaining * .3) * (1 + (o.imp || 0) * .9), 0, .95);
       if (o.stage === '결승' || R() < chance) {
         ss.momentsLeft--;
@@ -505,30 +477,6 @@ function injuryRoll(S, rec, minutes) {
 }
 C.userMatch = userMatch;
 
-async function doLeague(S, fx, hooks) {
-  const ss = S.ss, lg = leagueOf(S, ss.club);
-  const tb = ss.tables[lg.id];
-  // 스플릿 라운드: 정규 라운드가 끝난 시점의 순위로 대진 생성
-  if (fx.split) {
-    if (!ss.splitDone) { ss.splitDone = true; ss.rounds = ss.rounds.concat(C.splitRounds(C.sortTable(tb).map(r => r.id), ss.lgFmt)); if (C.news) C.news(S, `${lg.name} 스플릿 라운드 시작`, 'league', false); }
-    const ms = ss.rounds[fx.r] || [];
-    const m = ms.find(x => x[0] === ss.club || x[1] === ss.club);
-    fx.opp = m ? (m[0] === ss.club ? m[1] : m[0]) : null; fx.home = m ? m[0] === ss.club : false;
-    if (!ss.rounds[fx.r]) return;
-  }
-  // 같은 라운드의 다른 경기
-  for (const [a, b] of ss.rounds[fx.r]) {
-    if (a === ss.club || b === ss.club) continue;
-    const [ga, gb] = C.quickMatch(S.w.clubs[a].str, S.w.clubs[b].str, 1); C.addResult(tb, a, b, ga, gb);
-  }
-  if (!fx.opp) return;
-  const oc = S.w.clubs[fx.opp];
-  const sorted = C.sortTable(tb), myPos = sorted.findIndex(r => r.id === ss.club), opPos = sorted.findIndex(r => r.id === fx.opp);
-  const imp = (fx.r > (ss.rounds.length + C.splitCount(lg)) * .75 ? 1 : 0) + (fx.split ? 1 : 0) + (opPos < 4 && myPos < 6 ? 1 : 0) + (oc.str > S.w.clubs[ss.club].str + 3 ? 1 : 0);
-  const rec = await userMatch(S, { d: fx.d, kind: 'L', compKey: 'league', compName: lg.name, opp: fx.opp, oppName: oc.name, oppStr: oc.str, home: fx.home, imp }, hooks);
-  const ui = ss.matches.indexOf(rec);
-  if (fx.home) C.addResult(tb, ss.club, fx.opp, rec.gf, rec.ga, ui); else C.addResult(tb, fx.opp, ss.club, rec.ga, rec.gf, ui);
-}
 async function doYouth(S, fx, hooks) {
   const u21 = !(S.ss.status === 'youth' && S.p.age <= 17);
   const ss = S.ss, lv = 47 + (S.w.clubs[ss.club].str - 70) * .5 + (u21 ? 5 : 0);
@@ -537,142 +485,23 @@ async function doYouth(S, fx, hooks) {
   const opp = pick(Object.values(S.w.clubs).filter(c => c.nat === S.w.clubs[ss.club].nat && c.id !== ss.club)) || S.w.clubs[ss.club];
   await userMatch(S, { d: fx.d, kind: 'Y', compKey: 'youth', compName: S.ss.status === 'youth' && S.p.age <= 17 ? 'U18 리그' : 'U21 리그', opp: opp.id, oppName: opp.name + (S.ss.status === 'youth' && S.p.age <= 17 ? ' U18' : ' U21'), oppStr, myStr, adj: clamp(69 - lv, 0, 24), home: R() < .5, imp: 0 }, hooks);
 }
-async function doCup(S, fx, hooks, k) {
-  const ss = S.ss, w = S.w;
-  if (!ss.alive[k]) return;
-  const rounds = k === 'C' ? ss.cupRounds : ss.lcupRounds, rd = rounds[fx.r];
-  let st = ss.cupSt && ss.cupSt[k === 'C' ? ss.cupKey : ss.lcupKey];
-  if (!st) { // 이전 버전 저장(시즌 도중): 지금 대진을 만들고 결승 날짜에 맞춰 라운드를 맞춘다
-    const nat = C.leagueOf(S, ss.club) ? C.leagueOf(S, ss.club).nation : w.clubs[ss.club].nat, kind = k === 'C' ? 'cup' : 'lcup';
-    st = C.cupBuild(w, nat, kind, k === 'C' ? ss.cupName : ss.lcupName); if (!st) { ss.alive[k] = false; return; }
-    ss.cupSt = ss.cupSt || {}; ss.cupSt[kind + ':' + nat] = st; ss[k === 'C' ? 'cupKey' : 'lcupKey'] = kind + ':' + nat;
-    const e = Math.max(0, C.cupEntry(st, ss.club)); rounds.forEach((r, i) => { r.ri = Math.max(e, st.rounds.length - (rounds.length - i)); r.name = st.rounds[r.ri].n; });
-  }
-  // 내가 들어가기 전 라운드는 먼저 치른다
-  while (st.ri < rd.ri) C.cupResolve(w, st, null);
-  const cur = C.cupDraw(st); if (!cur) { ss.alive[k] = false; return; }
-  const pair = cur.pairs.find(x => x[0] === ss.club || x[1] === ss.club);
-  if (!pair) { C.cupResolve(w, st, null); if (!st.alive.includes(ss.club)) { ss.alive[k] = false; ss[k + 'Out'] = rd.name; } return; } // 부전승
-  const home = pair[0] === ss.club, oid = home ? pair[1] : pair[0], opp = w.clubs[oid];
-  const final = st.ri === st.rounds.length - 1, left = st.rounds.length - st.ri;
-  const name = k === 'C' ? ss.cupName : ss.lcupName;
-  const rec = await userMatch(S, { d: fx.d, kind: k, compKey: k === 'C' ? 'cup' : 'lcup', compName: name, stage: rd.name, opp: oid, oppName: opp.name, oppStr: opp.str, home: final ? null : home, imp: final ? 3 : left <= 3 ? 2 : opp.str > w.clubs[ss.club].str + 3 ? 1 : 0 }, hooks);
-  let win = rec.gf > rec.ga;
-  if (rec.gf === rec.ga) { win = C.koWinner(w.clubs[ss.club].str, opp.str, 0, 0) === 0; rec.pens = win ? 'W' : 'L'; }
-  rec.koWin = win;
-  const ga = home ? rec.gf : rec.ga, gb = home ? rec.ga : rec.gf;
-  C.cupResolve(w, st, { a: pair[0], b: pair[1], ga, gb, win: win ? ss.club : oid, ui: ss.matches.indexOf(rec) });
-  if (!win) { ss.alive[k] = false; ss[k + 'Out'] = rd.name; }
-  else if (final) { ss[k + 'Won'] = true; ss.alive[k] = false; }
-}
-async function doCont(S, fx, hooks) {
-  const ss = S.ss, w = S.w, cs = ss.allCont[ss.cont];
-  if (cs.userOut && cs.done) return;
-  const def = C.COMPS[ss.cont];
-  if (fx.r < cs.phaseN) {
-    if (cs.userOut) return;
-    const [oid, h] = cs.opp[ss.club][fx.r] || [];
-    if (!oid) { if (fx.r === cs.phaseN - 1) finishPhase(S, cs); return; }
-    const oc = w.clubs[oid];
-    const rec = await userMatch(S, { d: fx.d, kind: 'E', compKey: 'cont', compName: cs.name, stage: '리그 페이즈', opp: oid, oppName: oc.name, oppStr: oc.str, home: h, imp: oc.str > w.clubs[ss.club].str + 2 ? 2 : 1 }, hooks);
-    const ui = ss.matches.indexOf(rec);
-    if (h) C.addResult(cs.table, ss.club, oid, rec.gf, rec.ga, ui); else C.addResult(cs.table, oid, ss.club, rec.ga, rec.gf, ui);
-    if (fx.r === cs.phaseN - 1) finishPhase(S, cs);
-    return;
-  }
-  // 녹아웃
-  let j = fx.r - cs.phaseN, ri = 0;
-  for (; ri < cs.rounds.length; ri++) { const n = cs.rounds[ri][1] ? 2 : 1; if (j < n) break; j -= n; }
-  const rd = cs.rounds[ri]; if (!rd) return;
-  if (!cs.phaseDone && def.phase === 0 && ri === 0) { cs.ko = [cs.teams.slice()]; cs.phaseDone = true; }
-  if (!cs.phaseDone) finishPhase(S, cs);
-  if (j === 0) drawKO(S, cs, ri);
-  const tie = cs.ties[ri] && cs.ties[ri].find(t => t[0] === ss.club || t[1] === ss.club);
-  if (!tie) { if (j === 0 || !rd[1]) resolveOthers(S, cs, ri); return; }
-  const oid = tie[0] === ss.club ? tie[1] : tie[0], oc = w.clubs[oid];
-  const final = !rd[1];
-  const rec = await userMatch(S, { d: fx.d, kind: 'E', compKey: 'cont', compName: cs.name, stage: rd[2] + (final ? '' : j === 0 ? ' 1차전' : ' 2차전'), opp: oid, oppName: oc.name, oppStr: oc.str, home: final ? null : (j === 0) === (tie[0] === ss.club), imp: final ? 3 : 2 }, hooks);
-  tie.agg = tie.agg || [0, 0]; tie.agg[0] += rec.gf; tie.agg[1] += rec.ga;
-  (tie.ui = tie.ui || []).push(ss.matches.indexOf(rec));
-  if (final || j === 1) {
-    let win = tie.agg[0] > tie.agg[1];
-    if (tie.agg[0] === tie.agg[1]) { win = C.koWinner(w.clubs[ss.club].str, oc.str, 0, 0) === 0; rec.pens = win ? 'W' : 'L'; }
-    rec.koWin = win; if (!final) rec.agg = tie.agg.slice();
-    tie.win = win ? ss.club : oid;
-    tie.sc = tie[0] === ss.club ? tie.agg.slice() : [tie.agg[1], tie.agg[0]]; if (tie.agg[0] === tie.agg[1]) tie.pen = 1;
-    if (!win) { cs.userOut = true; ss.contOut = rd[2]; }
-    if (final) { cs.winner = tie.win; cs.done = true; if (win) ss.contWon = true; }
-    resolveOthers(S, cs, ri);
-  }
-}
-function finishPhase(S, cs) {
-  // 사용자 경기 외 리그 페이즈 결과
-  const w = S.w, uid = S.ss.club;
-  for (const t of cs.teams) for (const [o, h] of cs.opp[t] || []) {
-    if (!h || t === uid || o === uid) continue;
-    const [a, b] = C.quickMatch(w.clubs[t].str, w.clubs[o].str, 1); C.addResult(cs.table, t, o, a, b);
-  }
-  const sorted = C.sortTable(cs.table).map(r => r.id);
-  cs.phaseRank = sorted;
-  const def = C.COMPS[cs.k];
-  if (def.playoff) { cs.direct = sorted.slice(0, 8); cs.po = sorted.slice(8, 24); }
-  else cs.direct = sorted.slice(0, def.ko);
-  cs.phaseDone = true;
-  if (!sorted.slice(0, def.playoff ? 24 : def.ko).includes(uid)) { cs.userOut = true; S.ss.contOut = '리그 페이즈'; }
-}
-function drawKO(S, cs, ri) {
-  cs.ties = cs.ties || [];
-  if (cs.ties[ri]) return;
-  const def = C.COMPS[cs.k];
-  let pool;
-  if (ri === 0 && def.playoff) pool = cs.po.slice();
-  else if (ri === (def.playoff ? 1 : 0)) pool = (cs.direct || []).concat(def.playoff && cs.ties[0] ? cs.ties[0].map(t => t.win) : []);
-  else pool = cs.ties[ri - 1].map(t => t.win);
-  if (def.phase === 0 && ri === 0) pool = cs.teams.slice(0, 16);
-  pool = shuffle(pool.filter(Boolean));
-  cs.ties[ri] = []; for (let i = 0; i + 1 < pool.length; i += 2) cs.ties[ri].push([pool[i], pool[i + 1]]);
-}
-function resolveOthers(S, cs, ri) {
-  const w = S.w;
-  for (const t of cs.ties[ri] || []) {
-    if (t.win) continue;
-    if (t[0] === S.ss.club || t[1] === S.ss.club) continue;
-    const s0 = w.clubs[t[0]].str, s1 = w.clubs[t[1]].str;
-    const single = !cs.rounds[ri][1];
-    let a = 0, b = 0;
-    if (single) { [a, b] = C.quickMatch(s0, s1, 0); t.l = [[a, b]]; } else { const m1 = C.quickMatch(s0, s1, 1), m2 = C.quickMatch(s1, s0, 1); a = m1[0] + m2[1]; b = m1[1] + m2[0]; t.l = [m1, m2]; } // t.l: 경기별 [홈 골, 원정 골] (1차전 홈 = t[0])
-    t.win = C.koWinner(s0, s1, a, b) === 0 ? t[0] : t[1];
-    t.sc = [a, b]; if (a === b) t.pen = 1;
-  }
-  if (ri === cs.rounds.length - 1) { cs.done = true; cs.winner = cs.ties[ri][0] && cs.ties[ri][0].win; }
-}
-// 사용자가 떨어진 뒤 남은 대륙 대회 결과
-function finishContAll(S) {
-  const ss = S.ss;
-  for (const k in ss.allCont) {
-    const cs = ss.allCont[k];
-    if (cs.done) continue;
-    if (!cs.phaseDone) { if (C.COMPS[k].phase) finishPhase({ w: S.w, ss: { club: k === ss.cont ? ss.club : '__' } }, cs); else cs.phaseDone = true; }
-    for (let ri = 0; ri < cs.rounds.length; ri++) { drawKO(S, cs, ri); const save = ss.club; if (k !== ss.cont) ss.club = '__'; resolveOthers(S, cs, ri); ss.club = save; }
-  }
-}
 // 국가대표 경기
 async function doNational(S, fx, hooks) {
   const ss = S.ss, p = S.p;
   if (!ss.nt) return;
   const conf = C.confOf(p.nat);
   const opps = Object.keys(ss.pools).filter(n => n !== p.nat && C.confOf(n) === conf && ss.pools[n].all.length >= 8);
-  const opp = opps.length ? pick(opps) : pick(Object.keys(ss.pools).filter(n => n !== p.nat));
+  const opp = fx.opp || (opps.length ? pick(opps) : pick(Object.keys(ss.pools).filter(n => n !== p.nat)));
   const youth = ss.nt.lvl !== 'A';
-  const myS = youth ? ss.ntStr - 14 : ss.ntStr, oS = (youth ? -14 : 0) + C.nationStrength(ss.pools[opp]) + N(0, 1.5);
+  const myS = youth ? ss.ntStr - 14 : ss.ntStr, oS = (youth ? -14 : 0) + (fx.oppStr != null ? fx.oppStr : ss.pools[opp] ? C.nationStrength(ss.pools[opp]) : 60) + N(0, 1.5);
   const label = youth ? `${C.natName(p.nat)} ${ss.nt.lvl}` : C.natName(p.nat);
   const save = ss.role; ss.role = '__nt';
   const sel0 = { start: R() < ss.nt.start, minutes: 0 };
   ss.role = save;
   // 국가대표는 별도 출전 판정
   const inj = ss.inj > 0;
-  const rec = { d: fx.d, comp: youth ? 'ntY' : 'nt', compName: youth ? `${ss.nt.lvl} 대표팀` : 'A매치', stage: fx.r >= 8 ? '친선전' : (fx.r % 2 ? '예선' : '네이션스리그'), opp, oppName: C.natName(opp) + (youth ? ` ${ss.nt.lvl}` : ''), home: R() < .5, natTeam: label, gf: 0, ga: 0, played: false };
-  const [lamT, lamO] = C.lambdas(myS, oS, rec.home ? 1 : -1);
+  const rec = { d: fx.d, comp: youth ? 'ntY' : 'nt', compName: fx.compName || (youth ? `${ss.nt.lvl} 대표팀` : 'A매치'), stage: fx.stage || (youth ? '친선전' : '친선전'), opp, oppName: C.natName(opp) + (youth ? ` ${ss.nt.lvl}` : ''), home: fx.home !== undefined ? fx.home : R() < .5, natTeam: label, gf: 0, ga: 0, played: false };
+  const [lamT, lamO] = C.lambdas(myS, oS, rec.home ? 1 : rec.home === null ? 0 : -1);
   if (!inj && (sel0.start || R() < .55)) {
     const minutes = sel0.start ? (R() < .65 ? 90 : rint(60, 88)) : rint(10, 35);
     const r = playerMatch(p, { lamT, lamO, minutes, start: sel0.start, sT: myS, sO: oS, penTaker: ss.penTaker && sel0.start });
@@ -684,57 +513,9 @@ async function doNational(S, fx, hooks) {
   ss.matches.push(rec);
   if (C.extras) C.extras.onMatch(S, rec);
   if (hooks && hooks.match) await hooks.match(rec);
+  return rec;
 }
-// 여름 국제 대회 (시즌 종료 후)
-function summerTournament(S) {
-  const ss = S.ss, p = S.p, y = ss.year + 1;
-  if (!ss.nt || ss.nt.lvl !== 'A') return null;
-  const conf = C.confOf(p.nat);
-  let name = null, big = false;
-  if ((y - 2026) % 4 === 0 && y > 2026) { name = 'FIFA 월드컵'; big = true; }
-  else { const ct = C.CONT_TOURN && C.CONT_TOURN[conf]; const t = { UEFA: ['UEFA 유로', 0], CONMEBOL: ['코파 아메리카', 0], AFC: ['AFC 아시안컵', 1], CAF: ['아프리카 네이션스컵', 1], CONCACAF: ['골드컵', 1] }[conf]; if (t && (y % 2 === t[1])) { if (t[1] === 0 && (y - 2028) % 4 === 0) name = t[0]; else if (t[1] === 1) name = t[0]; } }
-  if (!name) return null;
-  // 본선 진출 여부
-  const field = Object.keys(ss.pools).filter(n => ss.pools[n].all.length >= 8 && (big || C.confOf(n) === conf)).map(n => [n, C.nationStrength(ss.pools[n])]).sort((a, b) => b[1] - a[1]);
-  const size = big ? 48 : conf === 'UEFA' ? 24 : 16;
-  const myRank = field.findIndex(f => f[0] === p.nat);
-  if (myRank < 0) return null;
-  const qualP = myRank < size * .6 ? .97 : myRank < size ? .75 : myRank < size * 1.4 ? .3 : .05;
-  const T = { name, y, matches: [], stage: '예선 탈락', won: false };
-  if (R() > qualP) return T;
-  const stages = big ? ['조별리그', '조별리그', '조별리그', '32강', '16강', '8강', '4강', '결승'] : size === 24 ? ['조별리그', '조별리그', '조별리그', '16강', '8강', '4강', '결승'] : ['조별리그', '조별리그', '조별리그', '8강', '4강', '결승'];
-  const top = field.slice(0, size);
-  let groupPts = 0, d0 = day(y, 6, 12);
-  for (let i = 0; i < stages.length; i++) {
-    const st = stages[i], ko = st !== '조별리그';
-    if (ko && i === 3 && groupPts < (big ? 3 : 4) && !(groupPts >= 3 && R() < .5)) { T.stage = '조별리그 탈락'; return T; }
-    const opp = ko ? wpick(top.filter(f => f[0] !== p.nat), f => Math.exp((f[1] - 75) * (i >= stages.length - 3 ? .25 : .08))) : pick(top.filter(f => f[0] !== p.nat));
-    const fakeFx = { d: d0 + i * 4, k: 'N', r: 99 };
-    const before = ss.matches.length;
-    const nt0 = ss.nt; ss.nt = { lvl: 'A', start: nt0.start };
-    // 대회 경기
-    const myS = ss.ntStr, oS = opp[1] + N(0, 1);
-    const [lamT, lamO] = C.lambdas(myS, oS, 0);
-    const rec = { d: fakeFx.d, comp: 'nt', compName: name, stage: st, opp: opp[0], oppName: C.natName(opp[0]), home: null, natTeam: C.natName(p.nat), gf: 0, ga: 0, played: false };
-    if (R() < nt0.start + .2) {
-      const minutes = R() < .7 ? 90 : rint(60, 88);
-      const r = playerMatch(p, { lamT, lamO, minutes, start: true, sT: myS, sO: oS, penTaker: ss.penTaker });
-      Object.assign(rec, { gf: r.gf, ga: r.ga, st: r.st, shots: r.shots, played: true, start: true, min: minutes });
-      const res = rec.gf > rec.ga ? 1 : rec.gf < rec.ga ? -1 : 0;
-      rec.rating = matchRating(p, rec.st, res); rec.st.ratingSum = rec.rating; rec.st.rated = 1;
-      if (res > 0) rec.st.wins = 1; else if (res < 0) rec.st.losses = 1; else rec.st.draws = 1;
-    } else { const [a, b] = C.quickMatch(myS, oS, 0); rec.gf = a; rec.ga = b; rec.why = '미출전'; }
-    ss.matches.push(rec); T.matches.push(rec);
-    if (C.extras) C.extras.onMatch(S, rec);
-    if (!ko) { groupPts += rec.gf > rec.ga ? 3 : rec.gf === rec.ga ? 1 : 0; continue; }
-    let win = rec.gf > rec.ga; if (rec.gf === rec.ga) { win = R() < 1 / (1 + Math.exp(-(myS - oS) * .06)); rec.pens = win ? 'W' : 'L'; }
-    rec.koWin = win;
-    if (!win) { T.stage = st; return T; }
-    if (st === '결승') { T.stage = '우승'; T.won = true; return T; }
-  }
-  return T;
-}
-C.summerTournament = summerTournament;
+C.doNational = doNational; C.doYouth = doYouth;
 
 // ---------- 시즌 종료 ----------
 function compAgg(ms) {
@@ -760,51 +541,25 @@ C.avgRating = avgRating;
 
 function finishSeason(S) {
   const ss = S.ss, w = S.w, p = S.p;
-  // 다른 리그 전부 시뮬
-  const tables = {};
-  ss.lgM = {};
-  ss.mx = C.MD ? C.MD.newStore(ss.label, ss.year) : null; // 이번 시즌 경기 기록 (득점자·카드·라인업)
-  for (const id in w.lg) {
-    const lg = w.lg[id];
-    const raw = ss.tables[id] || C.simLeague(w, lg);
-    ss.lgM[id] = raw._m || [];
-    tables[id] = C.sortTable(raw);
-  }
-  ss.final = tables;
-  finishContAll(S);
-  // 여름 국제 대회
-  w.hist.nt = w.hist.nt || {}; w.hist.cup = w.hist.cup || {};
-  ss.tourn = C.simIntl ? C.simIntl(S) : summerTournament(S);
-  try { if (C.archiveSeason) C.archiveSeason(S, tables); } catch (e) { console.error('archive', e); }
-  // 기록
-  const lg = leagueOf(S, ss.club);
-  ss.lgId = lg ? lg.id : null;
-  const myLgPos = lg ? tables[lg.id].findIndex(r => r.id === ss.club) + 1 : 0;
-  ss.lgPos = myLgPos; ss.lgN = lg ? lg.clubs.length : 0;
+  ss.on = false;
+  // 내 리그 시즌 결과 (세계 달력이 시즌을 마감할 때 남긴 값)
+  const lgD = ss.lgDone;
+  const lg = lgD ? w.lg[lgD.id] : leagueOf(S, ss.club);
+  ss.lgId = lgD ? lgD.id : lg ? lg.id : null;
+  ss.lgPos = lgD ? lgD.pos : 0; ss.lgN = lgD ? lgD.n : 0;
+  ss.final = {}; if (lgD) ss.final[lgD.id] = lgD.t.map(r => ({ id: r[0], p: r[1], w: r[2], d: r[3], l: r[4], gf: r[5], ga: r[6], pts: r[7] }));
   const trophies = [];
   const cname = ss.club && w.clubs[ss.club] ? w.clubs[ss.club].name : '';
-  if (lg && myLgPos === 1) trophies.push({ t: lg.name, k: 'league', club: cname, y: ss.label });
+  if (lgD && lgD.pos === 1) trophies.push({ t: w.lg[lgD.id].name, k: 'league', club: cname, y: lgD.label });
   if (ss.CWon) trophies.push({ t: ss.cupName, k: 'cup', club: cname, y: ss.label });
   if (ss.LCWon) trophies.push({ t: ss.lcupName, k: 'lcup', club: cname, y: ss.label });
-  if (ss.contWon) trophies.push({ t: ss.allCont[ss.cont].name, k: 'cont', club: cname, y: ss.label });
-  if (ss.tourn && ss.tourn.won) trophies.push({ t: ss.tourn.name, k: 'nt', club: C.natName(p.nat), y: String(ss.year + 1) });
+  if (ss.contWon && ss.cont) trophies.push({ t: C.COMPS[ss.cont].name, k: 'cont', club: cname, y: ss.label });
+  if (ss.tourn && ss.tourn.won) trophies.push({ t: ss.tourn.name, k: 'nt', club: C.natName(p.nat), y: String(ss.tourn.y) });
   ss.trophies = trophies;
-  // 역사 기록
-  for (const id in tables) { (w.hist.lg[id] = w.hist.lg[id] || []).push({ y: ss.label, c: tables[id][0].id }); }
-  for (const k in ss.allCont) { const cs = ss.allCont[k]; if (cs.winner) (w.hist.cont[k] = w.hist.cont[k] || []).push({ y: ss.label, c: cs.winner }); }
-  // 지난 시즌 순위 저장 (대륙 대회 진출용)
-  for (const id in tables) w.last[id] = tables[id].map(r => r.id);
-  // 명성 변화
-  const resAdj = {};
-  for (const id in tables) { const t = tables[id]; if (w.lg[id].tier === 1) { resAdj[t[0].id] = (resAdj[t[0].id] || 0) + .6; } }
-  for (const k in ss.allCont) { const cs = ss.allCont[k]; if (cs.winner) resAdj[cs.winner] = (resAdj[cs.winner] || 0) + (C.COMPS[k].tier === 1 ? 1 : .4); }
-  ss.promo = C.applyPromotion(w, tables);
-  for (const id in ss.promo) resAdj[id] = (resAdj[id] || 0) + ss.promo[id];
-  ss.resAdj = resAdj;
+  ss.promo = ss.promo ? { [ss.club]: ss.promo } : null;
   return ss;
 }
 C.finishSeason = finishSeason;
-C.setupCont = setupCont;
 // 팀 내 평점 순위: 동료들의 시즌 평점은 능력치·팀 성적으로 추정 (시즌 동안 고정된 시드)
 function teamRank(S, ssArg) {
   const ss = ssArg || S.ss, w = S.w, c = w.clubs[ss.club];
@@ -816,6 +571,15 @@ function teamRank(S, ssArg) {
       const all = ss.myAgg.filter(x => x.apps >= 3).map(x => x.id === 'ME' ? { n: S.p.name, pos: S.p.pos, r: x.r, apps: x.apps, me: true } : { n: C.MD.nameOf(x.id), pos: x.pos, r: x.r, apps: x.apps, pid: x.id[0] === '~' ? '' : x.id }).sort((a, b) => b.r - a.r);
       return { rank: all.findIndex(x => x.me) + 1, n: all.length, myR: me.r, top: all.slice(0, 5), final: 1, basis: '리그 경기 기록 (3경기 이상 출전)' };
     }
+  }
+  // 시즌 중: 세계 달력의 리그 경기 기록(지금까지)으로 집계
+  const LS = S.w.cal && ss.lgId && S.w.cal.lg[ss.lgId], hh = LS && S.w.cal.h[LS.k];
+  if (hh && hh.agg && !ssArg) {
+    const list = [], posOf = {}; for (const e of (S.w.clubs[ss.club].sq || [])) posOf[String(e[0])] = e[1];
+    for (const pid in hh.agg) { const a = hh.agg[pid]; if (C.cidOf(S.w, a[0]) !== ss.club || a[1] < 3) continue; const r = +(a[8] / 10 / a[1]).toFixed(2);
+      list.push(pid === 'ME' ? { n: S.p.name, pos: S.p.pos, r, apps: a[1], me: true } : { n: C.MD.nameOf(pid), pos: posOf[pid] || (S.w.ps && S.w.ps[pid] && S.w.ps[pid].pos) || '', r, apps: a[1], pid: pid[0] === '~' ? '' : pid }); }
+    const me = list.find(x => x.me);
+    if (me) { list.sort((a, b) => b.r - a.r); return { rank: list.indexOf(me) + 1, n: list.length, myR: me.r, top: list.slice(0, 5), basis: '이번 시즌 리그 경기 기록 (3경기 이상 출전, 진행 중)' }; }
   }
   const ms = ss.matches.filter(m => !['youth', 'nt', 'ntY'].includes(m.comp));
   const mine = ms.filter(m => m.played && m.rating);

@@ -14,7 +14,7 @@ const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const b62 = n => { let s = ''; do { s = B62[n % 62] + s; n = Math.floor(n / 62); } while (n > 0); return s; };
 const u62 = s => { let n = 0; for (const ch of s) n = n * 62 + B62.indexOf(ch); return n; };
 MD.b62 = b62; MD.u62 = u62;
-const pix = (st, id) => { st._pm = st._pm || new Map(); let i = st._pm.get(id); if (i == null) { i = st.P.length; st.P.push(id); st._pm.set(id, i); } return i; };
+const pix = (st, id) => { if (!(st._pm instanceof Map)) { st._pm = new Map(); st.P.forEach((x, i) => st._pm.set(x, i)); Object.defineProperty(st, '_pm', { enumerable: false, writable: true, value: st._pm }); } let i = st._pm.get(id); if (i == null) { i = st.P.length; st.P.push(id); st._pm.set(id, i); } return i; };
 MD.nameOf = (id, S) => {
   id = String(id);
   if (id === 'ME') return S && S.p ? S.p.name : '나';
@@ -28,12 +28,17 @@ const GRP = { GK: 'G', CB: 'D', LB: 'D', RB: 'D', CDM: 'M', CM: 'M', CAM: 'M', L
 const NEED = { G: 1, D: 4, M: 3, A: 3 };
 // 득점·도움·카드 가중치 (역할별)
 const GW = { ST: 1, W: .5, AM: .42, CM: .17, DM: .07, FB: .06, CB: .1, GK: 0 };
-const AW = { ST: .42, W: .7, AM: .8, CM: .45, DM: .2, FB: .34, CB: .07, GK: .02 };
+const AW = { ST: .42, W: .7, AM: .8, CM: .45, DM: .2, FB: .34, CB: .07, GK: .006 };
+// 골키퍼는 득점 가중치 0 (예전에는 0이 '없음'으로 처리돼 기본값 .05가 붙던 버그가 있었다)
+const gw = pos => { const r = C.ROLE[pos]; return r in GW ? GW[r] : .05; };
+const aw = pos => { const r = C.ROLE[pos]; return r in AW ? AW[r] : .1; };
+// 평점 포지션 보정: 공격수만 평점이 높게 나오지 않도록 (수비·미드필더는 골 대신 수비 기여)
+const ROLEB = { GK: .06, CB: .12, FB: .1, DM: .16, CM: .11, AM: .03, W: -.02, ST: -.07 };
 const CW = { CB: 1.4, DM: 1.5, FB: 1.2, CM: 1.1, AM: .8, W: .75, ST: .85, GK: .3 };
 // side: { key, sq: [{ id, n, pos, ovr }] }
 MD.clubSide = (w, cid, y) => {
   const c = w.clubs[cid]; if (!c) return { key: cid, sq: [] };
-  const sq = C.squadOf(w, c, y).map(x => ({ id: x.id ? String(x.id) : '~' + cid + '~' + x.n, n: x.n, pos: x.pos, ovr: x.ovr }));
+  const sq = C.squadOf(w, c, y).map(x => ({ id: x.id ? String(x.id) : '~' + cid + '~' + x.n, n: x.n, pos: x.pos, ovr: x.ovr, yb: x.yb || 0 }));
   return { key: cid, sq };
 };
 MD.natSide = (w, nat, pools, y) => {
@@ -46,8 +51,9 @@ MD.natSide = (w, nat, pools, y) => {
   return { key: nat, sq };
 };
 // 선발·교체 (조금씩 로테이션)
-function lineup(sq, excludeId) {
-  const pool = sq.filter(x => x.id !== excludeId).map(x => ({ x, s: x.ovr + N(0, 2.2) }));
+// yb: 유망주·임대 복귀 선수에게 주는 출전 기회 가산 (컵 경기에서는 더 크게, 로테이션도 더 많이)
+function lineup(sq, excludeId, cup) {
+  const pool = sq.filter(x => x.id !== excludeId).map(x => ({ x, s: x.ovr + N(0, cup ? 3.6 : 2.2) + (x.yb || 0) * (cup ? 1.8 : 1) }));
   pool.sort((a, b) => b.s - a.s);
   const xi = [], used = new Set(), cnt = { G: 0, D: 0, M: 0, A: 0 };
   for (const g of ['G', 'D', 'M', 'A']) for (const o of pool) { if (cnt[g] >= NEED[g]) break; if (!used.has(o) && (GRP[o.x.pos] || 'M') === g) { xi.push(o.x); used.add(o); cnt[g]++; } }
@@ -58,12 +64,12 @@ function lineup(sq, excludeId) {
 
 // ---------- 경기 한 개 ----------
 // u: 내 선수가 뛴 경기면 { side: 0|1, rec } (rec = 실제 경기 기록)
-MD.play = function (st, A, B, ga, gb, u) {
-  const sides = [A, B], goals = [ga, gb], out = [];
+MD.play = function (st, A, B, ga, gb, u, opt) {
+  const sides = [A, B], goals = [ga, gb], out = [], cup = !!(opt && opt.cup);
   const P = [[], []]; // 출전 선수: { id, pos, ovr, on, off, start, g, a, y, r, ri }
   for (let s = 0; s < 2; s++) {
     const me = u && u.side === s && u.rec && u.rec.played ? u.rec : null;
-    const L = lineup(sides[s].sq, null);
+    const L = lineup(sides[s].sq, null, cup);
     let xi = L.xi.slice(), bench = L.bench.slice();
     if (me) { // 내 선수를 명단에 넣는다: 선발이면 같은 포지션 선수 하나를 빼고, 교체면 교체 1명 자리를 쓴다
       const myPos = me.pos || u.pos || 'CM';
@@ -108,18 +114,18 @@ MD.play = function (st, A, B, ga, gb, u) {
     for (let i = 0; i < n && needA > 0; i++) if (!mineG.has(i) && !mineA.has(i)) { mins[i] = meP.on + Math.floor(R() * Math.max(1, meP.off - meP.on)); mineA.add(i); needA--; }
     for (let i = 0; i < n; i++) {
       const m = Math.max(1, Math.min(90, mins[i]));
-      if (mineG.has(i)) { meP.g++; const asst = R() < .7 ? pickW(onAt(s, m).filter(x => x !== meP), x => AW[C.ROLE[x.pos]] || .1) : null; if (asst) asst.a++; ev.push(['g', m, s, 'ME', asst ? asst.id : null]); continue; }
+      if (mineG.has(i)) { meP.g++; const asst = R() < .7 ? pickW(onAt(s, m).filter(x => x !== meP), x => aw(x.pos)) : null; if (asst) asst.a++; ev.push(['g', m, s, 'ME', asst ? asst.id : null]); continue; }
       const on = onAt(s, m).filter(x => x.id !== 'ME' || !me);
       const og = !mineA.has(i) && R() < .025;
       if (og) { const d = pickW(onAt(1 - s, m).filter(x => ['CB', 'FB', 'GK', 'DM'].includes(C.ROLE[x.pos])), () => 1); if (d) { ev.push(['o', m, s, d.id, null]); continue; } }
       const pen = !mineA.has(i) && R() < .09;
       const top = Math.max(...on.map(x => x.ovr), 60);
-      const scorer = pen ? on.filter(x => C.ROLE[x.pos] !== 'GK').sort((a, b) => (GW[C.ROLE[b.pos]] * 10 + b.ovr) - (GW[C.ROLE[a.pos]] * 10 + a.ovr))[0] : pickW(on, x => (GW[C.ROLE[x.pos]] || .05) * Math.exp((x.ovr - top) * .1));
+      const scorer = pen ? on.filter(x => C.ROLE[x.pos] !== 'GK').sort((a, b) => (gw(b.pos) * 10 + b.ovr) - (gw(a.pos) * 10 + a.ovr))[0] : pickW(on.filter(x => C.ROLE[x.pos] !== 'GK'), x => gw(x.pos) * Math.exp((x.ovr - top) * .1));
       if (!scorer) continue;
       scorer.g++;
       let asst = null;
       if (mineA.has(i)) asst = meP;
-      else if (!pen && R() < .7) asst = pickW(onAt(s, m).filter(x => x !== scorer && x.id !== 'ME'), x => (AW[C.ROLE[x.pos]] || .1) * Math.exp((x.ovr - top) * .08));
+      else if (!pen && R() < .7) asst = pickW(onAt(s, m).filter(x => x !== scorer && x.id !== 'ME'), x => aw(x.pos) * Math.exp((x.ovr - top) * .08));
       if (asst) asst.a++;
       ev.push([pen ? 'p' : 'g', m, s, scorer.id, asst ? asst.id : null]);
     }
@@ -133,13 +139,19 @@ MD.play = function (st, A, B, ga, gb, u) {
   }
   ev.sort((a, b) => a[1] - b[1]);
   // 평점 (경기 결과·골·도움·실점·카드 반영). 내 선수는 실제 경기 평점 사용
+  // 평점 기준은 이 경기에 나온 두 팀 선발 평균 OVR (리그 수준에 맞춘 상대 평가: 하부 리그도 평균 평점이 1부와 비슷)
+  const xiAll = P[0].concat(P[1]).filter(x => x.start && x.id !== 'ME');
+  const ref = xiAll.length ? xiAll.reduce((a, x) => a + x.ovr, 0) / xiAll.length : 70;
   for (let s = 0; s < 2; s++) {
     const res = goals[s] > goals[1 - s] ? 1 : goals[s] < goals[1 - s] ? -1 : 0, conc = goals[1 - s];
     for (const x of P[s]) {
-      if (x.id === 'ME') { x.rt = +(u.rec.rating || 6.5).toFixed(1); continue; }
-      const role = C.ROLE[x.pos], def = ['GK', 'CB', 'FB'].includes(role);
       const mm = x.off - x.on;
-      let r = 6.62 + (x.ovr - 72) * .035 + res * .25 + x.g * .75 + x.a * .45 + (def && conc === 0 && mm >= 60 ? .3 : 0) - (def || role === 'DM' ? conc * .09 : 0) - x.y * .15 - x.r * 1.2 + N(0, .32);
+      x.cs = conc === 0 && mm >= 60 ? 1 : 0;
+      if (x.id === 'ME') { x.rt = +(u.rec.rating || 6.5).toFixed(1); continue; }
+      const role = C.ROLE[x.pos];
+      const csB = conc === 0 && mm >= 60 ? ({ GK: .45, CB: .32, FB: .26, DM: .16, CM: .06 }[role] || 0) : 0;
+      const concP = conc * ({ GK: .13, CB: .085, FB: .07, DM: .04, CM: .02 }[role] || 0);
+      let r = 6.6 + (ROLEB[role] || 0) + (x.ovr - ref) * .033 + res * .22 + x.g * .55 + x.a * .35 + csB - concP - x.y * .15 - x.r * 1.2 + N(0, .3);
       if (!x.start) r = 6.6 + (r - 6.6) * .6;
       x.rt = Math.round(clamp(r, 4.5, 10) * 10) / 10;
     }
@@ -149,7 +161,7 @@ MD.play = function (st, A, B, ga, gb, u) {
   const evS = ev.map(e => `${e[0]}${e[1]}.${e[2]}.${enc(e[3])}${e[4] != null ? '.' + enc(e[4]) : ''}`).join('|');
   // 실제 선수가 한 명도 없는 하부 구단끼리의 경기는 출전 명단을 남기지 않는다 (득점·카드만)
   const real = sd => sd.sq.some(x => x.id[0] !== '~') || (u && u.rec);
-  const lnS = real(A) || real(B) ? P.map(list => list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on)).join(',')).join('/') : '';
+  const lnS = real(A) || real(B) ? P.map(list => list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on + (x.off < 90 ? '-' + x.off : ''))).join(',')).join('/') : '';
   return { ev: evS, ln: lnS, P };
 };
 function lastEv(ev, s, id) { let m = 0; for (const e of ev) if (e[2] === s && (e[3] === id || e[4] === id)) m = Math.max(m, e[1]); return m; }
@@ -159,8 +171,8 @@ function pickW(list, wf) { let t = 0; const ws = list.map(x => { const v = Math.
 MD.addAgg = (agg, side, list) => {
   for (const x of list) {
     const k = x.id;
-    const a = agg[k] || (agg[k] = { id: k, club: side, pos: x.pos, ovr: x.ovr, apps: 0, starts: 0, min: 0, g: 0, a: 0, y: 0, r: 0, rs: 0 });
-    a.apps++; if (x.start) a.starts++; a.min += Math.max(0, x.off - x.on); a.g += x.g; a.a += x.a; a.y += x.y; a.r += x.r; a.rs += x.rt;
+    const a = agg[k] || (agg[k] = { id: k, club: side, pos: x.pos, ovr: x.ovr, apps: 0, starts: 0, min: 0, g: 0, a: 0, y: 0, r: 0, rs: 0, cs: 0 });
+    a.club = side; a.apps++; if (x.start) a.starts++; a.min += Math.max(0, x.off - x.on); a.g += x.g; a.a += x.a; a.y += x.y; a.r += x.r; a.rs += x.rt; a.cs = (a.cs || 0) + (x.cs || 0);
   }
 };
 
@@ -175,7 +187,7 @@ MD.packL = (rows, per, live) => {
 MD.leagueRows = (w, L) => {
   if (!L || !L.s) return [];
   const cid = t => /^[0-9A-Za-z]+$/.test(t) && !t.startsWith('OPP') ? (w.cix || [])[u62(t)] : t;
-  return L.s.split(';').map((t, i) => { const [a, b, ga, gb] = t.split('.'); return { i, r: Math.floor(i / (L.p || 1)), a: cid(a), b: cid(b), ga: +ga, gb: +gb, det: !!((L.l && L.l[i]) || (L.e && L.e[i]) || L.e) }; });
+  return L.s.split(';').map((t, i) => { const [a, b, ga, gb] = t.split('.'); return { i, r: L.r ? L.r[i] : Math.floor(i / (L.p || 1)), d: L.d ? L.d[i] : null, a: cid(a), b: cid(b), ga: +ga, gb: +gb, det: !!((L.l && L.l[i]) || (L.e && L.e[i]) || L.e) }; });
 };
 MD.leagueMatch = (st, L, i) => MD.decode(st, [0, 0, 0, 0, 0, L.e ? L.e[i] : '', L.l ? L.l[i] : '']);
 // ---------- 해석 (화면용) ----------
@@ -184,9 +196,9 @@ MD.decode = (st, m) => {
   const id = s => st.P[u62(s)];
   const ev = !m[5] ? [] : m[5].split('|').map(t => { const k = t[0], [mn, sd, p1, p2] = t.slice(1).split('.'); return { k, m: +mn, s: +sd, p: id(p1), a: p2 != null ? id(p2) : null }; });
   const ln = !m[6] ? null : m[6].split('/').map(side => side ? side.split(',').map(t => {
-    const mt = /^([0-9A-Za-z]+)([0-9A-Za-z])([+-]\d+)?$/.exec(t); if (!mt) return null;
+    const mt = /^([0-9A-Za-z]+)([0-9A-Za-z])([+-]\d+)?(-\d+)?$/.exec(t); if (!mt) return null;
     const sub = mt[3] && mt[3][0] === '+', v = mt[3] ? +mt[3].slice(1) : 0;
-    return { id: id(mt[1]), start: !sub, on: sub ? v : 0, off: sub ? 90 : (mt[3] ? v : 90), rt: (B62.indexOf(mt[2]) + 45) / 10 };
+    return { id: id(mt[1]), start: !sub, on: sub ? v : 0, off: sub ? (mt[4] ? +mt[4].slice(1) : 90) : (mt[3] ? v : 90), rt: (B62.indexOf(mt[2]) + 45) / 10 };
   }).filter(Boolean) : []);
   return { ev, ln };
 };

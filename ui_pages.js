@@ -487,7 +487,7 @@ function totVal(t, k) {
 }
 function allTotalsSec() {
   const s = S(), groups = clubGroups();
-  const scopes = [['pro', '프로 통산 (1군·임대)'], ['youth', '유스 통산 (U18·U21)'], ['nt', 'A대표팀 통산'], ['ntY', '연령별 대표팀 통산'], ['all', '전체 (유스·국가대표 포함)']].concat(groups.map(g => [g.key, `${g.name} · ${g.kind}`]));
+  const scopes = [['pro', '프로 통산 (1군·임대)'], ['youth', '유스 통산 (U18·U21)'], ['nt', 'A대표팀 통산'], ['ntY', '연령별 대표팀 통산'], ['all', '클럽 전체 (1군·임대·유스)']].concat(groups.map(g => [g.key, `${g.name} · ${g.kind}`]));
   let scope = st.totScope && scopes.some(x => x[0] === st.totScope) ? st.totScope : 'pro';
   let mode = 'tot';
   const sec = h('div', { class: 'sec', id: 'allTotals' });
@@ -498,7 +498,7 @@ function allTotalsSec() {
     if (scope === 'youth') return U.youthTotals();
     if (scope === 'nt') return U.ntTotals('A');
     if (scope === 'ntY') return U.ntTotals('Y');
-    if (scope === 'all') { const t = C.blankStats(); C.addStats(t, U.careerTotals()); C.addStats(t, U.youthTotals()); C.addStats(t, U.ntTotals()); return t; }
+    if (scope === 'all') { const t = C.blankStats(); C.addStats(t, U.careerTotals()); C.addStats(t, U.youthTotals()); return t; }
     const g = groups.find(x => x.key === scope); return g ? g.st : C.blankStats();
   };
   const draw = () => {
