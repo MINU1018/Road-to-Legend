@@ -326,25 +326,22 @@ function contCreate(w, k, sy, parts) {
   const nPh = Math.min(def.phase, sch.ph.length);
   cs.md = [];
   if (nPh) {
-    const opp = {}; for (const t of teams) opp[t] = [];
-    for (const t of shuffle(teams.slice())) {
-      let guard = 0;
-      while (opp[t].length < nPh && guard++ < 220) {
-        const o = pick(teams);
-        if (o === t || opp[t].includes(o) || opp[o].length >= nPh) continue;
-        if (w.clubs[o].nat === w.clubs[t].nat && guard < 140) continue;
-        opp[t].push(o); opp[o].push(t);
-      }
+    // 원형(라운드 로빈) 방식으로 경기일마다 완전한 짝을 만든 뒤 그중 nPh개 라운드를 쓴다: 모든 팀이 경기일마다 정확히 한 경기, 상대는 모두 다르다
+    const T0 = teams.slice(); if (T0.length % 2) T0.push(null);
+    const n = T0.length, nr = n - 1;
+    let best = null, bestBad = 1e9;
+    for (let tries = 0; tries < 40 && bestBad > 0; tries++) {
+      const o = shuffle(T0.slice()), rs = shuffle(Array.from({ length: nr }, (_, i) => i)).slice(0, Math.min(nPh, nr));
+      let bad = 0;
+      const md = rs.map((r, ri) => {
+        const arr = [o[0]].concat(o.slice(1).map((_, i) => o[1 + (i + r) % nr]));
+        const out = [];
+        for (let i = 0; i < n / 2; i++) { const a = arr[i], b = arr[n - 1 - i]; if (a == null || b == null) continue; if (w.clubs[a].nat === w.clubs[b].nat) bad++; out.push((i + ri) % 2 ? [a, b] : [b, a]); }
+        return out;
+      });
+      if (bad < bestBad) { bestBad = bad; best = md; }
     }
-    const pairs = []; const seen = new Set();
-    for (const t of teams) for (const o of opp[t]) { const key = t < o ? t + '|' + o : o + '|' + t; if (seen.has(key)) continue; seen.add(key); pairs.push(R() < .5 ? [t, o] : [o, t]); }
-    for (let i = 0; i < nPh; i++) cs.md.push([]);
-    const busy = Array.from({ length: nPh }, () => new Set());
-    for (const p of shuffle(pairs)) {
-      let i = busy.findIndex(b => !b.has(p[0]) && !b.has(p[1]));
-      if (i < 0) i = busy.reduce((bi, b, j) => b.size < busy[bi].size ? j : bi, 0);
-      busy[i].add(p[0]); busy[i].add(p[1]); cs.md[i].push(p);
-    }
+    cs.md = best;
   }
   const nKO = Math.log2(def.ko);
   cs.rounds = (def.playoff ? sch.kd : sch.kd.filter(r => r[2] !== '플레이오프').slice(-nKO)).map(r => [dd(r[0]), r[1] ? dd(r[1]) : null, r[2]]);

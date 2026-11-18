@@ -71,7 +71,7 @@ U.followManager = function (s) {
     ...f.club.map(id => w.clubs[id] ? chip('club', id, w.clubs[id].name, crest(w.clubs[id], 14)) : null),
     ...f.pl.map(pid => chip('pl', pid, C.MD.nameOf(pid))),
     ...f.nat.map(n => chip('nat', n, `${C.natName(n)} 대표팀`, U.natCrest(n, 14)))].filter(Boolean);
-  const sec = h('div', { class: 'sec' }, h('h3', null, '팔로우', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 경기·달력·뉴스에 팔로우한 것만 먼저 보여줍니다. 구단·선수·대표팀 화면의 ☆ 버튼으로도 추가')),
+  const sec = h('div', { class: 'sec' }, h('h3', null, '팔로우'), h('div', { class: 'in mute', style: { fontSize: '12px', paddingTop: 0 } }, '경기·달력·뉴스에 팔로우한 것을 먼저 보여줍니다. 구단·선수·대표팀 화면의 ☆ 버튼으로도 추가'),
     h('div', { class: 'in chg' }, ...(items.length ? items : [h('span', { class: 'mute' }, '팔로우한 것이 없습니다')]), h('button', { class: 'btn ghost sm', onclick: () => { v.open = !v.open; U.stay(); } }, v.open ? '닫기' : '+ 추가')));
   if (v.open) {
     const lgs = Object.values(w.lg).filter(l => l.tier === 1 && BIGLG.includes(l.nation)).sort((a, b) => BIGLG.indexOf(a.nation) - BIGLG.indexOf(b.nation));
@@ -231,10 +231,10 @@ U.pages.news = function () {
   const fol = v.f === 'fol';
   const cf = FILT.find(x => x[0] === v.c) || FILT[0];
   const list = all.filter(n => (!fol || U.isFollowNews(n, s)) && (!cf[2] || cf[2].includes(n.c)));
-  root.append(h('div', { class: 'sec' }, h('div', { class: 'in', style: { display: 'grid', gap: '10px' } },
-    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' } }, h('h2', { style: { margin: 0 } }, '뉴스'), h('span', { class: 'mute', style: { fontSize: '13px' } }, w.cal ? dstr(w.cal.d) : '')),
-    h('div', { class: 'seg', style: { maxWidth: '320px' } }, h('button', { class: fol ? 'on' : '', onclick: () => { v.f = 'fol'; v.n = 60; U.stay(); } }, '팔로우'), h('button', { class: !fol ? 'on' : '', onclick: () => { v.f = 'all'; v.n = 60; U.stay(); } }, '전체')),
-    h('div', { class: 'chg' }, ...FILT.map(([k, l]) => h('button', { class: 'chip' + (v.c === k ? ' gold' : ''), style: { cursor: 'pointer', border: 0 }, onclick: () => { v.c = k; v.n = 60; U.stay(); } }, l))))));
+  root.append(U.pageHead('뉴스', '경기·이적·기록·인터뷰·가십 · 팔로우한 리그·대회·팀·선수 소식이 먼저'));
+  root.append(h('div', { class: 'nfbar' },
+    h('div', { class: 'seg', style: { maxWidth: '240px' } }, h('button', { class: fol ? 'on' : '', onclick: () => { v.f = 'fol'; v.n = 60; U.stay(); } }, '팔로우'), h('button', { class: !fol ? 'on' : '', onclick: () => { v.f = 'all'; v.n = 60; U.stay(); } }, '전체')),
+    h('div', { class: 'chg' }, ...FILT.map(([k, l]) => h('button', { class: 'chip' + (v.c === k ? ' gold' : ''), style: { cursor: 'pointer', border: 0 }, onclick: () => { v.c = k; v.n = 60; U.stay(); } }, l)))));
   if (!all.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '아직 뉴스가 없습니다. 날짜를 진행하면 경기·이적·기록 소식이 쌓입니다.'))); root.append(U.followManager(s)); return root; }
   // 헤드라인: 최근 7일 중 가장 큰 소식
   const today = w.cal ? w.cal.d : 0;

@@ -84,7 +84,7 @@ U.txPanel = function (S, opt = {}) {
   if (!win) {
     if (opt.compact) return null;
     const nx = C.txNextWindow(today);
-    return nx ? h('div', { class: 'sec' }, h('h3', null, '이적시장'), h('div', { class: 'in mute' }, `다음 이적시장: ${nx.kind === 'summer' ? '여름' : '겨울'} · ${C.fmtDateY(nx.d0)} 개장 (D-${nx.d0 - today}) ~ ${C.fmtDate(nx.d1)} 마감`)) : null;
+    return nx ? h('div', { class: 'sec' }, h('h3', null, '다음 이적시장'), h('div', { class: 'in mute' }, `${nx.kind === 'summer' ? '여름' : '겨울'} · ${C.fmtDateY(nx.d0)} 개장 (D-${nx.d0 - today}) ~ ${C.fmtDate(nx.d1)} 마감`)) : null;
   }
   const T = U.withTx(win.lbl, () => U.stay());
   if (!T && !(w.txKeys || []).includes(win.lbl)) return opt.compact ? null : h('div', { class: 'sec' }, h('h3', null, '이적시장'), h('div', { class: 'in mute' }, '이번 이적시장 기록이 없습니다.'));
@@ -149,7 +149,7 @@ U.txPanel = function (S, opt = {}) {
     const mine = done.filter(isMine).slice(0, 8);
     if (mine.length) sec.append(h('div', { class: 'in' }, h('div', { class: 'lbl', style: { marginBottom: '4px' } }, '우리 구단'), h('div', { style: { display: 'grid', gap: '3px' } }, ...mine.map(r => h('div', { class: 'txrow mine' }, h('span', { class: 'mute' }, C.fmtDate(r[10])), h('span', { class: 'lnk', onclick: () => U.openPlayer(r[0]) }, C.MD.nameOf(r[0])), h('span', { class: r[2] === opt.my ? 'good' : 'bad' }, r[2] === opt.my ? '영입' : '이적'), h('span', null, (w.clubs[r[2] === opt.my ? r[1] : r[2]] || {}).name || '자유계약'), h('span', { class: 'fee' }, r[4] ? eur(r[4]) : KIND[r[3]]))))));
   }
-  sec.append(h('div', { class: 'in' }, h('button', { class: 'btn ghost sm', onclick: () => { U.st.wv = Object.assign(U.st.wv || {}, { mode: 'tx', txl: win.lbl }); U.setTab('table'); } }, '이적시장 전체 기록')));
+  if (!opt.noLink) sec.append(h('div', { class: 'in' }, h('button', { class: 'btn ghost sm', onclick: () => U.setTab('txm') }, '이적시장 자세히 · 전체 기록')));
   return sec;
 };
 // 진행 중 속보: d일에 성사된 큰 거래를 ticker 맨 위에 붙인다

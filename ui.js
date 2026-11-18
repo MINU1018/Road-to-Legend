@@ -291,7 +291,7 @@ function render() {
   else if (scr === 'create') frag.append(viewCreate());
   else if (scr === 'academy') frag.append(viewAcademy());
   else if (scr === 'real') frag.append(viewReal());
-  else if (scr === 'settings') { frag.append(topbar(!!S && S.car && S.car.club)); frag.append(U.viewSettings()); }
+  else if (scr === 'settings') { const inG = !!(S && (S.mode === 'world' || (S.car && S.car.club))); frag.append(topbar(inG)); frag.append(inG ? h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, U.viewSettings())) : U.viewSettings()); if (inG && st.navOpen) frag.append(h('div', { class: 'drawerbg', onclick: () => { st.navOpen = false; render(); } }), sideNav(true)); }
   else if (scr === 'ach') { frag.append(topbar(false)); frag.append(U.pages.ach(true)); }
   else frag.append(viewGame());
   const y = scrollY;
@@ -422,17 +422,79 @@ function dragTabs(nav) {
   requestAnimationFrame(() => { nav.scrollLeft = tabScroll; const on = nav.querySelector('.on'); if (on) { const l = on.offsetLeft, r = l + on.offsetWidth; if (l < nav.scrollLeft) nav.scrollLeft = l - 16; else if (r > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = r - nav.clientWidth + 16; } edge(); });
   return wrap;
 }
+// ---------- 앱 틀: 위쪽 막대(날짜·검색·진행) + 왼쪽 메뉴(무리별) ----------
+const ICO = {
+  home: 'M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z', user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-8 9a8 8 0 0 1 16 0', bars: 'M5 20V10m7 10V4m7 16v-7',
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01', play: 'M8 5v14l11-7z', coin: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 4v10m-3-7h4.5a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3H15',
+  cup: 'M8 21h8m-4-4v4M6 4h12v5a6 6 0 0 1-12 0zM6 6H3v2a3 3 0 0 0 3 3m12-5h3v2a3 3 0 0 1-3 3', star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z',
+  plus: 'M12 5v14M5 12h14', news: 'M4 5h13v14H6a2 2 0 0 1-2-2zm13 3h3v9a2 2 0 0 1-2 2M8 9h5m-5 4h5', cal: 'M4 6h16v14H4zM4 10h16M9 3v5m6-5v5',
+  swap: 'M7 7h12l-3-3m3 13H5l3 3', award: 'M12 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12zm-3.5 4L7 22l5-2 5 2-1.5-3', search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 3l-4.5-4.5', menu: 'M4 7h16M4 12h16M4 17h16'
+};
+const ico = (k, sz = 18) => svg(`<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICO[k]}"/></svg>`);
+function navGroups() {
+  if (S && S.mode === 'world') return [
+    ['관전', [['wsim', '홈', 'home'], ['sched', '일정', 'cal'], ['news', '뉴스', 'news']]],
+    ['세계 축구', [['table', '대회', 'cup'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
+  return [
+    ['내 커리어', [['career', '홈', 'home'], ['profile', '선수 프로필', 'user'], ['attrs', '능력치', 'bars'], ['records', '시즌 기록', 'list'], ['mx', '경기 탐색', 'play'], ['value', '이적·가치', 'coin'], ['trophies', '트로피', 'cup'], ['ach', '도전과제', 'star'], ['inj', '부상', 'plus']]],
+    ['세계 축구', [['news', '뉴스', 'news'], ['sched', '일정', 'cal'], ['table', '대회', 'cup'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
+}
+U.navGroups = navGroups;
+const TABNAME = () => { const m = {}; for (const [, l] of navGroups()) for (const [k, n] of l) m[k] = n; return m; };
+function needsAction() { return S && ['window', 'training', 'preEvents', 'midEvents', 'mid', 'winter', 'review', 'reviewDone', 'freeYear'].includes(S.phase); }
+function sideNav(drawer) {
+  const groups = navGroups(), need = S && S.mode !== 'world' && needsAction();
+  return h('nav', { class: 'side' + (drawer ? ' drawer' : '') },
+    ...groups.map(([g, items]) => h('div', { class: 'sgrp' }, h('div', { class: 'sgl' }, g),
+      ...items.map(([k, l, ic]) => h('button', { class: 'sitem' + (tab === k ? ' on' : ''), 'data-tab': k, onclick: () => { if (busy && !st.simming) return; st.navOpen = false; scr = 'game'; U.setTab(k); } }, ico(ic), h('span', null, l), k === 'career' && need && tab !== 'career' ? h('span', { class: 'dot' }) : null)))),
+    S && S.mode !== 'world' && S.p ? h('div', { class: 'sfoot' }, h('div', null, h('span', { class: 'lbl' }, '시즌'), h('b', null, seasonLabel())), h('div', null, h('span', { class: 'lbl' }, '재산'), h('b', null, C.fmtEUR(Math.max(0, S.p.money))))) : null);
+}
+// 위쪽 검색: 선수·구단·국가대표 바로 열기
+function topSearch() {
+  const box = h('div', { class: 'tsrch' });
+  const list = h('div', { class: 'tsl' });
+  const inp = h('input', { type: 'search', placeholder: '선수·구단·대표팀 검색', 'aria-label': '검색',
+    oninput: e => { clearTimeout(box._t); box._t = setTimeout(() => draw(e.target.value), 150); },
+    onkeydown: e => { if (e.key === 'Enter') { const d = (st.db = st.db || { view: 'home', q: '' }); d.q = inp.value; d.view = 'home'; d.id = null; U.setTab('db'); } if (e.key === 'Escape') { inp.value = ''; list.replaceChildren(); } },
+    onblur: () => setTimeout(() => list.replaceChildren(), 200) });
+  const draw = q => {
+    list.replaceChildren();
+    if (!U.dbSearch || !S || (q || '').trim().length < 2) return;
+    const r = U.dbSearch(S.w, q), w = S.w, out = [], fq = U.fold(q);
+    // 이름이 검색어와 같거나 단어가 검색어로 시작하면 앞으로
+    const sc = n => { const f = U.fold(n); return f === fq ? 0 : f.split(' ').some(x => x.startsWith(fq)) ? 1 : 2; };
+    const all = [].concat(r.nats.slice(0, 4).map(n => ({ s: sc(C.natName(n)), t: 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openNat(n) }, U.natCrest(n, 18), h('span', null, `${C.natName(n)} 대표팀`), h('span', { class: 'mute' }, '국가대표')) })),
+      r.clubs.slice(0, 8).map(c => ({ s: sc(c.name), t: 1, v: c.str, el: () => h('button', { class: 'tsi', onmousedown: () => U.openClub(c.id) }, crest(c, 18), h('span', null, c.name), h('span', { class: 'mute' }, (w.lg[c.lg] || {}).name || '')) })),
+      r.players.slice(0, 20).map(x => ({ s: sc(x.n), t: 2, v: x.ovr || 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openPlayer(x.pid) }, flag(x.nat, 18), h('span', null, x.n), h('span', { class: 'mute' }, x.retired ? '은퇴' : `${x.pos} · ${x.ovr} · ${(w.clubs[x.club] || {}).short || ''}`)) })));
+    all.sort((a, b) => a.s - b.s || a.t - b.t || (b.v || 0) - (a.v || 0));
+    for (const x of all.slice(0, 10)) out.push(x.el());
+    if (!out.length) out.push(h('div', { class: 'tsi mute' }, '결과 없음'));
+    out.push(h('button', { class: 'tsi more', onmousedown: () => { const d = (st.db = st.db || { view: 'home', q: '' }); d.q = q; d.view = 'home'; d.id = null; U.setTab('db'); } }, '전체 결과 보기 ↵'));
+    list.append(...out);
+  };
+  box.append(h('span', { class: 'tsic' }, ico('search', 16)), inp, list);
+  return box;
+}
 function topbar(inGame) {
-  const tabs = [['career', '커리어'], ['profile', '선수 프로필'], ['attrs', '능력치'], ['records', '시즌 기록'], ['mx', '경기 탐색'], ['value', '이적·가치'], ['table', '리그·대회'], ['db', '선수·팀'], ['trophies', '트로피'], ['inj', '부상'], ['ach', '도전과제']];
-  tabs.splice(1, 0, ['news', '뉴스']);
-  if (S && S.mode === 'world') tabs.splice(0, tabs.length, ['wsim', '시즌 진행'], ['news', '뉴스'], ['table', '리그·대회'], ['db', '선수·팀']);
-  const needs = S && ['window', 'training', 'preEvents', 'midEvents', 'mid', 'winter', 'h1', 'h2', 'review', 'reviewDone', 'freeYear'].includes(S.phase);
-  return h('div', { class: 'top' }, h('div', { class: 'wrap' },
+  const world = S && S.mode === 'world', w = S && S.w;
+  const today = w && w.cal ? w.cal.d : null;
+  let cont = null;
+  if (inGame && S) {
+    if (world && S.wStart && U.worldNext) cont = h('button', { class: 'btn sm contb', onclick: () => { if (!busy) U.worldNext(); } }, '다음 경기일 ▸');
+    else if (!world && tab !== 'career') cont = h('button', { class: 'btn sm contb' + (needsAction() ? ' need' : ''), onclick: () => { if (!busy || st.simming) U.setTab('career'); } }, needsAction() ? '할 일 있음 ▸' : '커리어 홈 ▸');
+  }
+  return h('div', { class: 'top' }, h('div', { class: 'wrap topw' },
+    inGame ? h('button', { class: 'gear burger', 'aria-label': '메뉴', onclick: () => { st.navOpen = !st.navOpen; render(); } }, ico('menu', 20)) : null,
     h('button', { class: 'brand', onclick: () => { if (!busy) U.go('home'); }, title: '처음 화면' }, h('span', { class: 'mk' }, 'R'), h('span', { class: 't' }, 'Road to Legend')),
-    inGame ? dragTabs(h('nav', { class: 'tabs' }, ...tabs.map(([k, l]) => h('button', { class: tab === k ? 'on' : '', 'data-tab': k, onclick: () => { if (!busy || st.simming) U.setTab(k); } }, l, k === 'career' && needs && tab !== 'career' ? h('span', { class: 'dot' }) : null)))) : h('div', { style: { flex: 1 } }),
-    inGame && S && S.mode !== 'world' ? h('div', { class: 'topinfo' }, h('span', { class: 'hide-s' }, '시즌 ', h('b', null, seasonLabel())), h('span', { class: 'hide-s' }, '재산 ', h('b', null, C.fmtEUR(Math.max(0, S.p.money))))) : null,
+    inGame ? h('span', { class: 'tpage' }, TABNAME()[tab] || '') : null,
+    h('div', { style: { flex: 1 } }),
+    inGame && today != null ? h('span', { class: 'tdate' }, `${C.fmtDateY(today)} (${'일월화수목금토'[C.toDate(today).getUTCDay()]})`) : null,
+    inGame ? topSearch() : null,
+    cont,
     h('button', { class: 'gear', title: '설정', 'aria-label': '설정', onclick: () => { if (!busy) U.go('settings'); } }, svg('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'))));
 }
+// 모든 최상위 화면의 머리: 제목 · 설명 · 오른쪽 동작
+U.pageHead = (title, sub, ...right) => h('div', { class: 'pghead' }, h('div', null, h('h1', null, title), sub ? h('div', { class: 'mute' }, sub) : null), right.length ? h('div', { class: 'pha' }, ...right) : null);
 const seasonLabel = () => `${S.w.year}/${String(S.w.year + 1).slice(2)}`;
 U.seasonLabel = seasonLabel;
 function gradeCls(o) { return o >= 85 ? 'g4' : o >= 75 ? 'g3' : o >= 65 ? 'g2' : 'g1'; }
@@ -577,9 +639,12 @@ function viewGame() {
   const w = h('div', { class: 'screen' }); w.append(topbar(true));
   if (S && S.viewOnly) w.append(h('div', { class: 'wrap' }, h('div', { class: 'archbar' }, h('span', null, h('b', null, `${S.p.name}`), ` · 보관된 은퇴 선수 기록을 보는 중입니다 (읽기 전용)`), h('span', { style: { display: 'flex', gap: '6px' } }, h('button', { class: 'btn ghost sm', onclick: () => U.exportSave(S) }, '내보내기'), h('button', { class: 'btn sm', onclick: () => U.closeArchive() }, '나가기')))));
   setAtmo(S && S.car && S.car.club ? club(S.car.club) : null);
-  if (S && S.mode === 'world' && !['wsim', 'news', 'table', 'db'].includes(tab)) tab = 'wsim';
-  if (tab === 'career') w.append(viewHub());
-  else w.append(U.pages[tab] ? U.pages[tab]() : h('div', { class: 'empty' }, '준비 중'));
+  if (S && S.mode === 'world' && !['wsim', 'sched', 'news', 'table', 'txm', 'hist', 'db'].includes(tab)) tab = 'wsim';
+  if (S && S.mode !== 'world' && tab === 'wsim') tab = 'career';
+  const page = tab === 'career' ? viewHub() : U.pages[tab] ? U.pages[tab]() : h('div', { class: 'empty' }, '준비 중');
+  w.append(h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, page)));
+  if (U.wsRunBar) { const rb = U.wsRunBar(); if (rb) w.append(rb); }
+  if (st.navOpen) w.append(h('div', { class: 'drawerbg', onclick: () => { st.navOpen = false; render(); } }), sideNav(true));
   return w;
 }
 function kvTotals() {
@@ -672,7 +737,7 @@ function careerTable() {
 }
 function viewHub() {
   const hub = h('div', { class: 'wrap hub' });
-  const txp = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.txPanel && C.txWindowAt(S.w.cal.d) ? h('div', { class: 'panel', style: { overflow: 'hidden' } }, U.txPanel(S, { my: S.ss.club, sel: st.txSel, onSel: d => { st.txSel = d; render(); } })) : null;
+  const txp = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.txPanel && C.txWindowAt(S.w.cal.d) ? h('div', { class: 'panel', style: { overflow: 'hidden' } }, U.txPanel(S, { my: S.ss.club, compact: true, sel: st.txSel, onSel: d => { st.txSel = d; render(); } })) : null;
   const hero = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.tourHero ? U.tourHero(S) : null;
   const left = h('div', { style: { display: 'grid', gap: '16px', minWidth: 0 } }, playerCard(), actionPanel(), hero ? h('div', { class: 'panel', style: { overflow: 'hidden', padding: '12px' } }, hero) : null, txp, newsPanel());
   hub.append(left, careerTable());
@@ -908,7 +973,7 @@ function simBlock() {
 }
 function careerCal(today, end, fx) {
   const ss = S.ss, w = S.w;
-  if (!st.calM) { const [y, m] = C.ymd(today); st.calM = [y, m]; }
+  if (!st.calM) { const [y, m] = C.ymd(Math.max(today, ss.start || today)); st.calM = [y, m]; }
   const [y, m] = st.calM;
   const days = C.calMonth(S, y, m, nat => nat === ss.nat);
   const all = C.userFixtures(S), byD = {}; for (const f of all) (byD[f.d] = byD[f.d] || []).push(f);
@@ -919,11 +984,11 @@ function careerCal(today, end, fx) {
     if (ms) for (const mm of ms.slice(0, 2)) {
       const r = mm.gf > mm.ga ? 'W' : mm.gf < mm.ga ? 'L' : mm.pens === 'W' ? 'W' : mm.pens === 'L' ? 'L' : 'D';
       const oc = mm.comp === 'nt' || mm.comp === 'ntY' ? null : w.clubs[mm.opp];
-      out.push(h('span', { class: 'fx ' + r + (mm.played ? '' : ' nop') }, oc ? crest(oc, 12) : mm.comp === 'nt' || mm.comp === 'ntY' ? natCrest(mm.opp, 12) : null, h('span', { class: 'sc' }, `${mm.gf}-${mm.ga}`)));
+      out.push(h('span', { class: 'cfm ' + r + (mm.played ? '' : ' nop') }, oc ? crest(oc, 12) : mm.comp === 'nt' || mm.comp === 'ntY' ? natCrest(mm.opp, 12) : null, h('span', { class: 'sc' }, `${mm.gf}-${mm.ga}`)));
     }
     else if (fs) for (const f of fs.slice(0, 2)) {
       const oc = !f.nat && f.opp && w.clubs[f.opp];
-      out.push(h('span', { class: 'fx' }, oc ? crest(oc, 12) : f.nat && f.opp ? natCrest(f.opp, 12) : null, h('span', null, oc ? (f.home ? 'H' : 'A') : f.nat ? (f.comp === 'UNL' ? 'UNL' : 'A') : SH[f.k] || '')));
+      out.push(h('span', { class: 'cfm' }, oc ? crest(oc, 12) : f.nat && f.opp ? natCrest(f.opp, 12) : null, h('span', null, oc ? (f.home ? 'H' : 'A') : f.nat ? (f.comp === 'UNL' ? 'UNL' : 'A') : SH[f.k] || '')));
     }
     const ek = (fs || []).find(f => f.k === 'E') || (ms || []).find(mm => mm.comp === 'cont');
     if (ek) out.push(h('span', { class: 'mk e' }, ss.cont ? C.COMPS[ss.cont].short : '대륙'));

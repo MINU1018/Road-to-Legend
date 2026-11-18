@@ -39,6 +39,7 @@ const seasons = w => (w.cal ? [LIVE] : []).concat(Object.keys(w.arch || {}).sort
 const seasonName = (lb, sl) => lb === LIVE ? `${sl || ''} 진행 중`.trim() : (sl && sl !== lb ? `${sl} (${lb})` : lb);
 function userClubOf(s, label) { if (label === LIVE) return s.ss ? s.ss.club : null; const r = s.hist.find(x => x.label === label); return r ? r.club : null; }
 U.liveArch = liveArch; U.liveSt = liveSt;
+U.txView = (s, root) => txView(s, root);
 
 // ---------- 리그 ----------
 function leagueAvg(w, lg) { return lg.clubs.reduce((a, c) => a + (w.clubs[c] ? w.clubs[c].str : 60), 0) / Math.max(1, lg.clubs.length); }
@@ -553,10 +554,12 @@ U.fxRow = fxRow; U.ppgStr = ppgStr;
 U.pages.table = function () {
   const s = S(), v = wv();
   const root = h('div', { class: 'wrap prof screen' });
-  const modes = [['league', '리그'], ['cup', '국내 컵'], ['cont', '대륙 대회'], ['intl', '국제 대회'], ['tx', '이적시장']];
+  const modes = [['league', '리그'], ['cup', '국내 컵'], ['cont', '대륙 대회'], ['intl', '국제 대회']];
+  if (!modes.some(m => m[0] === v.mode)) v.mode = 'league';
+  root.append(U.pageHead('대회', '리그 순위·경기·기록, 국내 컵, 대륙 대회, 국제 대회(월드컵·유로·네이션스리그 등)'));
   root.append(h('div', { class: 'seg wmodes' }, ...modes.map(([k, l]) => h('button', { class: v.mode === k ? 'on' : '', onclick: () => { v.mode = k; rerender(); } }, l))));
   try {
-    ({ league: leagueView, cup: cupView, cont: contView, intl: intlView, tx: txView })[v.mode](s, root);
+    ({ league: leagueView, cup: cupView, cont: contView, intl: intlView })[v.mode](s, root);
   } catch (e) { console.error(e); root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '기록을 불러오지 못했습니다.'))); }
   return root;
 };
