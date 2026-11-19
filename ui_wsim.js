@@ -249,9 +249,23 @@ U.pages.hist = function () {
   { const cb = U.cerBanner(s); if (cb) root.append(cb); }
   const ws = s.ws || [];
   if (!ws.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 해(8월 1일)가 지나면 시상과 우승 기록이 쌓입니다.'))); return root; }
-  const SUB = [['bd', '발롱도르'], ['gb', '골든보이'], ['gs', '골든슈'], ['season', '시즌별 우승'], ['champ', '역대 우승']];
+  const SUB = [['bd', '발롱도르'], ['gb', '골든보이'], ['gs', '골든슈'], ['xi', '월드 베스트 XI'], ['season', '시즌별 우승'], ['champ', '역대 우승']];
   if (!sv.hs || !SUB.some(x => x[0] === sv.hs)) sv.hs = 'bd';
   root.append(h('div', { class: 'etabs' }, ...SUB.map(([k, l]) => h('button', { class: sv.hs === k ? 'on' : '', onclick: () => { sv.hs = k; U.stay(); } }, l))));
+  if (sv.hs === 'xi') {
+    const src = w.wxiHist || [];
+    if (!src.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '이번 업데이트 이후 시상식부터 기록됩니다.'))); return root; }
+    const ys = src.map(b => b.y).reverse(); if (!sv.hy || !ys.includes(sv.hy)) sv.hy = ys[0];
+    root.append(h('div', { class: 'wfilter' }, h('select', { class: 'wsel', onchange: e => { sv.hy = +e.target.value; U.stay(); } }, ...ys.map(y => { const o = h('option', { value: y }, `${y}년${U.cerHidden(y) ? ' (시상식 전)' : ''}`); if (y === sv.hy) o.selected = true; return o; }))));
+    const b = src.find(x => x.y === sv.hy);
+    root.append(h('div', { class: 'sec' }, h('h3', null, `${sv.hy} 월드 베스트 XI`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${C.wLabel(sv.hy - 1)} 시즌 · 4-3-3 · 평점·공격 포인트·기량·팀 성과`)),
+      h('div', { class: 'in' }, U.cerHidden(sv.hy) ? h('div', { class: 'mute' }, `${dstr(w.cer.d)} 시상식에서 발표됩니다.`) : U.xiPitch(w, b.xi))));
+    // 최다 선정
+    const cnt = {}; for (const x of src) { if (U.cerHidden(x.y)) continue; for (const p of x.xi) { const k = p[4] || p[0]; (cnt[k] = cnt[k] || { n: p[0], pid: p[4], c: 0 }).c++; } }
+    const most = Object.values(cnt).sort((a, z) => z.c - a.c).slice(0, 15);
+    if (most.length) root.append(h('div', { class: 'sec' }, h('h3', null, '최다 선정'), h('div', { class: 'in', style: { display: 'grid', gap: '4px' } }, ...most.map(x => h('div', { class: 'kvrow' }, pLink(x.n, x.pid), h('b', { style: { color: 'var(--gold)' } }, `${x.c}회`))))));
+    return root;
+  }
   if (sv.hs === 'bd' || sv.hs === 'gb' || sv.hs === 'gs') {
     const src = (sv.hs === 'bd' ? w.bdHist : sv.hs === 'gb' ? w.gbHist : w.gsHist) || [];
     const nm = { bd: '발롱도르', gb: '골든보이', gs: '유러피언 골든슈' }[sv.hs];
@@ -299,12 +313,72 @@ U.pages.hist = function () {
 };
 
 // ---------- 이적시장 ----------
+// ---------- 세계 파워랭킹 (OVR) ----------
+// 모든 구단 선수 + 무소속. 포지션·나라·리그·나이로 거른다. 분포는 시작(FC27) 기준과 비교
+U.pages.rank = function () {
+  const s = U.S(), w = s.w, sv = v();
+  const root = h('div', { class: 'wrap prof screen' });
+  root.append(U.pageHead('세계 파워랭킹', 'OVR 기준 · 전 세계 구단 선수와 무소속 선수 · 잠재력은 공개하지 않습니다'));
+  const all = [];
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.sq) continue; for (const e of c.sq) if (e[2] >= 60) all.push([e, c]); }
+  for (const e of w.fa || []) if (e[2] >= 60) all.push([e, null]);
+  if (s.mode !== 'world' && s.p && s.car) all.push([['ME', s.p.pos, C.ovrOf(s.p), s.p.age, 0, s.p.nat], s.car.club ? w.clubs[s.car.club] : null]);
+  all.sort((a, b) => b[0][2] - a[0][2] || a[0][3] - b[0][3]);
+  // 분포
+  const cnt = t => all.filter(x => x[0][2] >= t).length;
+  const REF = { 90: 11, 88: 29, 86: 65, 84: 137, 80: 510 };
+  root.append(h('div', { class: 'wsum' }, ...[90, 88, 86, 84, 80].map(t => h('div', null, h('div', { class: 'lbl' }, `OVR ${t} 이상`), h('div', null, h('b', null, `${cnt(t)}명`), h('span', { class: 'mute', style: { fontSize: '12px' } }, ` (FC27 DB ${REF[t]}명)`))))));
+  // 필터
+  const GRP = { GK: 'GK', CB: 'DF', LB: 'DF', RB: 'DF', CDM: 'MF', CM: 'MF', CAM: 'MF', LM: 'FW', RM: 'FW', LW: 'FW', RW: 'FW', ST: 'FW' };
+  const f = sv.rk = sv.rk || { pos: 'all', nat: '', lg: '', age: 'all', n: 100 };
+  const natOpts = [...new Set(all.map(x => x[0][5]))].filter(Boolean).sort((a, b) => C.natName(a).localeCompare(C.natName(b)));
+  const BIG = ['ENG', 'ESP', 'ITA', 'GER', 'FRA'];
+  const lgOpts = Object.values(w.lg).filter(l => l.tier === 1).sort((a, b) => (BIG.indexOf(a.nation) < 0) - (BIG.indexOf(b.nation) < 0) || BIG.indexOf(a.nation) - BIG.indexOf(b.nation) || a.name.localeCompare(b.name));
+  const sel = (val, opts, on) => h('select', { class: 'wsel', onchange: e => { on(e.target.value); f.n = 100; U.stay(); } }, ...opts.map(([k, l]) => { const o = h('option', { value: k }, l); if (k === val) o.selected = true; return o; }));
+  root.append(h('div', { class: 'wfilter' },
+    sel(f.pos, [['all', '전체 포지션'], ['GK', '골키퍼'], ['DF', '수비수'], ['MF', '미드필더'], ['FW', '공격수']], x => f.pos = x),
+    sel(f.lg, [['', '전체 리그'], ['big5', '빅5 리그'], ['fa', '무소속만']].concat(lgOpts.map(l => [l.id, `${C.natName(l.nation)} · ${l.name}`])), x => f.lg = x),
+    sel(f.nat, [['', '전체 국적']].concat(natOpts.map(n => [n, C.natName(n)])), x => f.nat = x),
+    sel(f.age, [['all', '전체 나이'], ['u21', '21세 이하'], ['u23', '23세 이하'], ['p24', '24~29세'], ['o30', '30세 이상']], x => f.age = x)));
+  const ok = ([e, c]) => (f.pos === 'all' || GRP[e[1]] === f.pos) && (!f.nat || e[5] === f.nat)
+    && (!f.lg || (f.lg === 'fa' ? !c : f.lg === 'big5' ? c && w.lg[c.lg] && w.lg[c.lg].tier === 1 && BIG.includes(w.lg[c.lg].nation) : c && c.lg === f.lg))
+    && (f.age === 'all' || (f.age === 'u21' ? e[3] <= 21 : f.age === 'u23' ? e[3] <= 23 : f.age === 'p24' ? e[3] >= 24 && e[3] <= 29 : e[3] >= 30));
+  const list = all.filter(ok), shown = list.slice(0, f.n);
+  const rankOf = new Map(); all.forEach((x, i) => rankOf.set(x[0], i + 1));
+  const tb = h('tbody');
+  shown.forEach(([e, c], i) => { const pid = String(e[0]), me = pid === 'ME', inj = e[14] && w.cal && e[14] > w.cal.d;
+    tb.append(h('tr', { class: (me ? 'me ' : '') + 'click', onclick: () => me ? U.setTab('profile') : U.openPlayer(pid) },
+      h('td', null, h('b', null, i + 1)), h('td', { class: 'mute' }, f.pos === 'all' && !f.nat && !f.lg && f.age === 'all' ? '' : `세계 ${rankOf.get(e)}위`),
+      h('td', { style: { textAlign: 'left' } }, h('span', { class: 'cc' }, flag(e[5], 16), h('b', null, me ? `${s.p.name} (나)` : C.pName(w, e)), inj ? h('span', { class: 'injb' }, '부상') : null)),
+      h('td', null, h('span', { class: 'tpos' }, e[1])), h('td', null, e[3]),
+      h('td', { style: { textAlign: 'left' } }, c ? h('span', { class: 'cc' }, U.crest(c, 16), h('span', null, c.name)) : h('span', { class: 'mute' }, '무소속')),
+      h('td', { class: 'mute', style: { fontSize: '12px', textAlign: 'left' } }, c && w.lg[c.lg] ? w.lg[c.lg].name : ''),
+      h('td', null, h('b', { class: 'ovrb' + (e[2] >= 90 ? ' o90' : e[2] >= 86 ? ' o86' : e[2] >= 80 ? ' o80' : '') }, e[2])))); });
+  root.append(h('div', { class: 'sec' }, h('h3', null, `${list.length.toLocaleString()}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' OVR 60 이상 · 같은 OVR은 어린 순')),
+    h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '700px' } }, h('thead', null, h('tr', null, ...['#', '', '선수', '포지션', '나이', '구단', '리그', 'OVR'].map(t => h('th', { style: ['선수', '구단', '리그'].includes(t) ? { textAlign: 'left' } : null }, t)))), tb)),
+    list.length > shown.length ? h('div', { class: 'in' }, h('button', { class: 'btn ghost sm', onclick: () => { f.n += 100; U.stay(); } }, `100명 더 보기 (${shown.length}/${list.length})`)) : null));
+  return root;
+};
 U.pages.txm = function () {
   const s = U.S(), w = s.w, sv = v();
   const root = h('div', { class: 'wrap prof screen' });
   const win = w.cal && C.txWindowAt(w.cal.d);
   root.append(U.pageHead('이적시장', win ? `${win.kind === 'summer' ? '여름' : '겨울'} 이적시장 진행 중 · ${C.fmtDate(win.d1)} 마감` : '여름 6월 15일 ~ 9월 1일 · 겨울 1월 1일 ~ 1월 31일'));
   if (w.cal) { const tp = U.txPanel(s, { my: s.mode !== 'world' && s.ss ? s.ss.club : null, sel: sv.txSel, onSel: d => { sv.txSel = d; U.stay(); }, noLink: true }); if (tp) root.append(tp); }
+  // 무소속 선수 (이적료 없이 언제든 영입 가능)
+  { const fa = (w.fa || []).slice().sort((a, b) => b[2] - a[2]);
+    if (fa.length) {
+      const pos = sv.faPos || 'all', GRP = { GK: 'GK', CB: 'DF', LB: 'DF', RB: 'DF', CDM: 'MF', CM: 'MF', CAM: 'MF', LM: 'FW', RM: 'FW', LW: 'FW', RW: 'FW', ST: 'FW' };
+      const list = fa.filter(e => pos === 'all' || GRP[e[1]] === pos).slice(0, sv.faN || 25);
+      const tb = h('tbody');
+      for (const e of list) { const pid = String(e[0]), lc = e[19] && w.clubs[e[19]];
+        tb.append(h('tr', { class: 'click', onclick: () => U.openPlayer(pid) }, h('td', null, h('span', { class: 'tpos' }, e[1])), h('td', null, h('span', { class: 'cc' }, U.flag ? U.flag(e[5], 16) : null, h('b', null, C.pName(w, e)))), h('td', { class: 'mute' }, `${e[3]}세`), h('td', null, h('b', null, e[2])),
+          h('td', { class: 'mute' }, lc ? lc.name : e[19] || '-'), h('td', { class: 'mute' }, e[18] && w.cal ? `${Math.max(1, w.cal.d - e[18])}일` : '시즌 전부터'))); }
+      root.append(h('div', { class: 'sec' }, h('h3', null, `무소속 선수 ${fa.length}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 계약이 끝나 소속이 없는 선수 · 이적시장 기간이 아니어도 구단이 바로 영입할 수 있습니다')),
+        h('div', { class: 'in' }, h('div', { class: 'seg', style: { marginBottom: '8px' } }, ...[['all', '전체'], ['GK', 'GK'], ['DF', '수비'], ['MF', '미드필더'], ['FW', '공격']].map(([k, l]) => h('button', { class: pos === k ? 'on' : '', onclick: () => { sv.faPos = k; U.stay(); } }, l))),
+          h('table', { class: 'ptable' }, h('thead', null, h('tr', null, ...['포지션', '선수', '나이', 'OVR', '직전 구단', '무소속 기간'].map(t => h('th', null, t)))), tb),
+          fa.filter(e => pos === 'all' || GRP[e[1]] === pos).length > list.length ? h('button', { class: 'btn ghost sm', style: { marginTop: '8px' }, onclick: () => { sv.faN = (sv.faN || 25) + 25; U.stay(); } }, '더 보기') : null)));
+    } }
   if (U.txView) { try { U.txView(s, root); } catch (e) { console.error(e); } }
   return root;
 };

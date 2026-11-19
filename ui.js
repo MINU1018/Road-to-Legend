@@ -48,6 +48,13 @@ async function flushMx(o) {
   const curLb = w.cal ? C.wLabel(w.year) : null;
   if (w.mxPending) for (const lb of Object.keys(w.mxPending)) { const st = w.mxPending[lb]; mxCache[lb] = st; if (lb === curLb && !st._dirty) continue; try { const d = st._dirty; delete st._dirty; await kvSet('mx:' + lb, JSON.stringify(st)); if (lb === curLb) { /* keep */ } else delete w.mxPending[lb]; void d; } catch (e) { console.error('mx save', e); } }
   if (w.mxDrop) { for (const lb of w.mxDrop) { delete mxCache[lb]; await kvDel('mx:' + lb); } w.mxDrop = []; }
+  // 시즌 중 추가된 이적 기록(무소속 영입 등)을 해당 이적시장 기록에 합친다
+  if (w.txAdd) for (const lb of Object.keys(w.txAdd)) {
+    const add = w.txAdd[lb]; delete w.txAdd[lb]; if (!add || !add.length) continue;
+    let base = (w.txPending && w.txPending[lb]) || txCache[lb];
+    if (!base) { try { const t = await kvGet('tx:' + lb); base = t ? GM.parse(t) : []; } catch (e) { base = []; } if (base && !Array.isArray(base)) base = base.r || []; }
+    base.push(...add); w.txPending = w.txPending || {}; w.txPending[lb] = base; if (!(w.txKeys || []).includes(lb)) (w.txKeys = w.txKeys || []).push(lb);
+  }
   // 이적 기록 (시즌 이적시장별)
   if (w.txPending) for (const lb of Object.keys(w.txPending)) { txCache[lb] = w.txPending[lb]; try { await kvSet('tx:' + lb, JSON.stringify(w.txPending[lb])); } catch (e) { console.error('tx save', e); } delete w.txPending[lb]; }
   if (w.txDrop) { for (const lb of w.txDrop) { delete txCache[lb]; await kvDel('tx:' + lb); } w.txDrop = []; }
@@ -56,14 +63,16 @@ async function flushMx(o) {
   for (const lb of old.slice(0, 2)) { try { const t = await kvGet('tx:' + lb); const v = t ? GM.parse(t) : null; if (Array.isArray(v)) { const r = v.filter(x => x[4] > 0 || x[5] >= 75); await kvSet('tx:' + lb, JSON.stringify({ trim: 1, r })); delete txCache[lb]; } (w.txTrim = w.txTrim || {})[lb] = 1; } catch (e) { console.error('tx trim', e); } }
 }
 const txCache = {};
+// 아직 저장 전인 시즌 중 이적(무소속 영입)을 붙여서 돌려준다
+const withAdd = (label, v) => { const a = S && S.w && S.w.txAdd && S.w.txAdd[label]; return a && a.length ? (v || []).concat(a) : v; };
 U.getTx = async function (label) {
   if (!S || !S.w || !(S.w.txKeys || []).includes(label)) return null;
-  if (S.w.txPending && S.w.txPending[label]) return S.w.txPending[label];
-  if (txCache[label]) return txCache[label];
-  const t = await kvGet('tx:' + label); if (!t) return null;
-  let v = GM.parse(t); if (v && !Array.isArray(v) && v.r) { const a = v.r; a.trim = 1; v = a; } if (v) txCache[label] = v; return v;
+  if (S.w.txPending && S.w.txPending[label]) return withAdd(label, S.w.txPending[label]);
+  if (txCache[label]) return withAdd(label, txCache[label]);
+  const t = await kvGet('tx:' + label); if (!t) return withAdd(label, null);
+  let v = GM.parse(t); if (v && !Array.isArray(v) && v.r) { const a = v.r; a.trim = 1; v = a; } if (v) txCache[label] = v; return withAdd(label, v);
 };
-U.txCached = label => (S && S.w && S.w.txPending && S.w.txPending[label]) || txCache[label] || null;
+U.txCached = label => { const v = (S && S.w && S.w.txPending && S.w.txPending[label]) || txCache[label] || null; return v ? withAdd(label, v) : null; };
 U.withTx = function (label, onReady) { const v = U.txCached(label); if (v) return v; U._txL = U._txL || {}; if (!U._txL[label]) { U._txL[label] = 1; U.getTx(label).then(x => { delete U._txL[label]; if (x && onReady) onReady(); }); } return null; };
 async function purgeMx(o) { const keys = (o && o.w && o.w.mxKeys) || []; for (const lb of keys) { delete mxCache[lb]; await kvDel('mx:' + lb); } for (const lb of (o && o.w && o.w.txKeys) || []) { delete txCache[lb]; await kvDel('tx:' + lb); } await kvDel('calh'); }
 U.getMx = async function (label) {
@@ -434,10 +443,10 @@ const ico = (k, sz = 18) => svg(`<svg width="${sz}" height="${sz}" viewBox="0 0 
 function navGroups() {
   if (S && S.mode === 'world') return [
     ['관전', [['wsim', '홈', 'home'], ['sched', '일정', 'cal'], ['news', '뉴스', 'news']]],
-    ['세계 축구', [['table', '대회', 'cup'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
+    ['세계 축구', [['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
   return [
     ['내 커리어', [['career', '홈', 'home'], ['profile', '선수 프로필', 'user'], ['attrs', '능력치', 'bars'], ['records', '시즌 기록', 'list'], ['mx', '경기 탐색', 'play'], ['value', '이적·가치', 'coin'], ['trophies', '트로피', 'cup'], ['ach', '도전과제', 'star'], ['inj', '부상', 'plus']]],
-    ['세계 축구', [['news', '뉴스', 'news'], ['sched', '일정', 'cal'], ['table', '대회', 'cup'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
+    ['세계 축구', [['news', '뉴스', 'news'], ['sched', '일정', 'cal'], ['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
 }
 U.navGroups = navGroups;
 const TABNAME = () => { const m = {}; for (const [, l] of navGroups()) for (const [k, n] of l) m[k] = n; return m; };
@@ -463,9 +472,9 @@ function topSearch() {
     const r = U.dbSearch(S.w, q), w = S.w, out = [], fq = U.fold(q);
     // 이름이 검색어와 같거나 단어가 검색어로 시작하면 앞으로
     const sc = n => { const f = U.fold(n); return f === fq ? 0 : f.split(' ').some(x => x.startsWith(fq)) ? 1 : 2; };
-    const all = [].concat(r.nats.slice(0, 4).map(n => ({ s: sc(C.natName(n)), t: 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openNat(n) }, U.natCrest(n, 18), h('span', null, `${C.natName(n)} 대표팀`), h('span', { class: 'mute' }, '국가대표')) })),
+    const all = [].concat((r.comps || []).slice(0, 5).map(x => ({ s: Math.min(sc(x.n), x.t === 0 ? 0 : 2), t: -1, v: 10 - x.t, el: () => h('button', { class: 'tsi', onmousedown: () => U.openComp(x) }, x.nat ? flag(x.nat, 18) : trophy(x.k === 'intl' ? 'nt' : x.k === 'cont' ? 'cont' : 'cup', 18, '#f2c14e'), h('span', null, x.n), h('span', { class: 'mute' }, x.sub)) })), r.nats.slice(0, 4).map(n => ({ s: sc(C.natName(n)), t: 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openNat(n) }, U.natCrest(n, 18), h('span', null, `${C.natName(n)} 대표팀`), h('span', { class: 'mute' }, '국가대표')) })),
       r.clubs.slice(0, 8).map(c => ({ s: sc(c.name), t: 1, v: c.str, el: () => h('button', { class: 'tsi', onmousedown: () => U.openClub(c.id) }, crest(c, 18), h('span', null, c.name), h('span', { class: 'mute' }, (w.lg[c.lg] || {}).name || '')) })),
-      r.players.slice(0, 20).map(x => ({ s: sc(x.n), t: 2, v: x.ovr || 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openPlayer(x.pid) }, flag(x.nat, 18), h('span', null, x.n), h('span', { class: 'mute' }, x.retired ? '은퇴' : `${x.pos} · ${x.ovr} · ${(w.clubs[x.club] || {}).short || ''}`)) })));
+      r.players.slice(0, 20).map(x => ({ s: sc(x.n), t: 2, v: x.ovr || 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openPlayer(x.pid) }, flag(x.nat, 18), h('span', null, x.n), h('span', { class: 'mute' }, x.retired ? ((w.ps[x.pid] || {}).ret ? '은퇴' : '무소속') : `${x.pos} · ${x.ovr} · ${x.fa ? '무소속' : (w.clubs[x.club] || {}).short || ''}`)) })));
     all.sort((a, b) => a.s - b.s || a.t - b.t || (b.v || 0) - (a.v || 0));
     for (const x of all.slice(0, 10)) out.push(x.el());
     if (!out.length) out.push(h('div', { class: 'tsi mute' }, '결과 없음'));
@@ -639,7 +648,7 @@ function viewGame() {
   const w = h('div', { class: 'screen' }); w.append(topbar(true));
   if (S && S.viewOnly) w.append(h('div', { class: 'wrap' }, h('div', { class: 'archbar' }, h('span', null, h('b', null, `${S.p.name}`), ` · 보관된 은퇴 선수 기록을 보는 중입니다 (읽기 전용)`), h('span', { style: { display: 'flex', gap: '6px' } }, h('button', { class: 'btn ghost sm', onclick: () => U.exportSave(S) }, '내보내기'), h('button', { class: 'btn sm', onclick: () => U.closeArchive() }, '나가기')))));
   setAtmo(S && S.car && S.car.club ? club(S.car.club) : null);
-  if (S && S.mode === 'world' && !['wsim', 'sched', 'news', 'table', 'txm', 'hist', 'db'].includes(tab)) tab = 'wsim';
+  if (S && S.mode === 'world' && !['wsim', 'sched', 'news', 'table', 'rank', 'txm', 'hist', 'db'].includes(tab)) tab = 'wsim';
   if (S && S.mode !== 'world' && tab === 'wsim') tab = 'career';
   const page = tab === 'career' ? viewHub() : U.pages[tab] ? U.pages[tab]() : h('div', { class: 'empty' }, '준비 중');
   w.append(h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, page)));

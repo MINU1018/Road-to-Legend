@@ -61,6 +61,14 @@ function buildWorld() {
   // 하부 구단도 모두 실제(가상) 선수 명단을 갖는다
   for (const id in w.clubs) if (w.clubs[id].lite) materialize(w, w.clubs[id]);
   initFinance(w);
+  // 실제 무소속 선수 (data_fa.js): 2026/27 시즌 초 기준
+  w.fa = [];
+  const mkE = i => { const p = F.P[i], age = Math.floor((refDay - p[9]) / 365.25); return [i, POSMAP[p[2]] || 'CM', p[11], age, p[11], p[5]]; };
+  if (F.FA) for (const i of F.FA) { const e = ensureE(mkE(i), null); e[6] = 0; e[8] = 0; e[18] = 0; e[19] = F.FA_LAST[i] || ''; w.fa.push(e); }
+  const touched = new Set();
+  if (F.FA_MOVE) for (const id in w.clubs) { const c = w.clubs[id]; if (!c.sq || c.lite) continue; for (let k = c.sq.length - 1; k >= 0; k--) { const e = c.sq[k]; if (typeof e[0] === 'number' && F.FA_MOVE[F.P[e[0]][1]]) { c.sq.splice(k, 1); c.wb = (c.wb || 0) - (e[8] || 0); e[6] = 0; e[7] = 0; e[8] = 0; e[18] = 0; e[19] = c.id; w.fa.push(e); touched.add(c); } } }
+  if (F.EXTRA) for (const x of F.EXTRA) { const c = w.clubs[x.club]; if (c && c.sq) { const e = ensureE(mkE(x.i), c); e[6] = x.ct || 1; c.sq.push(e); if (!c.lite) touched.add(c); } }
+  for (const c of touched) c.str = xiStrength(c.sq);
   // 지난 시즌 순위 대용: 전력순
   for (const id in w.lg) { const l = w.lg[id]; w.last[id] = l.clubs.slice().sort((a, b) => w.clubs[b].str - w.clubs[a].str); }
   return w;
@@ -223,6 +231,25 @@ function ageSquad(c) {
 // 이적 기록: [선수 id, 보낸 구단, 받은 구단, 종류, 이적료(만 유로), OVR, 나이, 새 주급(유로), 계약 연수]
 // 종류: buy 이적 · free 자유계약 · loan 임대 · lret 임대 복귀 · rel 방출 · ret 은퇴 · yth 유스 승격 · new 외부 영입 · ext 재계약
 // 이적 기록 한 줄: [선수, 보낸 구단, 받은 구단, 종류, 이적료(만 유로), OVR, 나이, 새 주급, 계약 연수(, 재계약 전 주급)]
+// ---------- 무소속(자유계약) 선수 ----------
+// 계약이 끝났는데 갈 곳을 못 찾은 쓸 만한 선수는 사라지지 않고 무소속으로 남는다 (w.fa).
+// 이적시장이 아니어도 구단이 언제든 데려갈 수 있다 (calendar.js faTick). e[18] = 무소속이 된 날, e[19] = 직전 구단
+const faOk = e => e[2] >= 62 && e[3] <= 37 && (typeof e[0] === 'number' || e[2] >= 67);
+function faAdd(w, e, from) { w.fa = w.fa || []; if (w.fa.includes(e)) return; e[6] = 0; e[7] = 0; e[13] = 0; e[14] = 0; e[18] = w.cal ? w.cal.d : 0; e[19] = from ? from.id : (e[19] || ''); w.fa.push(e); }
+C.faAdd = faAdd; C.faOk = faOk;
+// 여름마다: 무소속 선수도 나이를 먹고, 오래 쉬거나 나이가 많으면 은퇴
+function faAge(w) {
+  if (!w.fa || !w.fa.length) return;
+  const d = w.cal ? w.cal.d : 0, keep = [];
+  for (const e of w.fa) {
+    e[3]++; const age = e[3];
+    e[2] = Math.max(40, Math.round(e[2] - (age >= 31 ? rnd(1, 3) : rnd(0, 1.5)))); e[4] = Math.max(e[2], e[4] || e[2]);
+    const idle = d - (e[18] || d);
+    if (age >= 38 || e[2] < 58 || (idle > 330 && R() < .6) || (age >= 35 && R() < .4)) { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, null, null, 'ret', 0); continue; }
+    keep.push(e);
+  }
+  w.fa = keep;
+}
 function txLog(w, e, from, to, kind, fee, oldWage) { if (!w._tx) return; const r = [String(e[0]), from ? from.id : '', to ? to.id : '', kind, fee ? Math.round(fee / 1e4) : 0, e[2], e[3], e[8] || 0, e[6] || 0]; if (oldWage != null) r.push(oldWage); w._tx.push(r); }
 C.txLog = txLog;
 const natOf = (w, c) => c && c.lg && w.lg[c.lg] ? w.lg[c.lg].nation : (c ? c.nat : '');
@@ -336,7 +363,7 @@ function worldTransfers(w, winter) {
     let cut = 1;
     if (!d && kind === 'free' && o >= 68 && age <= 35) { const wk2 = x => Math.max(50, Math.round(wk(x) * .45 / 50) * 50); d = pickClub(L - 30, L + 2, e, c, kind, 0, wk2); if (d) cut = .45; }
     if (!d) {
-      if (kind === 'free') { stat.rel++; if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, age >= 30 ? 'ret' : 'rel', 0); }
+      if (kind === 'free') { stat.rel++; if (faOk(e)) { txLog(w, e, c, null, 'rel', 0); faAdd(w, e, c); } else { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, age >= 30 ? 'ret' : 'rel', 0); } }
       else {
         c.sq.push(e); c.wb += e[8] || 0;
         // 팔려고 했지만 살 구단이 없으면: 계약이 1년 남은 쓸 만한 선수는 연장해서 공짜로 잃지 않게 한다
@@ -408,6 +435,7 @@ function refillSquad(c, w, pool, winter) {
     if (L) { for (let k = 0; k < 40 && !d; k++) { const x = L[(R() * L.length) | 0]; if (x !== c && x.sq.length < (prospect ? 29 : 28) && (prospect ? x.str >= e[2] - 3 && x.str <= e[2] + 5 && x.str < c.str : Math.abs(x.str - e[2]) < 4)) d = x; } }
     if (d && prospect) { e[7] = c.id; txLog(w, e, c, d, 'loan', 0); d.sq.push(e); }
     else if (d) { e[6] = ctFor(e[3]); e[7] = 0; e[8] = aiWage(d, e[2], e[3]); txLog(w, e, c, d, 'free', 0); d.sq.push(e); d.wb = (d.wb || 0) + e[8]; }
+    else if (faOk(e)) { txLog(w, e, c, null, 'rel', 0); faAdd(w, e, c); }
     else { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, 'rel', 0); }
   }
 }
@@ -424,7 +452,18 @@ function topAvgs(w) {
   const avg = (a, b) => { const sl = o.slice(a, b); return sl.reduce((x, y) => x + y, 0) / Math.max(1, sl.length); };
   return { t100: avg(0, 100), t1000: avg(100, 1000), t5000: avg(1000, 5000) };
 }
-function normalizeWorld(w) {
+// 최상위권 분포 유지: 세계 k번째 선수의 OVR이 시작 때(FC27) k번째 선수 OVR + 1을 넘지 않게 한다
+// (FC27 기준 90 이상 11명, 86 이상 65명 수준이 해마다 크게 늘지 않도록)
+let OVRREF = null;
+function topCap(w) {
+  if (!OVRREF) OVRREF = F.P.filter(p => p[4] >= 0).map(p => p[11]).sort((a, b) => b - a).slice(0, 400);
+  const all = []; for (const id in w.clubs) { const c = w.clubs[id]; if (c.sq) for (const e of c.sq) if (e[2] >= 80) all.push(e); } for (const e of w.fa || []) if (e[2] >= 80) all.push(e);
+  all.sort((a, b) => b[2] - a[2]);
+  for (let i = 0; i < all.length && i < OVRREF.length; i++) { const lim = OVRREF[i] + 1, e = all[i]; if (e[2] > lim) { e[2] = lim; if (e[4] > lim + 1) e[4] = lim + 1; } }
+}
+C.topCap = topCap;
+function normalizeWorld(w) { normalizeWorld0(w); topCap(w); }
+function normalizeWorld0(w) {
   const cur = topAvgs(w);
   if (!w.norm) { w.norm = { t100: Math.min(cur.t100, 86.8), t1000: Math.min(cur.t1000, 79.8), t5000: Math.min(cur.t5000, 73.5) }; }
   const d100 = cur.t100 - w.norm.t100, d1000 = cur.t1000 - w.norm.t1000, d5000 = cur.t5000 - w.norm.t5000;
@@ -490,6 +529,7 @@ function marketWindow(w, kind, d0, d1, resAdj) {
       if (c.lite) materialize(w, c);
       ageSquad(c);
     }
+    faAge(w);
   }
   worldTransfers(w, kind === 'winter');
   { const pool = playerPool(w);

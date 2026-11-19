@@ -33,8 +33,12 @@ const seasonLbl = y => `${y}/${String(y + 1).slice(2)}`;
 // 현재 소속 찾기
 function locate(w, pid) {
   for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite || !c.sq) continue; for (const e of c.sq) if (String(e[0]) === pid) return { e, c }; }
+  // 무소속 (자유계약) · 계약 확정 후 입단 날짜를 기다리는 선수
+  for (const e of w.fa || []) if (String(e[0]) === pid) return { e, c: null, fa: 1 };
+  const lm = w.cal && w.cal.limbo && w.cal.limbo[pid]; if (lm) { const q = (w.cal.tq || []).find(x => x[1] === pid); return { e: lm, c: null, fa: 2, to: q ? q[3] : null, d: q ? q[0] : null }; }
   return null;
 }
+U.locate = locate;
 function nameLink(n, pid, cls) { return pid ? h('span', { class: 'lnk ' + (cls || ''), onclick: ev => { ev.stopPropagation(); U.openPlayer(pid); } }, n) : h('span', { class: cls || '' }, n); }
 function clubLink(w, id, size = 18) { const c = w.clubs[id]; return h('span', { class: 'cc lnk', onclick: ev => { ev.stopPropagation(); if (c) U.openClub(id); } }, crest(c || null, size), h('span', null, c ? c.name : '해체된 구단')); }
 
@@ -52,13 +56,25 @@ function search(w, q) {
     for (const e of c.sq) { const n = C.pName(w, e); if (fold(n).includes(q)) { const pid = String(e[0]); seen.add(pid); players.push({ pid, n, pos: e[1], ovr: e[2], age: e[3], nat: e[5], club: id }); if (players.length >= 60) break; } }
     if (players.length >= 60) break;
   }
+  for (const e of w.fa || []) { const n = C.pName(w, e), pid = String(e[0]); if (seen.has(pid) || !fold(n).includes(q)) continue; seen.add(pid); players.push({ pid, n, pos: e[1], ovr: e[2], age: e[3], nat: e[5], club: null, fa: 1 }); }
   for (const pid in (w.ps || {})) { if (seen.has(pid)) continue; const P = w.ps[pid]; if (fold(P.n).includes(q)) { players.push({ pid, n: P.n, pos: P.pos, nat: P.nat, retired: true }); if (players.length >= 80) break; } }
   const clubs = Object.values(w.clubs).filter(c => c.lg && (fold(c.name).includes(q) || fold(c.en).includes(q) || fold(c.id.replace(/^[A-Z]+_/, '')).includes(q) || fold(c.short) === q)).sort((a, b) => b.str - a.str).slice(0, 20);
   players.sort((a, b) => (b.ovr || 0) - (a.ovr || 0));
   // 국가대표팀: 한글 국가명·영문명·코드
   const EN = (C.logos && C.logos.NAT_EN) || {};
   const nats = Object.keys(C.NAT).filter(code => fold(C.natName(code)).includes(q) || fold((EN[code] || '').replace(/\|/g, ' ')).includes(q) || code.toLowerCase() === q).slice(0, 12);
-  return { players: players.slice(0, 40), clubs, nats };
+  // 리그·대회
+  const comps = [], FL = {}; for (const l of (G.FC27 && G.FC27.leagues) || []) FL[l.id] = l.fc || '';
+  const AL = { 'epl': 'ENG1', 'pl': 'ENG1', 'laliga': 'ESP1', 'la liga': 'ESP1', 'serie a': 'ITA1', 'bundesliga': 'GER1', 'ligue 1': 'FRA1', 'k리그': 'KOR1', 'k league': 'KOR1', 'j리그': 'JPN1', 'mls': 'USA1' };
+  for (const id in w.lg) { const l = w.lg[id]; const hit = fold(l.name).includes(q) || fold(FL[id] || '').includes(q) || AL[q] === id || (fold(C.natName(l.nation)) === q && l.tier <= 2); if (hit) comps.push({ k: 'lg', id, n: l.name, sub: `${C.natName(l.nation)} ${l.tier}부 리그`, nat: l.nation, t: l.tier }); }
+  for (const nat in C.CUPNAME || {}) if (fold(C.CUPNAME[nat]).includes(q) || fold(C.natName(nat)) === q) comps.push({ k: 'cup', nat, n: C.CUPNAME[nat], sub: `${C.natName(nat)} 국내 컵`, t: 5 });
+  for (const nat in C.LCUPNAME || {}) if (fold(C.LCUPNAME[nat]).includes(q)) comps.push({ k: 'cup', nat, n: C.LCUPNAME[nat], sub: `${C.natName(nat)} 리그컵`, t: 6 });
+  const CEN = { UCL: 'champions league ucl 챔스', UEL: 'europa league uel 유로파', UECL: 'conference league uecl 컨퍼런스' };
+  for (const k in C.COMPS || {}) { const x = C.COMPS[k]; if (fold(x.name).includes(q) || fold(x.short || '').includes(q) || fold(CEN[k] || '').includes(q) || k.toLowerCase() === q) comps.push({ k: 'cont', id: k, n: x.name, sub: '대륙 대회', t: 3 }); }
+  const IEN = { WC: 'world cup 월드컵 fifa', EURO: 'euro 유로 european championship', COPA: 'copa america 코파', ASIA: 'asian cup 아시안컵', AFCON: 'afcon africa 네이션스컵', GOLD: 'gold cup 골드컵', UNL: 'nations league 네이션스리그 unl', AM: 'a매치 friendly 친선' };
+  for (const k of ['WC', 'EURO', 'COPA', 'ASIA', 'AFCON', 'GOLD', 'UNL', 'AM']) { const n = k === 'UNL' ? 'UEFA 네이션스리그' : k === 'AM' ? 'A매치 (친선)' : C.TDEF[k].name; if (fold(n).includes(q) || fold(IEN[k]).includes(q)) comps.push({ k: 'intl', id: k, n, sub: k === 'WC' ? `국제 대회 · 다음 대회 ${C.nextWorldCup(w.cal ? C.ymd(w.cal.d)[0] : w.year)}년` : '국제 대회', t: k === 'WC' ? 0 : 4 }); }
+  comps.sort((a, b) => a.t - b.t);
+  return { players: players.slice(0, 40), clubs, nats, comps: comps.slice(0, 16) };
 }
 
 function homeView(s, root) {
@@ -69,10 +85,11 @@ function homeView(s, root) {
     res.replaceChildren();
     const r = search(w, d.q || '');
     if ((d.q || '').trim().length < 2) return;
-    if (!r.players.length && !r.clubs.length && !r.nats.length) { res.append(h('div', { class: 'empty' }, '검색 결과가 없습니다.')); return; }
+    if (!r.players.length && !r.clubs.length && !r.nats.length && !(r.comps || []).length) { res.append(h('div', { class: 'empty' }, '검색 결과가 없습니다.')); return; }
+    if ((r.comps || []).length) res.append(h('div', { class: 'sec' }, h('h3', null, `리그·대회 ${r.comps.length}`), h('div', { class: 'in dbgrid' }, ...r.comps.map(x => h('div', { class: 'dbitem', onclick: () => U.openComp(x) }, x.nat ? flag(x.nat, 22) : U.trophy ? U.trophy(x.k === 'intl' ? 'nt' : x.k === 'cont' ? 'cont' : 'cup', 22, '#f2c14e') : null, h('div', null, h('b', null, x.n), h('div', { class: 'mute', style: { fontSize: '12px' } }, x.sub)))))));
     if (r.nats.length) res.append(h('div', { class: 'sec' }, h('h3', null, `국가대표팀 ${r.nats.length}`), h('div', { class: 'in dbgrid' }, ...r.nats.map(code => h('div', { class: 'dbitem', onclick: () => U.openNat(code) }, U.natCrest(code, 26), h('div', null, h('b', null, `${C.natName(code)} 대표팀`), h('div', { class: 'mute', style: { fontSize: '12px' } }, `${C.confOf(code)}`)))))));
     if (r.clubs.length) res.append(h('div', { class: 'sec' }, h('h3', null, `구단 ${r.clubs.length}`), h('div', { class: 'in dbgrid' }, ...r.clubs.map(c => h('div', { class: 'dbitem', onclick: () => U.openClub(c.id) }, crest(c, 26), h('div', null, h('b', null, c.name), h('div', { class: 'mute', style: { fontSize: '12px' } }, `${(w.lg[c.lg] || {}).name || ''} · 전력 ${c.str.toFixed(1)}`)))))));
-    if (r.players.length) res.append(h('div', { class: 'sec' }, h('h3', null, `선수 ${r.players.length}`), h('div', { class: 'in dbgrid' }, ...r.players.map(x => h('div', { class: 'dbitem', onclick: () => U.openPlayer(x.pid) }, flag(x.nat, 22), h('div', null, h('b', null, x.n), h('div', { class: 'mute', style: { fontSize: '12px' } }, x.retired ? `${x.pos} · ${(w.ps[x.pid] || {}).ret ? (w.ps[x.pid].ret + '년 은퇴') : '기록 보관'}` : `${x.pos} · ${x.age}세 · OVR ${x.ovr} · ${w.clubs[x.club].name}`)))))));
+    if (r.players.length) res.append(h('div', { class: 'sec' }, h('h3', null, `선수 ${r.players.length}`), h('div', { class: 'in dbgrid' }, ...r.players.map(x => h('div', { class: 'dbitem', onclick: () => U.openPlayer(x.pid) }, flag(x.nat, 22), h('div', null, h('b', null, x.n), h('div', { class: 'mute', style: { fontSize: '12px' } }, x.retired ? `${x.pos} · ${(w.ps[x.pid] || {}).ret ? (w.ps[x.pid].ret + '년 은퇴') : '무소속'}` : `${x.pos} · ${x.age}세 · OVR ${x.ovr} · ${x.fa ? '무소속' : w.clubs[x.club].name}`)))))));
   };
   root.append(U.pageHead('선수·팀', '선수·구단·국가대표팀을 찾아 기록을 봅니다. 위쪽 검색창에서도 바로 찾을 수 있습니다.'));
   root.append(h('div', { class: 'sec' }, h('div', { class: 'in' }, inp)), res);
@@ -110,11 +127,11 @@ function playerSeasons(w, P, live) {
   for (const x of C.psHist(P)) { const y = x[0] < 1000 ? x[0] : x[0] - 2000, wl = seasonLbl(y + 2000), cid = C.cidOf(w, x[1]); const sn = get(y, wl);
     if (x[7] !== '' && x[7] != null) { sn.age = x[7]; sn.ovr = x[6]; }
     sn.label = clubSeasonLbl(w, cid, y);
-    const ci = compInfo(w, 'L', wl, cid); sn.items.push({ key: 'L', cat: 'league', name: ci.name, lid: ci.lid, club: cid, apps: x[2], g: x[3], a: x[4], rt: x[5] / 100, loan: !!x[8], min: x[9] === '' || x[9] == null ? null : +x[9], cs: x[10] || 0 }); }
-  for (const t of String((P && P.c) || '').split(';').filter(Boolean)) { const [y0, key, apps, g, a, rt, min, cs] = t.split('|'); const y = +y0, wl = seasonLbl(y + 2000), sn = get(y, wl);
+    const ci = compInfo(w, 'L', wl, cid); sn.items.push({ key: 'L', cat: 'league', name: ci.name, lid: ci.lid, club: cid, apps: x[2], g: x[3], a: x[4], rt: x[5] / 100, loan: !!x[8], min: x[9] === '' || x[9] == null ? null : +x[9], cs: x[10] || 0, mom: x[11] || 0 }); }
+  for (const t of String((P && P.c) || '').split(';').filter(Boolean)) { const [y0, key, apps, g, a, rt, min, cs, mom] = t.split('|'); const y = +y0, wl = seasonLbl(y + 2000), sn = get(y, wl);
     const nt = key.startsWith('nt:');
     const club = nt ? null : (sn.items.find(it => it.cat === 'league') || {}).club || null; const ci = compInfo(w, key, wl, club);
-    sn.items.push({ key, cat: ci.cat, name: ci.name, club, apps: +apps, g: +g, a: +a, rt: +rt / 100, min: min == null || min === '' ? null : +min, cs: +cs || 0, nat: nt ? P.nat : null }); }
+    sn.items.push({ key, cat: ci.cat, name: ci.name, club, apps: +apps, g: +g, a: +a, rt: +rt / 100, min: min == null || min === '' ? null : +min, cs: +cs || 0, mom: +mom || 0, nat: nt ? P.nat : null }); }
   const out = Object.values(by).sort((a, b) => a.y - b.y);
   // 진행 중인 대회 (세계 달력)
   if (live && live.length) {
@@ -122,7 +139,7 @@ function playerSeasons(w, P, live) {
     for (const x of live) { const a = x.a, club = C.cidOf(w, a[0]); const nt = x.key.startsWith('nt:');
       const ci = x.key === 'league' ? { name: (w.lg[x.lg] || {}).name || '리그', cat: 'league' } : compInfo(w, x.key, 'live', club);
       if (x.key === 'league') sn.label = x.label;
-      sn.items.push({ key: x.key === 'league' ? 'L' : x.key, cat: ci.cat, name: ci.name, club: nt ? null : club, apps: a[1], g: a[4], a: a[5], rt: a[8] / 10 / Math.max(1, a[1]), min: a[3], cs: a[9], nat: nt ? (P ? P.nat : null) : null, live: 1 }); }
+      sn.items.push({ key: x.key === 'league' ? 'L' : x.key, cat: ci.cat, name: ci.name, club: nt ? null : club, apps: a[1], g: a[4], a: a[5], rt: a[8] / 10 / Math.max(1, a[1]), min: a[3], cs: a[9], mom: a[10] || 0, nat: nt ? (P ? P.nat : null) : null, live: 1 }); }
     if (!sn.label) sn.label = (live[0] || {}).label || '';
     sn.label = (sn.label ? sn.label + ' ' : '') + '진행 중';
     out.push(sn);
@@ -163,9 +180,12 @@ function playerView(s, root, pid) {
   const name = e ? C.pName(w, e) : P ? P.n : '알 수 없는 선수';
   const nat = e ? e[5] : P && P.nat, pos = e ? e[1] : P && P.pos;
   root.append(h('div', { class: 'sec ehead' }, h('div', { class: 'in dbhead' }, flag(nat, 36),
-    h('div', null, h('h2', { style: { margin: 0 } }, name), h('div', { class: 'mute' }, [C.natName(nat), pos, e ? `${e[3]}세` : P && P.ret ? `${P.ret}년 은퇴` : '기록 밖 (하부 리그 등)', e && e[6] != null ? `계약 ${Math.max(1, e[6])}년 남음` : '', e && e[7] && w.clubs[e[7]] ? `${w.clubs[e[7]].name}에서 임대 중` : '', e && e[14] && w.cal && e[14] > w.cal.d ? `🩹 부상 · ${C.fmtDateY(e[14])} 복귀 예정` : ''].filter(Boolean).join(' · '))),
+    h('div', null, h('h2', { style: { margin: 0 } }, name), h('div', { class: 'mute' }, [C.natName(nat), pos, e ? `${e[3]}세` : P && P.ret ? `${P.ret}년 은퇴` : '무소속', loc && loc.fa ? '' : e && e[6] != null ? `계약 ${Math.max(1, e[6])}년 남음` : '', e && e[7] && w.clubs[e[7]] ? `${w.clubs[e[7]].name}에서 임대 중` : '', e && e[14] && w.cal && e[14] > w.cal.d ? `🩹 부상 · ${C.fmtDateY(e[14])} 복귀 예정` : ''].filter(Boolean).join(' · '))),
     e ? h('div', { class: 'dbstat' }, h('div', { class: 'lbl' }, 'OVR'), h('b', null, e[2])) : null,
-    c ? h('div', { class: 'dbclub' }, clubLink(w, c.id, 26), h('div', { class: 'mute', style: { fontSize: '12px' } }, (w.lg[c.lg] || {}).name || '')) : null, U.followBtn ? U.followBtn('pl', pid) : null)));
+    c ? h('div', { class: 'dbclub' }, clubLink(w, c.id, 26), h('div', { class: 'mute', style: { fontSize: '12px' } }, (w.lg[c.lg] || {}).name || ''))
+      : !(P && P.ret && !e) ? h('div', { class: 'dbclub' }, h('span', { class: 'fachip' }, '무소속'), h('div', { class: 'mute', style: { fontSize: '12px' } }, loc && loc.fa === 2 && loc.to && w.clubs[loc.to] ? `${w.clubs[loc.to].name} 입단 예정 (${C.fmtDate(loc.d)})` : loc && loc.fa ? `자유계약${e[19] ? ` · 직전 ${w.clubs[e[19]] ? w.clubs[e[19]].name : e[19]}` : ''}${e[18] && w.cal ? ` · ${Math.max(1, w.cal.d - e[18])}일째` : ''}` : '')) : null, U.followBtn ? U.followBtn('pl', pid) : null)));
+  // 무소속: 이적료 없이 언제든 영입 가능
+  if (e && loc && loc.fa === 1) { const val = C.aiFee(e[2], e[3], 'ENG', 0, .5); root.append(h('div', { class: 'wsum' }, ...[['소속', '무소속 (자유계약)'], ['이적료', '없음 · 언제든 계약 가능'], ['직전 구단', e[19] ? (w.clubs[e[19]] ? w.clubs[e[19]].name : e[19]) : '-'], ['무소속 기간', e[18] && w.cal ? `${Math.max(1, w.cal.d - e[18])}일` : '시즌 시작 전부터'], ['참고 가치', C.fmtEUR(Math.round(val / 1e5) * 1e5)]].map(([k, v2]) => h('div', null, h('div', { class: 'lbl' }, k), h('div', null, h('b', null, v2)))))); }
   // 계약·급여
   if (e && c && !c.lite) {
     const loan = e[7] && w.clubs[e[7]];
@@ -343,8 +363,8 @@ function clubSeason(s, root, id) {
     const sn = playerSeasons(w, P).find(x => x.y === yOff); if (!sn) continue;
     const its = sn.items.filter(it => it.club === id || (it.cat !== 'league' && it.cat !== 'nt' && sn.items.some(z => z.cat === 'league' && z.club === id)));
     const lgI = its.find(it => it.cat === 'league'); if (!lgI) continue;
-    const t = its.reduce((a, it) => (a.apps += it.apps, a.g += it.g, a.a += it.a, a.rs += it.rt * it.apps, a), { apps: 0, g: 0, a: 0, rs: 0 });
-    rows.push({ pid, n: P.n, pos: P.pos, age: sn.age, apps: t.apps, g: t.g, a: t.a, rt: t.apps ? t.rs / t.apps : 0, lgApps: lgI.apps, loan: lgI.loan });
+    const t = its.reduce((a, it) => (a.apps += it.apps, a.g += it.g, a.a += it.a, a.rs += it.rt * it.apps, a.mom += it.mom || 0, a), { apps: 0, g: 0, a: 0, rs: 0, mom: 0 });
+    rows.push({ pid, n: P.n, pos: P.pos, age: sn.age, apps: t.apps, g: t.g, a: t.a, rt: t.apps ? t.rs / t.apps : 0, lgApps: lgI.apps, loan: lgI.loan, mom: t.mom });
   }
   const me = (s.hist || []).find(r => r.label === d.cs && r.club === id);
   if (me) rows.push({ pid: 'ME', n: s.p.name + ' (나)', pos: me.pos, age: me.age, apps: me.total.apps, g: me.total.goals, a: me.total.assists, rt: me.rating || 0, lgApps: (me.agg && me.agg.league ? me.agg.league.st.apps : 0) });
@@ -353,8 +373,8 @@ function clubSeason(s, root, id) {
   const th = (k, l) => h('th', { class: 'lnk' + (d.csSort === k ? ' on' : ''), onclick: () => { d.csSort = k; stay(); } }, l);
   const tg = rows.reduce((a, r) => a + r.g, 0);
   root.append(h('div', { class: 'sec' }, h('h3', null, `선수 기록 ${rows.length}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` 전 대회 합계 · 팀 득점 중 선수 득점 ${tg} (자책골 제외) · 열 제목을 누르면 정렬`)),
-    rows.length ? h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, h('th', null, '선수'), h('th', null, '포지션'), h('th', null, '나이'), th('apps', '경기'), th('lgApps', '리그'), th('g', '골'), th('a', '도움'), th('rt', '평점'))),
-      h('tbody', null, ...rows.map(r => h('tr', { class: r.pid === 'ME' ? 'me' : '' }, h('td', null, r.pid === 'ME' ? h('span', { class: 'lnk', onclick: () => U.setTab('records') }, r.n) : nameLink(r.n, r.pid), r.loan ? h('span', { class: 'mute', style: { fontSize: '11px' } }, ' (임대)') : null), h('td', null, h('span', { class: 'tpos' }, r.pos)), h('td', null, r.age != null ? r.age : ''), h('td', null, r.apps), h('td', null, r.lgApps), h('td', null, h('b', null, r.g)), h('td', null, r.a), h('td', null, r.rt ? U.rt2(r.rt) : '-')))))) : h('div', { class: 'empty' }, '선수 기록이 없습니다 (명단 없는 하부 구단).')));
+    rows.length ? h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, h('th', null, '선수'), h('th', null, '포지션'), h('th', null, '나이'), th('apps', '경기'), th('lgApps', '리그'), th('g', '골'), th('a', '도움'), th('mom', '★ MOM'), th('rt', '평점'))),
+      h('tbody', null, ...rows.map(r => h('tr', { class: r.pid === 'ME' ? 'me' : '' }, h('td', null, r.pid === 'ME' ? h('span', { class: 'lnk', onclick: () => U.setTab('records') }, r.n) : nameLink(r.n, r.pid, r.loan ? 'loanin' : ''), r.loan ? h('span', { class: 'mute', style: { fontSize: '11px' } }, ' (임대)') : null), h('td', null, h('span', { class: 'tpos' }, r.pos)), h('td', null, r.age != null ? r.age : ''), h('td', null, r.apps), h('td', null, r.lgApps), h('td', null, h('b', null, r.g)), h('td', null, r.a), h('td', null, r.mom ? h('span', { class: 'momn' }, '★ ' + r.mom) : h('span', { class: 'mute' }, '-')), h('td', null, r.rt ? U.rt2(r.rt) : '-')))))) : h('div', { class: 'empty' }, '선수 기록이 없습니다 (명단 없는 하부 구단).')));
   // 그 시즌 이적시장 (시즌 시작 전 여름)
   root.append(windowSec(s, id, d.cs));
 }
@@ -429,7 +449,7 @@ function clubFixtures(s, root, id, d) {
 // 진행 중 시즌의 선수 기록 (이 구단 소속으로 뛴 경기)
 function clubLiveRecords(s, root, id) {
   const w = s.w, cix = C.cix(w, id), m = {};
-  const add = (agg, cat) => { for (const pid in agg || {}) { const a = agg[pid]; if (a[0] !== cix) continue; const r = m[pid] = m[pid] || { pid, apps: 0, g: 0, a: 0, rs: 0, min: 0, lg: 0 }; r.apps += a[1]; r.g += a[4]; r.a += a[5]; r.rs += a[8] / 10; r.min += a[3]; if (cat === 'L') r.lg += a[1]; } };
+  const add = (agg, cat) => { for (const pid in agg || {}) { const a = agg[pid]; if (a[0] !== cix) continue; const r = m[pid] = m[pid] || { pid, apps: 0, g: 0, a: 0, rs: 0, min: 0, lg: 0, mom: 0 }; r.apps += a[1]; r.g += a[4]; r.a += a[5]; r.rs += a[8] / 10; r.min += a[3]; r.mom += a[10] || 0; if (cat === 'L') r.lg += a[1]; } };
   for (const lid in w.cal.lg) add((w.cal.h[w.cal.lg[lid].k] || {}).agg, 'L');
   for (const k in w.cal.cup) add((w.cal.h[k] || {}).agg, 'C');
   for (const k in w.cal.cont) add((w.cal.h[k] || {}).agg, 'E');
@@ -455,8 +475,8 @@ function clubSeasonTab(s, root, id, d) {
   rows.sort((a, b) => (b[d.csSort] || 0) - (a[d.csSort] || 0));
   const th = (k, l) => h('th', { class: 'lnk' + (d.csSort === k ? ' on' : ''), onclick: () => { d.csSort = k; stay(); } }, l);
   root.append(h('div', { class: 'sec' }, h('h3', null, `선수 기록 ${rows.length}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 이 구단 소속으로 뛴 리그·컵·대륙 대회 경기 (국가대표 제외) · 열 제목을 누르면 정렬')),
-    rows.length ? h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, h('th', null, '선수'), h('th', null, '포지션'), h('th', null, '나이'), th('apps', '경기'), th('lg', '리그'), th('min', '출전시간'), th('g', '골'), th('a', '도움'), th('rt', '평점'))),
-      h('tbody', null, ...rows.map(r => h('tr', { class: r.pid === 'ME' ? 'me' : '' }, h('td', null, r.pid === 'ME' ? h('span', { class: 'lnk', onclick: () => U.setTab('records') }, r.n) : nameLink(r.n, r.pid)), h('td', null, h('span', { class: 'tpos' }, r.pos)), h('td', null, r.age != null ? r.age : ''), h('td', null, r.apps), h('td', null, r.lg), h('td', { class: 'mute' }, `${r.min.toLocaleString()}'`), h('td', null, h('b', null, r.g)), h('td', null, r.a), h('td', null, r.rt ? r.rt.toFixed(2) : '-')))))) : h('div', { class: 'in empty' }, '아직 기록이 없습니다.')));
+    rows.length ? h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, h('th', null, '선수'), h('th', null, '포지션'), h('th', null, '나이'), th('apps', '경기'), th('lg', '리그'), th('min', '출전시간'), th('g', '골'), th('a', '도움'), th('mom', '★ MOM'), th('rt', '평점'))),
+      h('tbody', null, ...rows.map(r => h('tr', { class: r.pid === 'ME' ? 'me' : '' }, h('td', null, r.pid === 'ME' ? h('span', { class: 'lnk', onclick: () => U.setTab('records') }, r.n) : nameLink(r.n, r.pid)), h('td', null, h('span', { class: 'tpos' }, r.pos)), h('td', null, r.age != null ? r.age : ''), h('td', null, r.apps), h('td', null, r.lg), h('td', { class: 'mute' }, `${r.min.toLocaleString()}'`), h('td', null, h('b', null, r.g)), h('td', null, r.a), h('td', null, r.mom ? h('span', { class: 'momn' }, '★ ' + r.mom) : h('span', { class: 'mute' }, '-')), h('td', null, r.rt ? r.rt.toFixed(2) : '-')))))) : h('div', { class: 'in empty' }, '아직 기록이 없습니다.')));
 }
 function clubOverview(s, root, id) {
   const w = s.w, c = w.clubs[id], lg = w.lg[c.lg];
@@ -483,6 +503,9 @@ function clubSquad(s, root, id, d) {
   // 스쿼드
   const sq = C.squadOf(w, c, s.w.year).slice().sort((a, b) => (POSORD[a.pos] - POSORD[b.pos]) || b.ovr - a.ovr);
   const meHere = s.car && s.car.club === id;
+  // 이 구단이 임대 보낸 선수: 다른 구단 명단에 있고 원소속(e[7])이 이 구단
+  const outs = []; if (!c.lite) for (const cid in w.clubs) { if (cid === id) continue; const x = w.clubs[cid]; if (x.sq) for (const e of x.sq) if (e[7] === id) outs.push([e, x]); }
+  outs.sort((a, b) => (POSORD[a[0][1]] - POSORD[b[0][1]]) || b[0][2] - a[0][2]);
   const ent = {}; if (!c.lite && c.sq) for (const e of c.sq) ent[String(e[0])] = e;
   const rl = !c.lite && c.sq && C.squadRoles ? C.squadRoles(c) : null;
   const RL = ['주전', '로테이션', '백업'];
@@ -496,8 +519,12 @@ function clubSquad(s, root, id, d) {
   root.append(h('div', { class: 'sec' }, h('h3', null, `스쿼드 ${sq.length + (meHere ? 1 : 0)}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, c.lite ? ' 하부 리그 구단은 대략적인 명단입니다' : ` ${unit} 총액 ${C.fmtWage(bill)} · 열 제목을 누르면 정렬`)),
     h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '640px' } }, h('thead', null, h('tr', null, th('pos', '포지션'), th(null, '이름'), th('age', '나이'), th(null, '국적'), th('ovr', 'OVR'), th(null, '역할'), th('ct', '계약'), th('wage', unit))),
       h('tbody', null, ...(meHere ? [h('tr', { class: 'me' }, h('td', null, s.p.pos), h('td', null, h('span', { class: 'lnk', onclick: () => U.setTab('profile') }, `${s.p.name} (나)`)), h('td', null, s.p.age), h('td', null, flag(s.p.nat, 18)), h('td', null, C.ovrOf(s.p)), h('td'), h('td', { class: 'mute', style: { fontSize: '12px' } }, s.car.status === 'loan' ? '임대' : s.car.contract ? `${s.car.contract + 1}.6` : ''), h('td', null, s.car.wage ? C.fmtWage(s.car.wage, true) : ''))] : []),
-        ...sq.map(x => { const e = ent[x.id]; return h('tr', null, h('td', null, h('span', { class: 'tpos' }, x.pos)), h('td', null, nameLink(x.n, x.id), e && e[14] && e[14] > (w.cal ? w.cal.d : 0) ? h('span', { class: 'injb', title: `부상 · ${C.fmtDateY(e[14])} 복귀 예정` }, `부상 ~${C.fmtDate ? C.fmtDate(e[14]) : ''}`) : null, e && e[7] && w.clubs[e[7]] ? h('span', { class: 'mute', style: { fontSize: '11px' } }, e[7] === id ? ' (임대 이적 예정)' : ` (${w.clubs[e[7]].name}에서 임대)`) : null), h('td', null, x.age != null ? x.age : ''), h('td', null, x.nat ? flag(x.nat, 18) : ''), h('td', null, Math.round(x.ovr)),
-          h('td', { class: 'mute', style: { fontSize: '12px' } }, e && rl && rl.has(e) ? RL[rl.get(e)] : ''), h('td', { class: 'mute', style: { fontSize: '12px' } }, e ? ctTxt(e) : ''), h('td', null, e && e[8] ? C.fmtWage(e[8], true) : '')); }))))));
+        ...sq.map(x => { const e = ent[x.id], lin = e && e[7] && e[7] !== id && w.clubs[e[7]], lout = e && e[7] === id; return h('tr', null, h('td', null, h('span', { class: 'tpos' }, x.pos)), h('td', null, nameLink(x.n, x.id, lin ? 'loanin' : lout ? 'loanout' : ''), e && e[14] && e[14] > (w.cal ? w.cal.d : 0) ? h('span', { class: 'injb', title: `부상 · ${C.fmtDateY(e[14])} 복귀 예정` }, `부상 ~${C.fmtDate ? C.fmtDate(e[14]) : ''}`) : null, e && e[7] && w.clubs[e[7]] ? h('span', { class: 'mute', style: { fontSize: '11px' } }, e[7] === id ? ' (임대 이적 예정)' : ` (${w.clubs[e[7]].name}에서 임대)`) : null), h('td', null, x.age != null ? x.age : ''), h('td', null, x.nat ? flag(x.nat, 18) : ''), h('td', null, Math.round(x.ovr)),
+          h('td', { class: 'mute', style: { fontSize: '12px' } }, e && rl && rl.has(e) ? RL[rl.get(e)] : ''), h('td', { class: 'mute', style: { fontSize: '12px' } }, e ? ctTxt(e) : ''), h('td', null, e && e[8] ? C.fmtWage(e[8], true) : '')); }),
+        // 임대 보낸 선수 (원소속팀: 빨간 이름 · 임대 중 표시)
+        ...(outs.length ? [h('tr', { class: 'grp' }, h('td', { colspan: 8 }, `임대 보낸 선수 ${outs.length}명`))].concat(outs.map(([e, lc]) => h('tr', null, h('td', null, h('span', { class: 'tpos' }, e[1])), h('td', null, nameLink(C.pName(w, e), String(e[0]), 'loanout'), h('span', { class: 'loantag' }, '임대 중 → ', h('span', { class: 'lnk', onclick: ev => { ev.stopPropagation(); U.openClub(lc.id); } }, lc.name))),
+          h('td', null, e[3]), h('td', null, flag(e[5], 18)), h('td', null, e[2]), h('td', { class: 'mute', style: { fontSize: '12px' } }, e[3] <= 21 ? '유망주 임대' : '임대'), h('td', { class: 'mute', style: { fontSize: '12px' } }, '시즌 끝나면 복귀'), h('td', null, e[8] ? C.fmtWage(e[8], true) : '')))) : []))))));
+  if (!c.lite) root.append(h('div', { class: 'mute', style: { fontSize: '12px', padding: '0 4px' } }, h('span', { class: 'loanin' }, '파란 이름'), ' = 다른 구단에서 임대 온 선수 · ', h('span', { class: 'loanout' }, '빨간 이름'), ' = 이 구단 소속으로 임대 간 선수'));
   // 재정
   if (!c.lite && c.rev) {
     const fin = [['연 수입 (추정)', C.fmtEUR(c.rev)], ['보유 자금', C.fmtEUR(c.cash || 0)], ['연간 급여 총액', C.fmtEUR(bill * 52)], ['수입 대비 급여', Math.round(bill * 52 / c.rev * 100) + '%'], ['급여 상한 (수입의 62%)', C.fmtEUR(c.rev * .62)]];

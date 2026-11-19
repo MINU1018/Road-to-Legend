@@ -86,11 +86,11 @@ function locMap(w) {
 function idxAdd(w, d, k) { const a = w.cal.ix[d] || (w.cal.ix[d] = []); if (!a.includes(k)) a.push(k); }
 function addAgg(agg, ci, list) {
   for (const x of list) {
-    const a = agg[x.id] || (agg[x.id] = [ci, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    a[0] = ci; a[1]++; if (x.start) a[2]++; a[3] += Math.max(0, x.off - x.on); a[4] += x.g; a[5] += x.a; a[6] += x.y; a[7] += x.r; a[8] += Math.round(x.rt * 10); a[9] += x.cs || 0;
+    const a = agg[x.id] || (agg[x.id] = [ci, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    a[0] = ci; a[1]++; if (x.start) a[2]++; a[3] += Math.max(0, x.off - x.on); a[4] += x.g; a[5] += x.a; a[6] += x.y; a[7] += x.r; a[8] += Math.round(x.rt * 10); a[9] += x.cs || 0; if (x.mom) a[10] = (a[10] || 0) + 1;
   }
 }
-C.calAggCols = ['club', 'apps', 'starts', 'min', 'g', 'a', 'y', 'r', 'rs10', 'cs'];
+C.calAggCols = ['club', 'apps', 'starts', 'min', 'g', 'a', 'y', 'r', 'rs10', 'cs', 'mom'];
 const curStore = w => {
   const lb = C.wLabel(w.year);
   w.mxPending = w.mxPending || {};
@@ -115,7 +115,7 @@ function writeC(w, key, agg) {
     let P = w.ps[pid];
     if (!P) { const f = findE(w, pid); if (!f) continue; const e = f[0]; P = w.ps[pid] = { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' }; }
     const a = agg[pid];
-    P.c = (P.c || '') + `${yOff}|${key}|${a[1]}|${a[4]}|${a[5]}|${Math.round(a[8] / a[1] * 10)}|${a[3]}|${a[9]};`;
+    P.c = (P.c || '') + `${yOff}|${key}|${a[1]}|${a[4]}|${a[5]}|${Math.round(a[8] / a[1] * 10)}|${a[3]}|${a[9]}|${a[10] || 0};`;
     C.psDirty = true;
   }
 }
@@ -182,9 +182,24 @@ function lgLeaders(S, LS, agg) {
   const posOf = id => (w.ps && w.ps[id] && w.ps[id].pos) || '';
   const ageOf = {}; for (const id of (w.lg[LS.id] || { clubs: [] }).clubs) { const c = w.clubs[id]; if (c && c.sq) for (const e of c.sq) ageOf[String(e[0])] = e[3]; }
   const best = list.filter(x => x.id !== 'ME' && x.id[0] !== '~' && x.apps >= Math.max(3, rounds * .4)).map(x => [nm(x), x.club, +(x.rs / x.apps).toFixed(2), posOf(x.id), pidOf(x), ageOf[x.id] || 0, x.apps]).sort((x, z) => z[2] - x[2]).slice(0, 25);
-  return { sc, as, best };
+  // 베스트 XI: 리그 경기 50% 이상 출전
+  const bxc = list.filter(x => x.id !== 'ME' && x.id[0] !== '~' && x.apps >= Math.max(3, rounds * .5)).map(x => ({ pid: x.id, n: nm(x), club: x.club, pos: posOf(x.id), rt: x.rs / x.apps, apps: x.apps, g: x.g, a: x.a }));
+  const xi = C.pickXI ? C.pickXI(bxc) : null;
+  const bx = xi ? xi.map(x => [x.n, x.club, +x.rt.toFixed(2), x.pos, x.pid, x.apps, x.g, x.a]) : null;
+  return { sc, as, best, bx };
 }
 C.calLeaders = lgLeaders;
+// ---------- 베스트 XI (4-3-3) ----------
+// cands: [{ pid, n, club, pos, rt, apps, g, a }]. 점수 = 평균 평점 + 경기당 공격 포인트 보정. 자리마다 맞는 포지션 먼저, 없으면 비슷한 포지션
+const XI = [['GK', ['GK'], []], ['LB', ['LB'], ['CB', 'RB']], ['CB', ['CB'], ['CDM']], ['CB', ['CB'], ['CDM']], ['RB', ['RB'], ['CB', 'LB']],
+  ['CM', ['CM', 'CDM'], ['CAM']], ['CM', ['CM', 'CAM', 'CDM'], []], ['CM', ['CAM', 'CM'], ['CDM']], ['LW', ['LW', 'LM'], ['RW', 'ST', 'CAM']], ['ST', ['ST'], ['LW', 'RW', 'CAM']], ['RW', ['RW', 'RM'], ['LW', 'ST', 'CAM']]];
+C.pickXI = (cands, scf, maxClub) => {
+  const sc = scf || (x => x.rt + Math.min(.6, (x.g + x.a * .7) / Math.max(1, x.apps) * .45) + (x.pos === 'GK' ? .15 : 0));
+  const pool = cands.slice().sort((a, b) => sc(b) - sc(a)), used = new Set(), out = XI.map(() => null);
+  for (const pass of [1, 2]) XI.forEach(([slot, pri, alt], i) => { if (out[i]) return; const ok = pass === 1 ? pri : pri.concat(alt); const x = pool.find(z => !used.has(z.pid) && ok.includes(z.pos) && (!maxClub || out.filter(o => o && o.club === z.club).length < maxClub)); if (x) { used.add(x.pid); out[i] = Object.assign({ slot }, x); } });
+  return out.every(Boolean) ? out : null;
+};
+C.XISLOTS = XI.map(x => x[0]);
 function lgFinalize(S, LS) {
   const w = S.w, lg = w.lg[LS.id], h = H(w, LS.k), agg = h.agg || {};
   const rows = C.sortTable(LS.tb);
@@ -208,7 +223,7 @@ function lgFinalize(S, LS) {
       const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
       if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
       Pp.pos = e[1];
-      Pp.h += [yOff, cx(w, id), apps, x ? x[4] : 0, x ? x[5] : 0, apps ? Math.round(x[8] / apps * 10) : 0, e[2], e[3], e[7] ? 1 : 0, x ? x[3] : 0, x ? x[9] : 0].join(',') + ';';
+      Pp.h += [yOff, cx(w, id), apps, x ? x[4] : 0, x ? x[5] : 0, apps ? Math.round(x[8] / apps * 10) : 0, e[2], e[3], e[7] ? 1 : 0, x ? x[3] : 0, x ? x[9] : 0, x ? x[10] || 0 : 0].join(',') + ';';
     }
   }
   // 시즌 도중 구단을 옮긴 선수(이적·임대): 이 리그에서 마지막으로 뛴 구단 기준으로 기록
@@ -218,7 +233,7 @@ function lgFinalize(S, LS) {
     if (!e && !w.ps[pid]) continue;
     const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
     if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
-    Pp.h += [yOff, x[0], x[1], x[4], x[5], x[1] ? Math.round(x[8] / x[1] * 10) : 0, e ? e[2] : '', e ? e[3] : '', 0, x[3], x[9]].join(',') + ';';
+    Pp.h += [yOff, x[0], x[1], x[4], x[5], x[1] ? Math.round(x[8] / x[1] * 10) : 0, e ? e[2] : '', e ? e[3] : '', 0, x[3], x[9], x[10] || 0].join(',') + ';';
     if (e && f[1].lg !== LS.id && (e[11] || 0) < x[1]) { e[11] = x[1]; e[12] = Math.round(x[8] / x[1] * 10); }
     C.psDirty = true;
   }
@@ -831,7 +846,7 @@ function noLeagueClubs(S) {
       const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
       if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
       Pp.pos = e[1];
-      Pp.h += [yOff, cx(w, id), apps, x ? x[4] : 0, x ? x[5] : 0, apps ? Math.round(x[8] / apps * 10) : 0, e[2], e[3], e[7] ? 1 : 0, x ? x[3] : 0, x ? x[9] : 0].join(',') + ';';
+      Pp.h += [yOff, cx(w, id), apps, x ? x[4] : 0, x ? x[5] : 0, apps ? Math.round(x[8] / apps * 10) : 0, e[2], e[3], e[7] ? 1 : 0, x ? x[3] : 0, x ? x[9] : 0, x ? x[10] || 0 : 0].join(',') + ';';
     }
   }
 }
@@ -843,7 +858,7 @@ function rollover(S) {
   w.bdLast = bd ? { y: w.year + 1, top: bd.top.map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr, x.pos || '']), rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank } : null;
   if (S.ss && S.ss.on && bd) S.ss.ballon = bd;
   // 시상식: 9월 넷째 주 월요일. 그때까지 순위는 비공개 (후보 30인만 공개)
-  if (bd) w.cer = { y: w.year + 1, d: C.cerDay(w.year + 1), rev: 0, seen: 0, me: S.mode !== 'world' ? { rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank, gs0: bd.gs[0] || null, gk: !!bd.isGK, label: S.ss && S.ss.label } : null };
+  if (bd) w.cer = { y: w.year + 1, d: C.cerDay(w.year + 1), rev: 0, seen: 0, me: S.mode !== 'world' ? { rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank, gs0: bd.gs[0] || null, gk: !!bd.isGK, xi: bd.wxiMe ? 1 : 0, label: S.ss && S.ss.label } : null };
   if (C.wn) try { C.wn.yearEnd(S, bd); } catch (e) { console.error(e); }
   // 관전 모드 시즌 요약
   const A = w.arch && w.arch[lb];
@@ -910,12 +925,63 @@ function injTick(S, d) {
   }
 }
 C.injTick = injTick;
+// ---------- 무소속 선수 영입 (매주, 이적시장이 아니어도) ----------
+// 무소속 선수는 이적료가 없어 언제든 계약할 수 있다. 무소속 기간이 길수록 요구 주급이 내려간다
+function txLabelAt(w, d) {
+  if (w.cal.win && d >= w.cal.win.d0 && d <= w.cal.win.d1) return w.cal.win.lbl;
+  const m = ymd(d)[1];
+  if (m === 6 || m === 7) return C.wLabel(w.year + 1);
+  if (m <= 5) { const lw = C.wLabel(w.year) + 'w'; return (w.txKeys || []).includes(lw) ? lw : C.wLabel(w.year); }
+  return C.wLabel(w.year);
+}
+C.txLabelAt = txLabelAt;
+function faTick(S, d) {
+  const w = S.w; if (!w.fa || !w.fa.length) return;
+  const inWin = !!(w.cal.win && d >= w.cal.win.d0 && d <= w.cal.win.d1);
+  const clubs = Object.values(w.clubs).filter(c => c.sq && c.lg && c.sq.length < 29).sort((a, b) => a.str - b.str), strs = clubs.map(c => c.str);
+  const lower = x => { let lo = 0, hi = strs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (strs[m] < x) lo = m + 1; else hi = m; } return lo; };
+  const GR = { GK: 'G', CB: 'D', LB: 'D', RB: 'D', CDM: 'M', CM: 'M', CAM: 'M', LM: 'A', RM: 'A', LW: 'A', RW: 'A', ST: 'A' };
+  // 나라별 1부 리그 수준(상위 6개 구단 평균): 이름 있는 선수는 수준 높은 리그나 돈 많은 리그(사우디·미국·튀르키예 등)로 간다
+  const lv = {}; { const by = {}; for (const c of clubs) { const L = w.lg[c.lg]; if (L && L.tier === 1) (by[L.nation] = by[L.nation] || []).push(c.str); } for (const n in by) { const a = by[n].sort((x, y) => y - x).slice(0, 6); lv[n] = a.reduce((x, y) => x + y, 0) / a.length; } }
+  const RICH = { SAU: 2.4, USA: 1.7, TUR: 1.5, QAT: 1.8, UAE: 1.5 };
+  w.fa.sort((a, b) => b[2] - a[2]);
+  const keep = [], signed = [];
+  for (const e of w.fa) {
+    const o = e[2], age = e[3], idle = d - (e[18] || d);
+    const p = (inWin ? .3 : .12) * (idle < 10 ? .4 : 1) * (age >= 34 ? .6 : 1);
+    if (R() > p) { keep.push(e); continue; }
+    // 이 선수가 주전·로테이션이 될 만한 구단 (전력 o-11 ~ o+2)
+    const i0 = lower(o - (o >= 74 ? 9 : 11)), i1 = lower(o + 2.001); let best = null, bs = 0;
+    for (let k = 0; k < 40 && i1 > i0; k++) {
+      const c = clubs[i0 + ((R() * (i1 - i0)) | 0)]; if (!c || c.sq.length >= 29) continue;
+      const g = GR[e[1]] || 'M', same = c.sq.filter(x => (GR[x[1]] || 'M') === g), better = same.filter(x => x[2] >= o - 1 && !x[14]).length;
+      const want = { G: 2, D: 6, M: 5, A: 5 }[g]; if (better >= want) continue;
+      const wage = Math.max(100, Math.round(C.aiWage(c, o, age) * Math.max(.45, 1 - idle / 365 * .55) / 50) * 50);
+      const room = (c.rev || 2e6) * .62 / 52 - (c.wb != null ? c.wb : c.sq.reduce((a, x) => a + (x[8] || 0), 0));
+      if (room < wage * .6) continue;
+      const L = w.lg[c.lg] || {}, n = L.nation || c.nat;
+      const sc = (want - better) * (c.sq.length < 24 ? 1.5 : 1) * (n === e[5] ? 1.6 : 1) * Math.exp((c.str - o) * .12) * (.5 + R())
+        * (o >= 72 ? Math.pow(clamp((c.rev || 2e6) / 25e6, .1, 8), .8) * (L.tier === 1 ? 1 : .35) : 1) * (age >= 29 && o >= 72 ? RICH[n] || 1 : 1);
+      if (sc > bs) { bs = sc; best = [c, wage]; }
+    }
+    if (!best) { keep.push(e); continue; }
+    const [c, wage] = best;
+    e[6] = age >= 32 ? 1 : 1 + ((R() * 2) | 0); e[7] = 0; e[8] = wage; e[18] = 0; e[11] = 0; c.sq.push(e); c.wb = (c.wb || 0) + wage;
+    c.str = C.xiStrength(c.sq); sidesReset([c.id]);
+    const lb = txLabelAt(w, d); w.txAdd = w.txAdd || {}; (w.txAdd[lb] = w.txAdd[lb] || []).push([String(e[0]), '', c.id, 'free', 0, e[2], e[3], wage, e[6], null, d]);
+    if (!(w.txKeys || []).includes(lb)) (w.txKeys = w.txKeys || []).push(lb);
+    signed.push([e, c, idle]);
+  }
+  w.fa = keep;
+  if (C.wn && C.wn.faSign) for (const x of signed) C.wn.faSign(S, x[0], x[1], x[2], d);
+}
+C.faTick = faTick;
 // 연속 우승 구단은 동기·분위기가 조금 떨어지기 쉽다 (2연패 이상부터)
 const titleStreak = (w, c) => { const H = c.lg && w.hist.lg[c.lg]; if (!H) return 0; let n = 0; for (let i = H.length - 1; i >= 0 && H[i].c === c.id; i--) n++; return n; };
 C.newSeasonForm = w => { for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite || !c.sq) continue; const st = titleStreak(w, c); c.fm = clamp(N(st >= 5 ? -1.5 : st >= 3 ? -1.1 : st === 2 ? -.6 : st === 1 ? -.2 : 0, .9), -2.6, 2.6); c.injd = 0; for (const e of c.sq) if (e[14]) { c.injd = Math.min(0, C.xiStrength(c.sq.filter(x => !x[14])) - c.str); break; } } };
 function dayEvents(S, d) {
   const w = S.w, [y, m, dd] = ymd(d);
-  if (w.cal.started && C.toDate(d).getUTCDay() === 1) injTick(S, d);
+  if (w.cal.started && C.toDate(d).getUTCDay() === 1) { injTick(S, d); faTick(S, d); }
   if (m === 8 && dd === 1 && w.cal.started && w.year < y) rollover(S);
   if (w.cal.started && (!w.cal.am || w.cal.am.wy !== w.year)) amSetup(S);
   if (w.cer && !w.cer.rev && d > w.cer.d) C.cerReveal(S);
@@ -1095,6 +1161,7 @@ C.cerReveal = function (S) {
   if (m.youngRank === 1) aw.push({ t: '골든보이', k: 'golden' });
   if (m.gsRank === 1 && m.gs0) aw.push({ t: '유러피언 골든슈', k: 'goldshoe', v: `${m.gs0[3]}골 (${m.gs0[4]}점)` });
   if (m.gk && m.rank && m.rank <= 6 && R() < .55) aw.push({ t: '야신 트로피', k: 'yashin' });
+  if (m.xi) aw.push({ t: '월드 베스트 XI', k: 'wxi' });
   r.ballon = m.rank || null;
   const bh = (w.bdHist || []).find(b => b.y === c.y); if (bh) r.ballonTop = bh.top.slice(0, 5).map(x => [x[0], (w.clubs[x[1]] || {}).name || '', !!x[3]]);
   for (const a of aw) { r.awards = (r.awards || []).concat(a); S.awards.push(Object.assign({ y: r.label }, a)); if (C.news) C.news(S, `${S.p.name}, ${a.t} 수상${a.v ? ` (${a.v})` : ''}`, 'award', true); }

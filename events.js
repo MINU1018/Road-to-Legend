@@ -991,13 +991,27 @@ function ballonDor(S) {
   // 유러피언 골든슈: 지난 시즌 유럽 1부 리그 득점 × 리그 계수 (빅5 2.0, 그 밖 유럽 1.5)
   const gs = goldenShoe(S, A);
   (w.gsHist = w.gsHist || []).push({ y: w.year + 1, top: gs.top });
-  return { y: w.year + 1, rank: rank && rank <= 30 ? rank : null, top: all.slice(0, 30), youngRank: gb.rank, gb: gb.top, gsRank: gs.rank, gs: gs.top, maxG, isGK: p && p.pos === 'GK' };
+  // 월드 베스트 XI (4-3-3): 평점 + 공격 포인트 + 기량(OVR) + 소속팀 성과, 클럽 경기 20경기 이상
+  let wxi = null, wxiMe = 0;
+  if (C.pickXI) {
+    const cxi = rows.filter(r => r.st.apps >= 20).map(r => ({ pid: r.pid, n: C.pName(w, r.e), club: r.c.id, pos: r.e[1], rt: r.st.rs / r.st.apps, apps: r.st.apps + r.st.napps, g: r.st.g + r.st.ng, a: r.st.a + r.st.na, ovr: r.e[2], lf: lgFOf(r.c), tp: (champ.has(r.c.id) ? 1 : 0) + (contPts[r.c.id] || 0) * .15 }));
+    if (me && me._st.apps >= 20) cxi.push({ pid: 'ME', n: me.n, club: me.cid, pos: me.pos, rt: me.rt, apps: me.apps, g: me.g, a: me.a, ovr: me.ovr, lf: w.clubs[me.cid] ? lgFOf(w.clubs[me.cid]) : .5, tp: (me._tp || 0) * .15 });
+    const xi = C.pickXI(cxi, x => x.rt + Math.min(.6, (x.g + x.a * .7) / Math.max(1, x.apps) * .45) + (x.ovr - 82) * .07 + x.tp * .12 - (1 - (x.lf || 1)) * .6 + (x.pos === 'GK' ? .15 : 0), 3);
+    if (xi) { wxi = xi.map(x => [x.n, x.club, +x.rt.toFixed(2), x.pos, x.pid === 'ME' ? '' : x.pid, x.apps, x.g, x.a, x.pid === 'ME' ? 1 : 0]); wxiMe = wxi.some(x => x[8]) ? 1 : 0; (w.wxiHist = w.wxiHist || []).push({ y: w.year + 1, xi: wxi }); }
+  }
+  return { y: w.year + 1, rank: rank && rank <= 30 ? rank : null, top: all.slice(0, 30), youngRank: gb.rank, gb: gb.top, gsRank: gs.rank, gs: gs.top, maxG, isGK: p && p.pos === 'GK', wxi, wxiMe };
 }
 C.ballonDor = ballonDor;
+// 골든보이 규칙 (투토스포르트): 21세 이하 · 유럽 1부 리그에서 뛰는 선수 · 역대 수상자는 다시 받을 수 없다
 function goldenBoy(S, o) {
   const w = S.w, rows = [];
+  const won = new Set((w.gbHist || []).map(x => x.top[0] && x.top[0][2]).filter(Boolean));
+  // 게임 시작 전 실제 수상자 (2021 페드리, 2022 가비, 2023 벨링엄, 2024 라민 야말, 2025 데지레 두에)
+  const REALGB = new Set(['Pedri', 'Gavi', 'Jude Bellingham', 'Lamine Yamal', 'Désiré Doué']);
+  const meWon = (S.awards || []).some(a => a.k === 'golden');
   for (const id in w.clubs) { const c = w.clubs[id]; if (!c.lg || c.lite || !c.sq) continue;
-    for (const e of c.sq) { if (e[3] > 21 || (e[2] < 64 && (e[4] || 0) < 80)) continue; const st = bdStats(w, String(e[0]), o.yOff, o.intlKeys); if (st.apps < 8) continue; rows.push({ e, c: seasonClub(w, st, c), pid: String(e[0]), rg: RG[C.ROLE[e[1]]] || 'M', st }); } }
+    const L = w.lg[c.lg]; if (!L || L.tier !== 1 || C.confOf(L.nation) !== 'UEFA') continue;
+    for (const e of c.sq) { if (e[3] > 21 || (e[2] < 64 && (e[4] || 0) < 80) || won.has(String(e[0])) || (typeof e[0] === 'number' && REALGB.has(C.pName(w, e)))) continue; const st = bdStats(w, String(e[0]), o.yOff, o.intlKeys); if (st.apps < 8) continue; rows.push({ e, c: seasonClub(w, st, c), pid: String(e[0]), rg: RG[C.ROLE[e[1]]] || 'M', st }); } }
   const mean = {}; for (const g of ['F', 'M', 'D', 'G']) { const l = rows.filter(r => r.rg === g && r.st.apps >= 12); mean[g] = l.length ? l.reduce((a, r) => a + r.st.rs / r.st.apps, 0) / l.length : 6.75; }
   const appF = n => n >= 35 ? 1 : n >= 25 ? .94 : n >= 15 ? .8 : .6;
   const score = (ovr, pot, age, rg, st, c, tp) => { const rt = st.apps ? st.rs / st.apps : 6.5;
@@ -1005,17 +1019,20 @@ function goldenBoy(S, o) {
   const list = rows.map(r => { const { e, c, st } = r, rt = st.apps ? st.rs / st.apps : 0;
     return { n: C.pName(w, e), pid: r.pid, cid: c.id, ovr: e[2], pot: Math.round(e[4] || e[2]), age: e[3], pos: e[1], nat: e[5], apps: st.apps, g: st.g, a: st.a, napps: st.napps, ng: st.ng, na: st.na, rt: +rt.toFixed(2), s: score(e[2], e[4] || e[2], e[3], r.rg, st, c, o.tpOf(c, e, st)) }; });
   let me = null;
-  if (o.me && o.me.st && o.me.st.apps >= 5) { const m = o.me;
+  const meLg = S.car && S.car.club && w.clubs[S.car.club] ? w.lg[w.clubs[S.car.club].lg] : null;
+  if (o.me && o.me.st && o.me.st.apps >= 5 && !meWon && meLg && meLg.tier === 1 && C.confOf(meLg.nation) === 'UEFA') { const m = o.me;
     me = { n: S.p.name, pid: '', cid: S.car.club, ovr: m.ovr, pot: m.pot, age: m.age, pos: S.p.pos, nat: S.p.nat, apps: m.st.apps, g: m.st.g, a: m.st.a, napps: m.st.napps, ng: m.st.ng, na: m.st.na, rt: +(m.st.rs / m.st.apps).toFixed(2), me: true, s: score(m.ovr, m.pot, m.age, m.rg, m.st, m.c, (m.tp || 0) * .6) * (m.youth ? .55 : 1) };
     list.push(me); }
   list.sort((a, b) => b.s - a.s);
   const rank = me ? list.indexOf(me) + 1 : null;
   return { top: list.slice(0, 10), rank: rank && rank <= 20 ? rank : null };
 }
+const GS15 = new Set(['POR', 'NED', 'BEL', 'TUR', 'CZE', 'GRE', 'NOR', 'DEN', 'POL', 'AUT', 'SUI', 'SCO', 'ISR', 'CRO', 'SRB', 'UKR']);
 function goldenShoe(S, A) {
   const w = S.w, out = [];
   for (const id in (A && A.lg) || {}) { const lg = w.lg[id], L = A.lg[id]; if (!lg || lg.tier !== 1 || C.confOf(lg.nation) !== 'UEFA' || C.calType(lg.nation) !== 'eu') continue;
-    const k = BIG5.includes(lg.nation) ? 2 : 1.5;
+    // 골든슈 계수: UEFA 리그 순위 1~5위 ×2, 6~21위 ×1.5, 그 아래 ×1
+    const k = BIG5.includes(lg.nation) ? 2 : GS15.has(lg.nation) ? 1.5 : 1;
     for (const x of (L.sc || []).slice(0, 5)) out.push([x[0], x[1], x[5] || '', x[2], +(x[2] * k).toFixed(1), id, x[4] ? 1 : 0]); }
   out.sort((a, b) => b[4] - a[4] || b[3] - a[3]);
   const mi = out.findIndex(x => x[6]);

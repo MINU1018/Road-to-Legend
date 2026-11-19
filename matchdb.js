@@ -186,6 +186,10 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
       x.rt = Math.round(clamp(r, 4.5, 10) * 10) / 10;
     }
   }
+  // 경기 최우수 선수(MOM): 평점 최고 → 공격 포인트 → 이긴 팀 → 선발 순 (화면에서도 같은 규칙으로 다시 고른다)
+  { const res = goals[0] > goals[1] ? 0 : goals[1] > goals[0] ? 1 : -1, cands = [];
+    for (let s = 0; s < 2; s++) P[s].forEach((x, i) => cands.push({ x, id: x.id, rt: x.rt, ga: x.g + x.a, win: res === s, start: x.start, s, i }));
+    const m = MD.momPick(cands); if (m) m.x.mom = 1; }
   // 압축 저장: 선수 = 사전 번호(62진수), 평점 = 한 글자(4.5~10.0을 0.1 단위), 교체 투입 '+분', 교체 아웃 '-분'
   const enc = id => b62(pix(st, id));
   const evS = ev.map(e => `${e[0]}${e[1]}.${e[2]}.${enc(e[3])}${e[4] != null ? '.' + enc(e[4]) : ''}`).join('|');
@@ -193,6 +197,15 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   const real = sd => sd.sq.some(x => x.id[0] !== '~') || (u && u.rec);
   const lnS = real(A) || real(B) ? P.map(list => list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on + (x.off < 90 ? '-' + x.off : ''))).join(',')).join('/') : '';
   return { ev: evS, ln: lnS, P };
+};
+MD.momPick = cands => { let b = null; for (const c of cands) { if (!b || c.rt > b.rt || (c.rt === b.rt && (c.ga > b.ga || (c.ga === b.ga && ((c.win && !b.win) || (c.win === b.win && c.start > b.start)))))) b = c; } return b; };
+// 해석된 경기(decode 결과)에서 MOM 찾기
+MD.momOf = (d, ga, gb) => {
+  if (!d || !d.ln || d.ln.length !== 2) return null;
+  const res = ga > gb ? 0 : gb > ga ? 1 : -1, cands = [];
+  const gaOf = id => d.ev.filter(e => (e.p === id && (e.k === 'g' || e.k === 'p')) || e.a === id).length;
+  d.ln.forEach((list, s) => list.forEach((x, i) => cands.push({ id: x.id, rt: x.rt, ga: gaOf(x.id), win: res === s, start: x.start ? 1 : 0, s, i })));
+  const m = MD.momPick(cands); return m ? m.id : null;
 };
 function lastEv(ev, s, id) { let m = 0; for (const e of ev) if (e[2] === s && (e[3] === id || e[4] === id)) m = Math.max(m, e[1]); return m; }
 function pickW(list, wf) { let t = 0; const ws = list.map(x => { const v = Math.max(0, wf(x) || 0); t += v; return v; }); if (t <= 0) return list[0] || null; let r = R() * t; for (let i = 0; i < list.length; i++) { r -= ws[i]; if (r <= 0) return list[i]; } return list[list.length - 1]; }

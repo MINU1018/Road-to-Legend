@@ -10,7 +10,8 @@ const dstr = d => `${C.fmtDateY(d)} (${DOW[C.toDate(d).getUTCDay()]})`;
 
 // 이 해 시상 결과가 아직 비공개인가
 U.cerHidden = y => { const w = S() && S().w; return !!(w && w.cer && !w.cer.rev && w.cer.y === y); };
-const histOf = (w, k, y) => ((k === 'bd' ? w.bdHist : k === 'gb' ? w.gbHist : w.gsHist) || []).find(x => x.y === y);
+const histOf = (w, k, y) => ((k === 'bd' ? w.bdHist : k === 'gb' ? w.gbHist : k === 'xi' ? w.wxiHist : w.gsHist) || []).find(x => x.y === y);
+U.cerHistOf = histOf;
 
 // 홈·커리어 화면 배너: 시상식 날(또는 아직 안 본 지난 시상식), 그 전에는 후보 발표 안내
 U.cerBanner = function (s, compact) {
@@ -34,7 +35,7 @@ U.cerNominees = function (s, y) {
 // ---------- 시상식 연출 ----------
 U.ceremony = function (s) {
   const w = s.w, c = w.cer; if (!c) return;
-  const b = histOf(w, 'bd', c.y), g = histOf(w, 'gb', c.y), gs = histOf(w, 'gs', c.y);
+  const b = histOf(w, 'bd', c.y), g = histOf(w, 'gb', c.y), gs = histOf(w, 'gs', c.y), wx = histOf(w, 'xi', c.y);
   if (!b) return;
   let timers = [], phase = 0;
   const clear = () => { for (const t of timers) clearTimeout(t); timers = []; };
@@ -73,6 +74,20 @@ U.ceremony = function (s) {
   }
   const gsItems = (gs ? gs.top : []).map((x, k) => ({ el: win => row(k + 1, x[0], null, x[1], `${x[3]}골 · ${x[4]}점 · ${(w.lg[x[5]] || {}).name || ''}`, x[6], win ? 'win' : '') }));
   const gbItems = (g ? g.top : []).map((x, k) => ({ el: win => row(k + 1, x[0], x[15], x[1], `${x[6]}세 · OVR ${x[4]} · ${x[8]}경기 ${x[9]}골 ${x[10]}도움${x[11] ? ` · 평점 ${(+x[11]).toFixed(2)}` : ''}`, x[3], win ? 'win' : '') }));
+  // 월드 베스트 XI: 골키퍼부터 공격수까지 한 명씩 경기장에 놓인다
+  function worldXI() {
+    clear(); stage.replaceChildren(); foot.replaceChildren();
+    const xi = wx.xi, shown = xi.map(() => null);
+    const pitch = () => U.xiPitch(w, shown.map((x, k) => x), { cls: 'cer' });
+    let box = pitch(); stage.append(h('div', { class: 'chead' }, h('div', { class: 'kk' }, `WORLD XI ${c.y}`), h('h2', null, '월드 베스트 XI')), box);
+    const order = [0, 4, 3, 2, 1, 7, 6, 5, 10, 8, 9]; let k = 0, done = false; // GK → 수비 → 미드 → 공격 (가운데 공격수 마지막)
+    const redraw = () => { const nb = pitch(); box.replaceWith(nb); box = nb; };
+    const finish = () => { if (done) return; done = true; clear(); xi.forEach((x, i) => shown[i] = x); redraw(); foot.replaceChildren(btn('다음 ▸', ballon, 'gold')); };
+    foot.append(btn('건너뛰기', finish));
+    const step = () => { if (k >= order.length) { done = true; if (U.confetti) U.confetti(80, ['#f2c14e', '#ffffff', '#7fd1ff']); foot.replaceChildren(btn('다음 ▸', ballon, 'gold')); return; }
+      const i = order[k++]; shown[i] = xi[i]; redraw(); const el = box.querySelectorAll('.xic')[[8, 9, 10, 5, 6, 7, 1, 2, 3, 4, 0].indexOf(i)]; if (el) el.classList.add('pop'); at(k >= 9 ? 900 : 520, step); };
+    at(500, step);
+  }
   // 발롱도르: 30~11위 빠르게, 10~4위 천천히, 3·2위는 뜸, 1위는 따로 발표
   function ballon() {
     clear(); stage.replaceChildren(); foot.replaceChildren();
@@ -113,11 +128,12 @@ U.ceremony = function (s) {
   }
   function intro() {
     stage.replaceChildren(h('div', { class: 'cintro' }, h('div', { class: 'kk' }, `${c.y} · ${dstr(c.d)}`), h('h1', { class: 'shine' }, "Ballon d'Or"), h('div', { class: 'ss' }, `${C.wLabel(c.y - 1)} 시즌 최고의 선수를 가립니다`),
-      h('div', { class: 'cprog' }, ...['유러피언 골든슈', '골든보이', '발롱도르'].map((t, k) => h('span', null, `${k + 1}. ${t}`)))));
+      h('div', { class: 'cprog' }, ...['유러피언 골든슈', '골든보이'].concat(wx ? ['월드 베스트 XI'] : [], ['발롱도르']).map((t, k) => h('span', null, `${k + 1}. ${t}`)))));
     foot.replaceChildren(btn('닫기', close), btn('시상식 시작 ▸', gsPhase, 'gold'));
   }
   const gsPhase = () => gsItems.length ? category('유러피언 골든슈', 'EUROPEAN GOLDEN SHOE · 리그 골 × 계수', gsItems, () => 380, gbPhase) : gbPhase();
-  const gbPhase = () => gbItems.length ? category('골든보이', 'GOLDEN BOY · 21세 이하 최고의 유망주', gbItems, k => k <= 3 ? 1100 : 480, ballon) : ballon();
+  const gbPhase = () => gbItems.length ? category('골든보이', 'GOLDEN BOY · 21세 이하 · 유럽 1부 리그 · 역대 수상자 제외', gbItems, k => k <= 3 ? 1100 : 480, xiPhase) : xiPhase();
+  const xiPhase = () => wx && wx.xi ? worldXI() : ballon();
   document.body.append(root);
   intro();
 };

@@ -8,6 +8,11 @@ const S = () => U.S();
 const KIND = { g: '골', p: '페널티킥 골', o: '자책골', y: '경고', r: '퇴장', 2: '경고 누적 퇴장' };
 const ICON = { g: '⚽', p: '⚽', o: '⚽', y: '▮', r: '▮', 2: '▮' };
 const nameOf = id => MD.nameOf(id, S());
+// 도움 아이콘: 축구화
+const NS = 'http://www.w3.org/2000/svg';
+U.bootIcon = (size = 14) => { const sv = document.createElementNS(NS, 'svg'); sv.setAttribute('viewBox', '0 0 24 24'); sv.setAttribute('width', size); sv.setAttribute('height', size); sv.setAttribute('class', 'boot'); sv.setAttribute('aria-label', '도움');
+  sv.innerHTML = '<path fill="currentColor" d="M2.5 5.2c0-.7.6-1.2 1.2-1.2h4.1c.4 0 .8.2 1 .6l1.3 2.6c.3.6.9.9 1.6.9h1.6l6 2.4c1.9.8 3.2 2.6 3.2 4.7v1.4c0 .5-.4.9-.9.9H3.4c-.5 0-.9-.4-.9-.9z"/><path fill="none" style="stroke:var(--bg,#111)" stroke-width="1.1" stroke-linecap="round" d="M10.6 9.6l1.5-1.1m.3 2.3l1.6-1.1m.4 2.3l1.6-1.1"/><path fill="currentColor" d="M4.2 18h2.2v2.2H4.2zm5 0h2.2v2.2H9.2zm5 0h2.2v2.2h-2.2zm4.6 0H21v2.2h-2.2z"/>';
+  return sv; };
 // 선수 이름 (실존·생성 선수는 눌러서 선수 정보로)
 function pname(id, close, mine) {
   const n = nameOf(id) + (id === 'ME' ? ' (나)' : '');
@@ -30,13 +35,16 @@ U.showMatch = function (o) {
       h('div', { class: 'mscore' }, h('div', { class: 'mt' }, teamHead(w, o.a, o.nat, 34, close)), h('div', { class: 'ms' }, `${o.ga} - ${o.gb}`, o.pw ? h('div', { class: 'mute', style: { fontSize: '12px' } }, `승부차기 ${o.nat ? C.natName(o.pw) : (w.clubs[o.pw] || {}).name || ''} 승`) : null), h('div', { class: 'mt r' }, teamHead(w, o.b, o.nat, 34, close))),
       h('button', { class: 'btn ghost sm mclose', onclick: () => close() }, '닫기'));
     const body = h('div', { class: 'body mbody' });
+    // 경기 최우수 선수 (평점 최고)
+    const mom = MD.momOf(d, o.ga, o.gb);
+    if (mom) { const mx = d.ln[0].concat(d.ln[1]).find(x => x.id === mom); body.append(h('div', { class: 'mommain' }, h('span', { class: 'momst' }, '★'), h('span', { class: 'lbl' }, 'MOM'), pname(mom, close), mx ? h('span', { class: 'mute' }, ` · 평점 ${mx.rt.toFixed(1)}`) : null)); }
     // 득점자 요약 (양쪽)
     const goalsBy = side => d.ev.filter(e => e.s === side && 'gpo'.includes(e.k));
     body.append(h('div', { class: 'mgoals' }, ...[0, 1].map(side => h('div', { class: side ? 'r' : '' }, ...goalsBy(side).map(e => h('div', null, pname(e.p, close), ` ${e.m}'`, e.k === 'p' ? ' (PK)' : e.k === 'o' ? ' (자책)' : ''))))));
     // 타임라인
     if (d.ev.length) body.append(h('div', { class: 'msec' }, h('h4', null, '경기 이벤트'), h('div', { class: 'mtl' }, ...d.ev.map(e => h('div', { class: 'mev ' + (e.s ? 'r' : 'l') },
       h('span', { class: 'mm' }, `${e.m}'`), h('span', { class: 'mi k' + e.k }, ICON[e.k]),
-      h('span', null, pname(e.p, close), h('span', { class: 'mute' }, ` · ${KIND[e.k]}`), e.a ? h('span', { class: 'mute' }, ' · 도움 ', pname(e.a, close)) : null))))));
+      h('span', null, pname(e.p, close), h('span', { class: 'mute' }, ` · ${KIND[e.k]}`), e.a ? h('span', { class: 'mute evast' }, ' · ', U.bootIcon(13), ' ', pname(e.a, close)) : null))))));
     else body.append(h('div', { class: 'mute', style: { fontSize: '13px' } }, '득점·카드 없음'));
     // 통계
     const bar = (l, x, y, pct) => { const t = x + y || 1; return h('div', { class: 'mstat' }, h('b', null, pct ? x + '%' : x), h('div', { class: 'mbar' }, h('i', { style: { width: (x / t * 100) + '%' } })), h('span', null, l), h('div', { class: 'mbar r' }, h('i', { style: { width: (y / t * 100) + '%' } })), h('b', null, pct ? y + '%' : y)); };
@@ -48,8 +56,8 @@ U.showMatch = function (o) {
       const evOf = id => d.ev.filter(e => e.p === id || e.a === id);
       const col = (list, side) => h('div', { class: 'mlu' }, h('div', { class: 'lbl' }, side ? '원정' : '홈'),
         ...['선발', '교체'].map((t, k) => { const rows = list.filter(x => k ? !x.start : x.start); return rows.length ? h('div', null, h('div', { class: 'mute', style: { fontSize: '11px', margin: '6px 0 2px' } }, t),
-          ...rows.map(x => h('div', { class: 'mlr' }, pname(x.id, close), h('span', { class: 'mute' }, x.start ? (x.off < 90 ? ` ↓${x.off}'` : '') : ` ↑${x.on}'`),
-            h('span', { class: 'mic' }, ...evOf(x.id).map(e => h('span', { class: 'mi k' + (e.a === x.id && e.p !== x.id ? 'a' : e.k), title: e.a === x.id && e.p !== x.id ? '도움' : KIND[e.k] }, e.a === x.id && e.p !== x.id ? 'A' : ICON[e.k]))),
+          ...rows.map(x => h('div', { class: 'mlr' + (x.id === mom ? ' ismom' : '') }, pname(x.id, close), x.id === mom ? h('span', { class: 'momb', title: '경기 최우수 선수' }, '★') : null, h('span', { class: 'mute' }, x.start ? (x.off < 90 ? ` ↓${x.off}'` : '') : ` ↑${x.on}'`),
+            h('span', { class: 'mic' }, ...evOf(x.id).map(e => h('span', { class: 'mi k' + (e.a === x.id && e.p !== x.id ? 'a' : e.k), title: e.a === x.id && e.p !== x.id ? '도움' : KIND[e.k] }, e.a === x.id && e.p !== x.id ? U.bootIcon(13) : ICON[e.k]))),
             U.rt1 ? U.rt1(x.rt) : x.rt.toFixed(1)))) : null; }));
       body.append(h('div', { class: 'msec' }, h('h4', null, '출전 명단 · 평점'), h('div', { class: 'mlus' }, col(d.ln[0], 0), col(d.ln[1], 1))));
     } else body.append(h('div', { class: 'mute', style: { fontSize: '12px' } }, '하부 리그 구단끼리의 경기라 출전 명단은 기록하지 않습니다. (득점·카드는 기록)'));

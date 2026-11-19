@@ -230,6 +230,8 @@ function seasonStats(S, LS, lg, rows, agg, topG) {
   if (!big && !['POR', 'NED'].includes(lg.nation)) return;
   // 공격 포인트 40+ / 20골-20도움
   for (const pid in agg) { const g = agg[pid][4], a = agg[pid][5]; if (real(pid) && g >= 20 && a >= 15) push(S, Object.assign({}, base, { h: `${pn(pid)}, 시즌 ${g}골 ${a}도움… '${g >= 20 && a >= 20 ? '20-20' : '20-15'} 클럽'`, s: `${lg.name} ${LS.label} · 공격 포인트 ${g + a}`, p: [pid] })); }
+  // 시즌 베스트 XI (빅5)
+  if (big && C.calLeaders) { const bx = (C.calLeaders(S, LS, agg) || {}).bx; if (bx) push(S, Object.assign({}, base, { c: 'award', imp: 2, h: `${lg.name} ${LS.label} 시즌 베스트 XI`, s: bx.map(x => `${x[3]} ${x[0]}`).join(' · '), p: bx.map(x => x[4]).filter(Boolean), lgx: LS.id })); }
   // 최다 득점·최소 실점 팀
   const gfT = rows.slice().sort((a, b) => b.gf - a.gf)[0], gaT = rows.slice().sort((a, b) => a.ga - b.ga)[0];
   if (gfT) push(S, Object.assign({}, base, { h: `${lg.name} 최다 득점 팀은 ${cn(w, gfT.id)} (${gfT.gf}골)`, s: `경기당 ${(gfT.gf / Math.max(1, gfT.p)).toFixed(2)}골 · 최종 ${rows.indexOf(gfT) + 1}위`, cl: [gfT.id] }));
@@ -299,6 +301,8 @@ function ceremony(S, c) {
   const w = S.w, b = (w.bdHist || []).find(x => x.y === c.y), g = (w.gbHist || []).find(x => x.y === c.y), gs = (w.gsHist || []).find(x => x.y === c.y), d = c.d;
   if (gs && gs.top[0]) { const x = gs.top[0]; push(S, { d, gl: 1, c: 'award', imp: 2, h: `${x[0]}, 유러피언 골든슈 수상`, s: `${x[3]}골 · ${x[4]}점 · ${(w.lg[x[5]] || {}).name || ''}`, p: x[2] ? [x[2]] : [], cl: [x[1]] }); }
   if (g && g.top[0]) { const x = g.top[0]; push(S, { d, gl: 1, c: 'award', imp: 2, h: `${x[0]}, ${c.y} 골든보이 수상`, s: `${x[6]}세 · ${(w.clubs[x[1]] || {}).name || ''}`, p: x[2] ? [x[2]] : [], cl: [x[1]] }); }
+  const xi = (w.wxiHist || []).find(x => x.y === c.y);
+  if (xi && xi.xi) push(S, { d, gl: 1, c: 'award', imp: 2, h: `${c.y} 월드 베스트 XI 발표`, s: xi.xi.map(x => `${x[3]} ${x[0]}`).join(' · '), p: xi.xi.map(x => x[4]).filter(Boolean) });
   if (b && b.top[0]) { const x = b.top[0]; push(S, { d, gl: 1, c: 'award', imp: 3, h: `${x[0]}, ${c.y} 발롱도르 수상!`, s: `2위 ${b.top[1] ? b.top[1][0] : ''} · 3위 ${b.top[2] ? b.top[2][0] : ''}`, p: x[2] ? [x[2]] : [], cl: [x[1]] });
     if (x[2] && R() < .8) push(S, { d, c: 'interview', imp: 2, h: `[인터뷰] ${x[0]} "${pick(['어릴 때부터 꿈꿔 온 트로피입니다. 동료들 덕분이에요.', '이 상은 우리 팀 모두의 것입니다.', '가족에게 이 트로피를 바칩니다. 내년에도 여기 서고 싶어요.'])}"`, s: `${c.y} 발롱도르 시상식`, p: [x[2]], cl: [x[1]] }); }
 }
@@ -375,5 +379,11 @@ function summerStories(S) {
   if (dn.length) push(S, { d, c: 'stat', imp: 2, h: `[분석] 주춤한 스타들… 지난 시즌 기량 하락`, s: dn.map(x => `${pn(x.pid)} (${x.o0}→${x.o1})`).join(' · '), p: dn.map(x => x.pid) });
   void m;
 }
-C.wn = { match, round, lgEnd, cupEnd, contEnd, intlEnd, yearEnd, windowOpen, day, ceremony, push, REC0, meta, injury, injBack, summerStories };
+// 무소속 선수 영입 (시즌 중에도)
+function faSign(S, e, c, idle, d) {
+  const w = S.w, pid = String(e[0]); if (e[2] < 72 || !real(pid)) return;
+  const L = w.lg[c.lg] || {};
+  push(S, { d, c: 'transfer', imp: e[2] >= 78 ? 3 : 2, h: pv('fas', [() => `[오피셜] 무소속 ${pn(pid)}, ${c.name} 입단`, () => `${c.name}, 자유계약 ${pn(pid)} 영입`, () => `${Math.max(1, Math.round(idle / 7))}주 만에 새 팀 찾은 ${pn(pid)}… 행선지는 ${c.name}`])(), s: `${L.name || ''} · 이적료 없음 · ${e[6]}년 계약 · OVR ${e[2]} · ${e[3]}세`, p: [pid], cl: [c.id], lg: c.lg });
+}
+C.wn = { faSign, match, round, lgEnd, cupEnd, contEnd, intlEnd, yearEnd, windowOpen, day, ceremony, push, REC0, meta, injury, injBack, summerStories };
 })(typeof window !== 'undefined' ? window : globalThis);

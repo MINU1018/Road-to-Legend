@@ -8,6 +8,23 @@ const S = () => U.S();
 const st = U.st;
 const wv = () => (st.wv = st.wv || { mode: 'league' });
 const rerender = () => U.stay();
+// 대회 페이지로 바로 가기 (검색 결과 등): o = { k: 'lg'|'cup'|'cont'|'intl', id, nat }
+U.openComp = function (o) {
+  const v = wv();
+  if (o.k === 'lg') { const l = S().w.lg[o.id]; v.mode = 'league'; v.nat = l ? l.nation : v.nat; v.lg = o.id; v.season = null; v.lsub = 'table'; }
+  else if (o.k === 'cup') { v.mode = 'cup'; v.cnat = o.nat; v.cseason = null; }
+  else if (o.k === 'cont') { v.mode = 'cont'; v.ck = o.id; v.ckseason = null; }
+  else { v.mode = 'intl'; v.ik = o.id === 'UNL' || o.id === 'AM' ? null : o.id; v.iy = null; v.ifocus = o.id; }
+  U.setTab('table');
+};
+// 국제 대회 일정 (앞으로 4년). 월드컵은 4년마다(2030·2034…), 유로·코파는 짝수 4년, 아시안컵·네이션스컵·골드컵은 홀수 해
+function intlSchedule(s) {
+  const w = s.w, y0 = w.cal ? C.ymd(w.cal.d)[0] : w.year, out = [];
+  for (let y = y0; y <= y0 + 4; y++) for (const k of C.tournamentsOf(y)) out.push([y, k]);
+  const when = k => k === 'ASIA' || k === 'AFCON' ? '1~2월' : '6~7월';
+  return h('div', { class: 'sec' }, h('h3', null, '국제 대회 일정', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 대회 30일 전부터 이 화면에 대진이 열립니다 · 네이션스리그·친선 A매치는 A매치 기간(9·10·11·3·6월)')),
+    h('div', { class: 'in', style: { display: 'grid', gap: '4px' } }, ...out.map(([y, k]) => h('div', { class: 'kvrow' + (k === 'WC' ? ' gold' : '') }, h('span', null, h('b', null, `${y}년`), ` ${C.TDEF[k].name}`), h('span', { class: 'mute' }, when(k))))));
+}
 
 function sel(value, opts, on, wide) {
   const e = h('select', { class: 'wsel', style: wide ? { minWidth: '180px' } : null, onchange: ev => on(ev.target.value) }, ...opts.map(([v, l]) => { const o = h('option', { value: v }, l); if (String(v) === String(value)) o.selected = true; return o; }));
@@ -39,6 +56,17 @@ const seasons = w => (w.cal ? [LIVE] : []).concat(Object.keys(w.arch || {}).sort
 const seasonName = (lb, sl) => lb === LIVE ? `${sl || ''} 진행 중`.trim() : (sl && sl !== lb ? `${sl} (${lb})` : lb);
 function userClubOf(s, label) { if (label === LIVE) return s.ss ? s.ss.club : null; const r = s.hist.find(x => x.label === label); return r ? r.club : null; }
 U.liveArch = liveArch; U.liveSt = liveSt;
+// 베스트 XI 경기장 그림 (4-3-3). xi: [[이름, 구단, 평점, 포지션, pid, 경기, 골, 도움]] (자리 순서: GK, LB, CB, CB, RB, CM×3, LW, ST, RW)
+U.xiPitch = function (w, xi, o) {
+  o = o || {};
+  const card = (x, slot) => { if (!x) return h('div', { class: 'xic empty' }, slot); const c = w.clubs[x[1]];
+    return h('div', { class: 'xic', onclick: x[4] ? () => U.openPlayer(x[4]) : null }, h('div', { class: 'xir' }, typeof x[2] === 'number' ? x[2].toFixed(2) : ''), U.crest ? U.crest(c || null, 22) : null, h('b', null, x[0].split(' ').slice(-1)[0]), h('span', { class: 'xis' }, `${slot}${o.stat !== false ? ` · ${x[6]}골 ${x[7]}도움` : ''}`)); };
+  const S = C.XISLOTS || ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CM', 'CM', 'LW', 'ST', 'RW'];
+  const row = idx => h('div', { class: 'xirow' }, ...idx.map(i => card(xi[i], S[i])));
+  return h('div', { class: 'xipitch' + (o.cls ? ' ' + o.cls : '') }, h('div', { class: 'xilines' }), row([8, 9, 10]), row([5, 6, 7]), row([1, 2, 3, 4]), row([0]));
+};
+// 예전 기록(베스트 XI 저장 전): 평점 순위로 대신 만든다
+U.xiOf = data => { if (!data) return null; if (data.bx) return data.bx; if (!data.best || !C.pickXI) return null; const xi = C.pickXI(data.best.map(x => ({ pid: x[4] || x[0], n: x[0], club: x[1], pos: x[3], rt: x[2], apps: x[6] || 20, g: 0, a: 0 }))); return xi ? xi.map(x => [x.n, x.club, x.rt, x.pos, x.pid, x.apps, null, null]) : null; };
 U.txView = (s, root) => txView(s, root);
 
 // ---------- 리그 ----------
@@ -87,7 +115,7 @@ function leagueView(s, root) {
   const LS = isLive && w.cal.lg[v.lg];
   const title = h('h3', null, h('span', { class: 'cc' }, flag(lg.nation, 18), `${lg.name} · ${data.sl || label}${isLive ? ' 진행 중' : ''}`), U.followBtn ? U.followBtn('lg', lg.id, true) : null, isLive && LS ? h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${LS.ri}/${LS.dates.length}라운드 · ${C.fmtDateY(LS.dates[0])} ~ ${C.fmtDateY(LS.dates[LS.dates.length - 1])}`) : null);
   // 하위 탭: 순위 / 경기 결과 / 개인 기록 / 역대 우승
-  const SUBS = [['table', '순위'], ['fx', '경기 결과'], ['team', '팀 통계'], ['rec', '개인 순위'], ['pl', '선수 기록'], ['hist', '역대 우승']];
+  const SUBS = [['table', '순위'], ['fx', '경기 결과'], ['team', '팀 통계'], ['rec', '개인 순위'], ['bxi', '베스트 XI'], ['pl', '선수 기록'], ['hist', '역대 우승']];
   if (!SUBS.some(x => x[0] === v.lsub)) v.lsub = 'table';
   root.append(h('div', { class: 'seg lsub' }, ...SUBS.map(([k, l]) => h('button', { class: v.lsub === k ? 'on' : '', onclick: () => { v.lsub = k; rerender(); } }, l))));
   if (v.lsub === 'table') {
@@ -103,6 +131,11 @@ function leagueView(s, root) {
   } else if (v.lsub === 'fx') fixturesSec(s, root, lg, label, isLive);
   else if (v.lsub === 'team') teamStatsSec(s, root, lg, label, isLive, rows);
   else if (v.lsub === 'pl') playerStatsSec(s, root, lg, label, isLive, rows);
+  else if (v.lsub === 'bxi') {
+    const xi = U.xiOf(data);
+    root.append(h('div', { class: 'sec' }, h('h3', null, `${lg.name} ${data.sl || label} 베스트 XI`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, isLive ? ' 지금까지 기록 기준 · 리그 경기 50% 이상 출전' : ' 시즌 평균 평점 + 공격 포인트 · 리그 경기 50% 이상 출전')),
+      xi ? h('div', { class: 'in' }, U.xiPitch(w, xi, { stat: xi[0][6] != null })) : h('div', { class: 'empty' }, data.md ? '아직 출전 경기가 충분하지 않습니다.' : '하부 리그는 선수 기록이 없어 베스트 XI를 만들지 않습니다.')));
+  }
   else if (v.lsub === 'rec') {
     if (data && (data.sc || data.as)) {
       root.append(h('div', { class: 'wgrid2' },
@@ -472,7 +505,7 @@ function intlView(s, root) {
   const nextWC = C.nextWorldCup(curY);
   const up = C.tournamentsOf(curY).map(k => C.TDEF[k].name);
   root.append(h('div', { class: 'mute', style: { fontSize: '13px', padding: '0 2px' } }, up.length ? `올여름(${curY}) 대회: ${up.join(' · ')}` : `다음 월드컵: ${nextWC}년 여름`, up.includes('FIFA 월드컵') ? '' : ` · 다음 월드컵 ${nextWC}년`));
-  if (!years.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '아직 열린 국제 대회가 없습니다. 시즌이 끝난 여름에 열립니다.'))); return; }
+  if (!years.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '아직 열린 국제 대회가 없습니다. 아래 일정에 맞춰 열립니다. (다음 월드컵: ' + C.nextWorldCup(w.cal ? C.ymd(w.cal.d)[0] : w.year) + '년 6~7월)')), intlSchedule(s)); return; }
   if (!v.iy || !years.includes(String(v.iy))) v.iy = years[0];
   const list = ((w.intl || {})[v.iy] || []).concat(liveT[v.iy] || []);
   if (!v.ik || !list.some(t => t.k === v.ik)) v.ik = (list.find(t => t.k === 'WC') || list[0]).k;
@@ -499,6 +532,7 @@ function intlView(s, root) {
   }
   const hk = (w.hist.nt || {})[v.ik] || [];
   if (hk.length) root.append(h('div', { class: 'sec' }, h('h3', null, `${C.TDEF[v.ik].name} 역대 우승`), h('div', { class: 'in' }, h('table', { class: 'ltable lc' }, h('tbody', null, ...hk.slice().reverse().map(x => h('tr', null, h('td', null, x.y), h('td', null, nm(x.c)))))))));
+  root.append(intlSchedule(s));
 }
 
 // ---------- 이적시장 (전체) ----------
