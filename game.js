@@ -206,7 +206,8 @@ GM.endSeason = function (S) {
   ss.goalRes = C.extras.settle(S);
   for (const t of ss.trophies) C.news(S, `${t.club}, ${t.t} 우승`, 'trophy', true);
   for (const a of ss.awards) C.news(S, `${S.p.name}, ${a.t} 수상${a.v ? ` (${a.v})` : ''}`, 'award', true);
-  if (ss.ballon && ss.ballon.rank && ss.ballon.rank <= 10) C.news(S, `발롱도르 순위 ${ss.ballon.rank}위`, 'award', ss.ballon.rank <= 3);
+  const bdOk = ss.ballon && !(S.w.cer && !S.w.cer.rev && S.w.cer.y === ss.ballon.y);
+  if (bdOk && ss.ballon.rank && ss.ballon.rank <= 10) C.news(S, `발롱도르 순위 ${ss.ballon.rank}위`, 'award', ss.ballon.rank <= 3);
   // 성장
   const o0 = C.ovrOf(p), effBefore = C.effOvr(p);
   const g = C.seasonGrowth(p, { minShare: Math.max(ss.minShare, yShare * .55), rating: ss.total.rated >= 5 ? rating : ss.youthTot.rated >= 5 ? yRating - .25 : 6.6, focus: car.focus, intensity: car.intensity, clubLv: w.clubs[ss.club].str });
@@ -238,7 +239,7 @@ GM.endSeason = function (S) {
     y: ss.year, label: ss.label, age: p.age, club: ss.club, clubName: w.clubs[ss.club].name, short: w.clubs[ss.club].short, c1: w.clubs[ss.club].c1, c2: w.clubs[ss.club].c2,
     status: ss.status, pos: p.pos, ovr0: o0, ovr1: C.ovrOf(p), lgName: lg ? lg.name : '', lgId: lg ? lg.id : '', lgPos: ss.lgPos, lgN: ss.lgN,
     total: ss.total, youth: ss.youthTot, youthLabel: ss.youthLabel, youthRating: yRating, agg: Object.fromEntries(Object.entries(ss.agg).map(([k, v]) => [k, { name: v.name, st: v.st }])), nt: ss.ntAgg, ntLvl: ss.nt ? ss.nt.lvl : null,
-    rating, minShare: ss.minShare, trophies: ss.trophies, awards: ss.awards, ballon: ss.ballon ? ss.ballon.rank : null, ballonTop: ss.ballon ? ss.ballon.top.slice(0, 5).map(x => [x.n, x.club, !!x.me]) : [],
+    rating, minShare: ss.minShare, trophies: ss.trophies, awards: ss.awards, ballon: ss.ballon && !(S.w.cer && !S.w.cer.rev && S.w.cer.y === ss.ballon.y) ? ss.ballon.rank : null, ballonTop: ss.ballon && !(S.w.cer && !S.w.cer.rev && S.w.cer.y === ss.ballon.y) ? ss.ballon.top.slice(0, 5).map(x => [x.n, x.club, !!x.me]) : [],
     tourn: ss.tourn ? { name: ss.tourn.name, stage: ss.tourn.stage, won: ss.tourn.won } : null,
     moments: ss.moments, injuries: ss.injuries || [], winter: ss.winter ? { from: w.clubs[ss.winter.from].name, to: w.clubs[ss.winter.to].name, type: ss.winter.type } : null,
     log: ss.matches.map(m => ({ ...C.logExtra(m), y: m.comp === 'youth' ? 1 : 0, d: m.d, c: m.comp, cn: m.compName, s: m.stage, o: m.oppName, h: m.home, gf: m.gf, ga: m.ga, p: m.played ? 1 : 0, st: m.start ? 1 : 0, mi: m.min || 0, r: m.rating || 0, g: m.played ? m.st.goals : 0, a: m.played ? m.st.assists : 0, mo: m.motm ? 1 : 0, w: m.why || '', pen: m.pens || '', ko: m.koWin, mm: m.moment ? m.moment.ok : undefined, yc: m.played ? m.st.yellow : 0, rc: m.played ? m.st.red : 0 })),

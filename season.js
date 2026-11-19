@@ -335,8 +335,9 @@ C.userFixtures = userFixtures;
 
 function teamStr(S, clubId, withMe) {
   const c = S.w.clubs[clubId];
-  if (!withMe) return c.str;
-  return C.xiStrength(c.sq, ['me', S.p.pos, C.effOvr(S.p), S.p.age]);
+  const adj = (c.fm || 0) + (c.injd || 0); // 시즌 폼·부상 공백 (세계 달력과 같은 기준)
+  if (!withMe) return c.str + adj;
+  return C.xiStrength(c.sq.filter(e => !e[14]), ['me', S.p.pos, C.effOvr(S.p), S.p.age]) + (c.fm || 0);
 }
 // 이번 시즌 1군 출전 현황 (유스·대표팀 제외)
 function proForm(ss) {

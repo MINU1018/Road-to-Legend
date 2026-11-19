@@ -155,9 +155,9 @@ async function lgRound(S, LS, d, hooks) {
       const home = a === me, opp = home ? b : a, oc = w.clubs[opp];
       const sorted = C.sortTable(LS.tb), myPos = sorted.findIndex(r => r.id === me), opPos = sorted.findIndex(r => r.id === opp);
       const imp = (LS.ri > LS.dates.length * .75 ? 1 : 0) + (LS.ri >= LS.nreg && LS.nsplit ? 1 : 0) + (opPos < 4 && myPos < 6 ? 1 : 0) + (oc.str > w.clubs[me].str + 3 ? 1 : 0);
-      const rec = await C.userMatch(S, { d, kind: 'L', compKey: 'league', compName: lg.name, opp, oppName: oc.name, oppStr: oc.str, home, imp }, hooks);
+      const rec = await C.userMatch(S, { d, kind: 'L', compKey: 'league', compName: lg.name, opp, oppName: oc.name, oppStr: C.mstr(w, oc), home, imp }, hooks);
       ga = home ? rec.gf : rec.ga; gb = home ? rec.ga : rec.gf; u = uArg(S, home ? 0 : 1, rec);
-    } else [ga, gb] = C.quickMatch(w.clubs[a].str, w.clubs[b].str, 1);
+    } else [ga, gb] = C.quickMatch(C.mstr(w, a), C.mstr(w, b), 1);
     addRes(LS.tb, a, b, ga, gb);
     const res = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
     addAgg(h.agg, ai, res.P[0]); addAgg(h.agg, bi, res.P[1]);
@@ -269,7 +269,7 @@ async function cupDay(S, st, d, hooks) {
     if (pair) {
       const home = pair[0] === me, oid = home ? pair[1] : pair[0], opp = w.clubs[oid];
       const final = st.ri === st.rounds.length - 1, left = st.rounds.length - st.ri;
-      urec = await C.userMatch(S, { d, kind: kk, compKey: st.kind, compName: st.n, stage: rd.n, opp: oid, oppName: opp.name, oppStr: opp.str, home: final ? null : home, imp: final ? 3 : left <= 3 ? 2 : opp.str > w.clubs[me].str + 3 ? 1 : 0 }, hooks);
+      urec = await C.userMatch(S, { d, kind: kk, compKey: st.kind, compName: st.n, stage: rd.n, opp: oid, oppName: opp.name, oppStr: C.mstr(w, opp), home: final ? null : home, imp: final ? 3 : left <= 3 ? 2 : opp.str > w.clubs[me].str + 3 ? 1 : 0 }, hooks);
       let win = urec.gf > urec.ga;
       if (urec.gf === urec.ga) { win = C.koWinner(w.clubs[me].str, opp.str, 0, 0) === 0; urec.pens = win ? 'W' : 'L'; }
       urec.koWin = win;
@@ -355,7 +355,7 @@ function contCreate(w, k, sy, parts) {
 }
 async function contUser(S, cs, oid, home, stage, imp, d, hooks) {
   const w = S.w, oc = w.clubs[oid];
-  return C.userMatch(S, { d, kind: 'E', compKey: 'cont', compName: cs.name, stage, opp: oid, oppName: oc.name, oppStr: oc.str, home, imp }, hooks);
+  return C.userMatch(S, { d, kind: 'E', compKey: 'cont', compName: cs.name, stage, opp: oid, oppName: oc.name, oppStr: C.mstr(w, oc), home, imp }, hooks);
 }
 function contRow(S, cs, h, stage, a, b, ga, gb, u, pw, d) {
   const w = S.w;
@@ -396,7 +396,7 @@ async function contDay(S, cs, d, hooks) {
           const home = a === me, oid = home ? b : a;
           const rec = await contUser(S, cs, oid, home, '리그 페이즈', w.clubs[oid].str > w.clubs[me].str + 2 ? 2 : 1, d, hooks);
           ga = home ? rec.gf : rec.ga; gb = home ? rec.ga : rec.gf; u = uArg(S, home ? 0 : 1, rec); ss.cont = cs.k;
-        } else [ga, gb] = C.quickMatch(w.clubs[a].str, w.clubs[b].str, 1);
+        } else [ga, gb] = C.quickMatch(C.mstr(w, a), C.mstr(w, b), 1);
         addRes(cs.table, a, b, ga, gb);
         contRow(S, cs, h, '리그 페이즈', a, b, ga, gb, u, null, d);
       }
@@ -416,13 +416,13 @@ async function contDay(S, cs, d, hooks) {
         const rec = await contUser(S, cs, oid, final ? null : hA === me, stage, final ? 3 : 2, d, hooks);
         hg = hA === me ? rec.gf : rec.ga; ag = hA === me ? rec.ga : rec.gf; u = uArg(S, hA === me ? 0 : 1, rec); ss.cont = cs.k;
         t.ui = (t.ui || []).concat(ss.matches.indexOf(rec)); t.urec = rec;
-      } else [hg, ag] = C.quickMatch(w.clubs[hA].str, w.clubs[aA].str, final ? 0 : 1);
+      } else [hg, ag] = C.quickMatch(C.mstr(w, hA), C.mstr(w, aA), final ? 0 : 1);
       t.l = (t.l || []).concat([[hg, ag]]);
       const done = !two || leg === 1;
       let pw = null;
       if (done) {
         const a0 = t.l.reduce((s, l, j) => s + (j === 0 ? l[0] : l[1]), 0), b0 = t.l.reduce((s, l, j) => s + (j === 0 ? l[1] : l[0]), 0);
-        t.win = C.koWinner(w.clubs[t[0]].str, w.clubs[t[1]].str, a0, b0) === 0 ? t[0] : t[1];
+        t.win = C.koWinner(C.mstr(w, t[0]), C.mstr(w, t[1]), a0, b0) === 0 ? t[0] : t[1];
         t.sc = [a0, b0]; if (a0 === b0) { t.pen = 1; pw = t.win; }
         if (me && (t[0] === me || t[1] === me)) {
           const rec = t.urec; if (rec) { rec.koWin = t.win === me; if (a0 === b0) rec.pens = t.win === me ? 'W' : 'L'; if (two) rec.agg = t[0] === me ? [a0, b0] : [b0, a0]; }
@@ -762,7 +762,7 @@ function applyWindow(S, kind, d0, d1, opt) {
   const rows = C.marketWindow(w, opt && opt.late ? 'winter' : kind, d0, d1, kind === 'summer' && !(opt && opt.late) ? w.cal.resAdj : null);
   if (kind === 'summer') w.cal.resAdj = {};
   const lbl = opt && opt.lbl ? opt.lbl : kind === 'summer' ? C.wLabel(w.year + 1) : C.wLabel(w.year) + 'w';
-  if (C.wn) C.wn.windowOpen(S, rows);
+  if (C.wn) { C.wn.windowOpen(S, rows); if (kind === "summer" && C.wn.summerStories) try { C.wn.summerStories(S); } catch (e) { console.error(e); } }
   w.txPending = w.txPending || {}; w.txPending[lbl] = rows; w.txKeys = (w.txKeys || []).filter(x => x !== lbl).concat(lbl);
   while (w.txKeys.length > 40) (w.txDrop = w.txDrop || []).push(w.txKeys.shift());
   // 선수 위치 지도 (거래 후)
@@ -842,6 +842,8 @@ function rollover(S) {
   let bd = null; try { bd = C.ballonDor(S); } catch (e) { console.error('ballon', e); }
   w.bdLast = bd ? { y: w.year + 1, top: bd.top.map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr, x.pos || '']), rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank } : null;
   if (S.ss && S.ss.on && bd) S.ss.ballon = bd;
+  // 시상식: 9월 넷째 주 월요일. 그때까지 순위는 비공개 (후보 30인만 공개)
+  if (bd) w.cer = { y: w.year + 1, d: C.cerDay(w.year + 1), rev: 0, seen: 0, me: S.mode !== 'world' ? { rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank, gs0: bd.gs[0] || null, gk: !!bd.isGK, label: S.ss && S.ss.label } : null };
   if (C.wn) try { C.wn.yearEnd(S, bd); } catch (e) { console.error(e); }
   // 관전 모드 시즌 요약
   const A = w.arch && w.arch[lb];
@@ -850,11 +852,12 @@ function rollover(S) {
     for (const l of tier1) { const L = A.lg[l.id]; if (!L) continue; champs[l.id] = L.t[0] && L.t[0][0]; if (L.sc && L.sc[0]) boots[l.id] = [L.sc[0][0], L.sc[0][1], L.sc[0][2], L.sc[0][5] || '']; }
     const cont = {}; for (const k in A.cont) cont[k] = A.cont[k].w || null;
     const txl = C.wLabel(w.year + 1);
-    S.ws = (S.ws || []).concat({ y: w.year, label: lb, champs, cont, boots, bd: bd ? bd.top.slice(0, 10).map(x => [x.n, x.cid, x.pid || '', x.ovr, x.pos || '']) : [], gb: bd ? bd.gb.slice(0, 5).map(x => [x.n, x.cid, x.pid || '', x.ovr, x.pos || '', x.age, x.pot, x.apps, x.g, x.a, x.rt, x.me ? 1 : 0, x.napps || 0, x.ng || 0, x.na || 0]) : [], gs: bd ? bd.gs.slice(0, 5) : [], intl: Object.values(w.intl || {}).flat().filter(t => t.mxl === lb).map(t => [t.k, t.n, t.w, t.ru, t.y]), tx: w.lastTx || 0, txs: w.txStat || null, big: (w.bigTx || []).slice().sort((x, z) => z[5] - x[5]).slice(0, 20), txl });
+    S.ws = (S.ws || []).concat({ y: w.year, label: lb, champs, cont, boots, bd: bd ? bd.top.slice(0, 30).map(x => [x.n, x.cid, x.pid || '', x.ovr, x.pos || '', x.g, x.a, x.apps, x.rt, x.nat || '', x.me ? 1 : 0]) : [], gb: bd ? bd.gb.slice(0, 5).map(x => [x.n, x.cid, x.pid || '', x.ovr, x.pos || '', x.age, x.pot, x.apps, x.g, x.a, x.rt, x.me ? 1 : 0, x.napps || 0, x.ng || 0, x.na || 0]) : [], gs: bd ? bd.gs.slice(0, 5) : [], intl: Object.values(w.intl || {}).flat().filter(t => t.mxl === lb).map(t => [t.k, t.n, t.w, t.ru, t.y]), tx: w.lastTx || 0, txs: w.txStat || null, big: (w.bigTx || []).slice().sort((x, z) => z[5] - x[5]).slice(0, 20), txl });
   }
   // 오래된 보관 기록 줄이기
   const labels = Object.keys(w.arch || {}).sort();
-  labels.slice(0, -3).forEach(l => {
+  // 모든 시즌 기록을 그대로 보관한다 (예전에는 3시즌 지난 기록을 줄였음)
+  [].forEach(l => {
     const a = w.arch[l]; if (a.slim) return;
     for (const id in a.lg) {
       const lg = w.lg[id], L = a.lg[id];
@@ -872,8 +875,8 @@ function rollover(S) {
   const st = w.mxPending && w.mxPending[lb]; if (st) st._dirty = 1;
   amFinalize(S);
   w.year++; sidesReset();
+  if (C.newSeasonForm) C.newSeasonForm(w);
   curStore(w); curArch(w);
-  while ((w.mxKeys || []).length > 4) { const old = w.mxKeys.shift(); if (w.mxPending && w.mxPending[old]) delete w.mxPending[old]; (w.mxDrop = w.mxDrop || []).push(old); }
   // 유럽식 대륙 대회
   const parts = C.contParticipants(w);
   for (const k of Object.keys(C.COMPS)) if (!CONT_CY.has(k)) contCreate(w, k, w.year, parts);
@@ -887,10 +890,35 @@ function newYear(S, y) {
   const parts = C.contParticipants(w);
   for (const k of CONT_CY) contCreate(w, k, y, parts);
 }
+// ---------- 부상·시즌 폼 (매주 월요일) ----------
+// 부상: 선수마다 주당 약 2% (시즌 평균 1회 안팎). 대부분 1~3주, 일부 1~2달, 드물게 장기(큰 부상은 다음 시즌 기량 손실)
+// 시즌 폼: 여름에 구단마다 새로 정해지고(감독·분위기) 달마다 조금씩 흔들린다. 같은 전력이라도 해마다 성적이 달라진다
+const INJW = .02;
+function injTick(S, d) {
+  const w = S.w, mon1 = ymd(d)[2] <= 7;
+  for (const id in w.clubs) {
+    const c = w.clubs[id]; if (c.lite || !c.sq || !c.sq.length) continue;
+    if (mon1) c.fm = clamp((c.fm || 0) * .85 + N(0, .38), -2.6, 2.6);
+    let ch = 0, any = 0;
+    for (const e of c.sq) {
+      if (e[14] && e[14] <= d) { e[14] = 0; ch = 1; if (C.wn && e[17]) C.wn.injBack(S, e, c, d, e[17]); e[17] = 0; }
+      if (e[14]) { any = 1; continue; }
+      if (R() < INJW) { const u = R(), days = u < .6 ? 5 + Math.floor(R() * 16) : u < .91 ? 21 + Math.floor(R() * 40) : 61 + Math.floor(R() * 200); e[14] = d + days; e[17] = days; if (days >= 90) e[15] = 1; ch = 1; any = 1; if (C.wn && e[2] >= 82) C.wn.injury(S, e, c, days, d); }
+    }
+    if (ch || any) c.injd = any ? Math.min(0, C.xiStrength(c.sq.filter(e => !e[14])) - c.str) : 0;
+    if (ch) sidesReset([id]);
+  }
+}
+C.injTick = injTick;
+// 연속 우승 구단은 동기·분위기가 조금 떨어지기 쉽다 (2연패 이상부터)
+const titleStreak = (w, c) => { const H = c.lg && w.hist.lg[c.lg]; if (!H) return 0; let n = 0; for (let i = H.length - 1; i >= 0 && H[i].c === c.id; i--) n++; return n; };
+C.newSeasonForm = w => { for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite || !c.sq) continue; const st = titleStreak(w, c); c.fm = clamp(N(st >= 5 ? -1.5 : st >= 3 ? -1.1 : st === 2 ? -.6 : st === 1 ? -.2 : 0, .9), -2.6, 2.6); c.injd = 0; for (const e of c.sq) if (e[14]) { c.injd = Math.min(0, C.xiStrength(c.sq.filter(x => !x[14])) - c.str); break; } } };
 function dayEvents(S, d) {
   const w = S.w, [y, m, dd] = ymd(d);
+  if (w.cal.started && C.toDate(d).getUTCDay() === 1) injTick(S, d);
   if (m === 8 && dd === 1 && w.cal.started && w.year < y) rollover(S);
   if (w.cal.started && (!w.cal.am || w.cal.am.wy !== w.year)) amSetup(S);
+  if (w.cer && !w.cer.rev && d > w.cer.d) C.cerReveal(S);
   if (m === 1 && dd === 1) { newYear(S, y); applyWindow(S, 'winter', d, day(y, 1, 31)); }
   if (m === 6 && dd === 15) applyWindow(S, 'summer', d, day(y, 9, 1));
   if (w.cal.win && d > w.cal.win.d1) w.cal.win = null;
@@ -966,7 +994,7 @@ C.calInit = function (S, opt) {
   const parts = C.contParticipants(w);
   for (const k of Object.keys(C.COMPS)) if (!CONT_CY.has(k)) contCreate(w, k, y, parts);
   curStore(w); curArch(w);
-  w.cal.started = 1;
+  w.cal.started = 1; if (C.newSeasonForm) C.newSeasonForm(w);
   try { amSetup(S); } catch (e) { console.error('am', e); }
   // 이미 열려 있는 여름 이적시장: 8월 1일 ~ 9월 1일 남은 기간의 거래
   if (!(opt && opt.noLate)) { try { applyWindow(S, 'summer', d0 + 1, day(y, 9, 1), { late: 1, lbl: C.wLabel(y) }); } catch (e) { console.error('late window', e); } }
@@ -1029,7 +1057,7 @@ C.calUpcoming = function (S, from, days) {
 C.calDayMatches = function (S, d) {
   const w = S.w, out = []; if (!w.cal) return out;
   for (const id in w.cal.lg) { const LS = w.cal.lg[id], h = w.cal.h[LS.k]; if (!h || !h.d) continue; for (let i = h.d.length - 1; i >= 0 && h.d[i] >= d; i--) if (h.d[i] === d) { const [a, b, ga, gb] = h.s[i].split('.'); out.push({ k: 'L', comp: id, a: C.cidOf(w, C.MD.u62(a)), b: C.cidOf(w, C.MD.u62(b)), ga: +ga, gb: +gb, ref: { mk: 'L', lg: id, sl: LS.label, i }, stage: `${(h.r[i] || 0) + 1}라운드` }); } }
-  const rowsOf = (mk, sk, h, base) => { if (h && h.rows) h.rows.forEach((r, ri) => { if (r[8] === d) out.push(Object.assign({ stage: r[0], a: base.nat ? r[1] : C.cidOf(w, r[1]), b: base.nat ? r[2] : C.cidOf(w, r[2]), ga: r[3], gb: r[4], pw: r[7] != null ? (base.nat ? r[7] : C.cidOf(w, r[7])) : null, ref: { mk, sk, ri, d, a: r[1], b: r[2] } }, base)); }); };
+  const rowsOf = (mk, sk, h, base) => { if (h && h.rows) h.rows.forEach((r, ri) => { if (r[8] === d) out.push(Object.assign({ stage: r[0], a: base.nat ? r[1] : C.cidOf(w, r[1]), b: base.nat ? r[2] : C.cidOf(w, r[2]), ga: r[3], gb: r[4], pw: r[7] != null ? (base.nat ? r[7] : C.cidOf(w, r[7])) : null, ref: Object.assign({ mk, sk, ri, d, a: r[1], b: r[2] }, base.wy != null ? { wy: base.wy } : {}) }, base)); }); };
   for (const k in w.cal.cup) { const c = w.cal.cup[k]; rowsOf('C', c.nat + ':' + c.kind, w.cal.h[k], { k: 'C', comp: c.nat + ':' + c.kind, name: c.n }); }
   for (const k in w.cal.cont) { const c = w.cal.cont[k]; rowsOf('E', c.k, w.cal.h[k], { k: 'E', comp: c.k, name: c.name }); }
   for (const k in w.cal.intl) { const T = w.cal.intl[k]; rowsOf('I', T.k, w.cal.h[k], { k: 'I', comp: T.k, name: T.n, nat: 1 }); }
@@ -1049,6 +1077,29 @@ C.calDayFixtures = function (S, d) {
   for (const k in w.cal.intl) { const T = w.cal.intl[k]; let any = false; for (const f of T.fx) if (!f.done && f.d === d) { any = true; out.push({ k: 'I', comp: T.k, name: T.n, stage: `조별리그 ${T.g[f.g].n}조`, a: f.a, b: f.b, nat: 1, pend: 1 }); } if (!any && T.kdays.includes(d)) out.push({ k: 'I', comp: T.k, name: T.n, stage: '토너먼트', tbd: 1, pend: 1, nat: 1 }); }
   if (w.cal.am) for (const f of w.cal.am.fx) if (!f.done && f.d === d) out.push({ k: 'A', comp: f.c, name: C.TDEF[f.c].name, stage: f.stage, a: f.a, b: f.b, nat: 1, pend: 1 });
   return out;
+};
+
+// ---------- 시상식 (발롱도르·골든보이·유러피언 골든슈) ----------
+C.cerDay = y => { let d = day(y, 9, 22); while (C.toDate(d).getUTCDay() !== 1) d++; return d; };
+// 순위 공개: 뉴스, 커리어 수상 기록
+C.cerReveal = function (S) {
+  const w = S.w, c = w.cer; if (!c || c.rev) return;
+  c.rev = 1;
+  if (C.wn) try { C.wn.ceremony(S, c); } catch (e) { console.error(e); }
+  const m = c.me; if (!m || S.mode === 'world') return;
+  // 시즌이 이미 끝났으면(유럽식 리그) 그 시즌 기록에 수상을 붙인다. 시즌 중이면 시즌 끝 시상에서 함께 처리된다
+  const r = (S.hist || []).find(x => x.label === m.label);
+  if (!r) return;
+  const aw = [];
+  if (m.rank === 1) aw.push({ t: '발롱도르', k: 'ballon' });
+  if (m.youngRank === 1) aw.push({ t: '골든보이', k: 'golden' });
+  if (m.gsRank === 1 && m.gs0) aw.push({ t: '유러피언 골든슈', k: 'goldshoe', v: `${m.gs0[3]}골 (${m.gs0[4]}점)` });
+  if (m.gk && m.rank && m.rank <= 6 && R() < .55) aw.push({ t: '야신 트로피', k: 'yashin' });
+  r.ballon = m.rank || null;
+  const bh = (w.bdHist || []).find(b => b.y === c.y); if (bh) r.ballonTop = bh.top.slice(0, 5).map(x => [x[0], (w.clubs[x[1]] || {}).name || '', !!x[3]]);
+  for (const a of aw) { r.awards = (r.awards || []).concat(a); S.awards.push(Object.assign({ y: r.label }, a)); if (C.news) C.news(S, `${S.p.name}, ${a.t} 수상${a.v ? ` (${a.v})` : ''}`, 'award', true); }
+  if (m.rank && m.rank <= 10 && C.news) C.news(S, `발롱도르 순위 ${m.rank}위`, 'award', m.rank <= 3);
+  if (C.ach && C.ach.unlock) { const nb = S.awards.filter(a => a.k === 'ballon').length; if (nb >= 1) C.ach.unlock(S, 'ballon'); if (nb >= 3) C.ach.unlock(S, 'ballon3'); if (aw.some(a => a.k === 'golden')) C.ach.unlock(S, 'golden'); }
 };
 // 이적시장 기간: 여름 6/15~9/1, 겨울 1/1~1/31. lbl은 이적 기록 이름
 C.txWindowAt = function (d) {
@@ -1087,6 +1138,7 @@ C.calMonth = function (S, y, m, majorNat) {
   for (let yy = y - 1; yy <= y; yy++) for (const k of C.tournamentsOf(yy)) { if (made.has(k + yy) || !TDATES[k]) continue; const a = day(yy, TDATES[k][0], TDATES[k][1]), b = a + (k === 'WC' ? 38 : 28); for (let d = a; d <= b; d++) { const o = at(d); if (o) o.it = `${C.TDEF[k].name} ${yy}`; } }
   if (w.cal.am) for (const f of w.cal.am.fx) { const o = at(f.d); if (o) { o.A = (o.A || 0) + 1; if (f.c === 'UNL') o.UNL = 1; } }
   for (const o of out) { const [, mm, dd] = ymd(o.d), a = md(mm, dd); const iw = IW.find(x => a >= md(x[0], x[1]) && a <= md(x[2], x[3])); if (iw) o.iw = iw[4];
+    if (o.d === C.cerDay(ymd(o.d)[0])) o.cer = 1;
     const tw = C.txWindowAt(o.d); if (tw) { o.tw = tw.kind; o.twl = tw.lbl; if (o.d === tw.d1) o.dl = 1; if (o.d === tw.d0) o.tw0 = 1; } }
   return out;
 };

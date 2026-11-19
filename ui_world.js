@@ -163,7 +163,7 @@ function fixturesSec(s, root, lg, label, live) {
     const x = C.liveLeagueRows(s, lg.id); if (!x) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '진행 중인 시즌이 없습니다.'))); return; }
     st = liveSt(); L = x.L; rows = C.MD.leagueRows(w, L); up = x.up;
   } else {
-    if (!(w.mxKeys || []).includes(label)) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '경기별 기록은 최근 3시즌만 보관합니다. (이 기능이 추가되기 전 시즌은 기록이 없습니다)'))); return; }
+    if (!(w.mxKeys || []).includes(label)) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '이 시즌은 경기별 기록이 없습니다 (이전 버전에서 지워진 시즌). (이 기능이 추가되기 전 시즌은 기록이 없습니다)'))); return; }
     st = U.withMx(label, () => rerender());
     if (!st) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '경기 기록을 불러오는 중…'))); return; }
     L = st.L[lg.id]; rows = C.MD.leagueRows(w, L);
@@ -220,7 +220,7 @@ function teamStatsSec(s, root, lg, label, live, tableRows) {
   else {
     if ((w.mxKeys || []).includes(label)) { st = U.withMx(label, () => rerender()); if (!st) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '경기 기록을 불러오는 중…'))); return; } L = st.L[lg.id]; rows = C.MD.leagueRows(w, L); }
   }
-  if (!rows.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, live ? '아직 경기가 없습니다.' : '팀 통계는 경기 기록이 보관된 최근 3시즌만 볼 수 있습니다.'))); return; }
+  if (!rows.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, live ? '아직 경기가 없습니다.' : '팀 통계는 경기 기록이 남아 있는 시즌만 볼 수 있습니다.'))); return; }
   const sp = ppgStr(w, lg.id, label), T = {};
   const t0 = id => T[id] || (T[id] = { id, p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, hp: 0, hw: 0, hd: 0, hl: 0, hgf: 0, hga: 0, ap: 0, aw: 0, ad: 0, al: 0, agf: 0, aga: 0, cs: 0, fts: 0, btts: 0, o25: 0, first: 0, firstW: 0, comeback: 0, late: 0, yc: 0, rc: 0, posS: 0, sh: 0, binF: [0, 0, 0, 0, 0, 0], binA: [0, 0, 0, 0, 0, 0], det: 0 });
   for (const r of rows) {
@@ -296,7 +296,7 @@ function compAgg(st, rows, nat, ck) {
 }
 function compRecSec(s, root, label, rowsOf, nat, ck, note) {
   const w = s.w, v = wv();
-  if (label !== LIVE && !(w.mxKeys || []).includes(label)) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '개인 기록·팀 통계는 경기 기록이 보관된 최근 3시즌만 볼 수 있습니다. (선수별 대회 기록은 선수 정보에서 계속 볼 수 있습니다)'))); return; }
+  if (label !== LIVE && !(w.mxKeys || []).includes(label)) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '개인 기록·팀 통계는 경기 기록이 남아 있는 시즌만 볼 수 있습니다. (선수별 대회 기록은 선수 정보에서 계속 볼 수 있습니다)'))); return; }
   const st = stOf(label);
   if (!st) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '경기 기록을 불러오는 중…'))); return; }
   const rows = rowsOf(st);
@@ -344,7 +344,7 @@ function bracket(nameOf, rounds, finalWinner, onMatch) {
 }
 // 시즌 경기 기록에서 한 경기 찾아 보여주기
 const stOf = label => label === LIVE ? liveSt() : (S().w.mxKeys || []).includes(label) ? U.withMx(label, () => rerender()) : null;
-const mxNote = label => label === LIVE ? '진행 중 · 경기를 누르면 득점자·카드·출전 명단' : (S().w.mxKeys || []).includes(label) ? (U.mxCached(label) ? '경기를 누르면 득점자·카드·출전 명단' : '경기 기록 불러오는 중…') : '경기별 상세 기록은 최근 3시즌만 보관합니다';
+const mxNote = label => label === LIVE ? '진행 중 · 경기를 누르면 득점자·카드·출전 명단' : (S().w.mxKeys || []).includes(label) ? (U.mxCached(label) ? '경기를 누르면 득점자·카드·출전 명단' : '경기 기록 불러오는 중…') : '이 시즌은 경기별 상세 기록이 없습니다';
 function showRow(st, row, title, nat) {
   const w = S().w, id = x => nat ? x : (typeof x === 'number' ? w.cix[x] : x);
   U.showMatch({ title, a: id(row[1]), b: id(row[2]), ga: row[3], gb: row[4], pw: row[7] != null ? id(row[7]) : null, d: C.MD.decode(st, row), nat, key: title + '|' + row[1] + '|' + row[2] });

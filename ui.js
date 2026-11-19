@@ -40,7 +40,7 @@ U.kvSet = kvSet; U.kvGet = kvGet;
 const wageTxt = v => C.fmtWage(v);
 U.wageTxt = wageTxt;
 let saveT = null, hasSave = false, prevScr = 'home';
-// 경기 상세 기록 (시즌별로 따로 저장, 최근 3시즌)
+// 경기 상세 기록 (시즌별로 따로 저장, 모든 시즌)
 const mxCache = {};
 async function flushMx(o) {
   const w = o && o.w; if (!w) return;
@@ -52,7 +52,7 @@ async function flushMx(o) {
   if (w.txPending) for (const lb of Object.keys(w.txPending)) { txCache[lb] = w.txPending[lb]; try { await kvSet('tx:' + lb, JSON.stringify(w.txPending[lb])); } catch (e) { console.error('tx save', e); } delete w.txPending[lb]; }
   if (w.txDrop) { for (const lb of w.txDrop) { delete txCache[lb]; await kvDel('tx:' + lb); } w.txDrop = []; }
   // 10시즌 지난 이적 기록은 이적료가 있었던 이동과 OVR 75 이상 선수만 남긴다 (용량)
-  const old = (w.txKeys || []).slice(0, -10).filter(lb => !(w.txTrim || {})[lb]);
+  const old = []; // 이적 기록도 모든 시즌 보관
   for (const lb of old.slice(0, 2)) { try { const t = await kvGet('tx:' + lb); const v = t ? GM.parse(t) : null; if (Array.isArray(v)) { const r = v.filter(x => x[4] > 0 || x[5] >= 75); await kvSet('tx:' + lb, JSON.stringify({ trim: 1, r })); delete txCache[lb]; } (w.txTrim = w.txTrim || {})[lb] = 1; } catch (e) { console.error('tx trim', e); } }
 }
 const txCache = {};
@@ -739,7 +739,8 @@ function viewHub() {
   const hub = h('div', { class: 'wrap hub' });
   const txp = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.txPanel && C.txWindowAt(S.w.cal.d) ? h('div', { class: 'panel', style: { overflow: 'hidden' } }, U.txPanel(S, { my: S.ss.club, compact: true, sel: st.txSel, onSel: d => { st.txSel = d; render(); } })) : null;
   const hero = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.tourHero ? U.tourHero(S) : null;
-  const left = h('div', { style: { display: 'grid', gap: '16px', minWidth: 0 } }, playerCard(), actionPanel(), hero ? h('div', { class: 'panel', style: { overflow: 'hidden', padding: '12px' } }, hero) : null, txp, newsPanel());
+  const cerb = S.w.cal && U.cerBanner ? U.cerBanner(S, true) : null;
+  const left = h('div', { style: { display: 'grid', gap: '16px', minWidth: 0 } }, playerCard(), cerb, actionPanel(), hero ? h('div', { class: 'panel', style: { overflow: 'hidden', padding: '12px' } }, hero) : null, txp, newsPanel());
   hub.append(left, careerTable());
   return hub;
 }
@@ -1010,8 +1011,9 @@ function careerCal(today, end, fx) {
     canPick: d => d <= end - 1 && d >= ss.start,
     pick: d => { if (d > today) { st.calSel = null; runTo(Math.min(d, end - 1)); } else { st.calSel = d; render(); } },
     nav: dl => { if (!dl) { const [a, b] = C.ymd(today); st.calM = [a, b]; } else { let mm = m + dl, yy = y; if (mm > 12) { mm = 1; yy++; } if (mm < 1) { mm = 12; yy--; } st.calM = [yy, mm]; } render(); },
+    jump: (yy, mm) => { st.calM = [yy, mm]; render(); }, minY: C.ymd(ss.start)[0], maxY: C.ymd(end - 1)[0], maxD: end - 1,
     mark: x => x.d === end - 1 ? 'send' : '',
-    legend: [['today', '오늘'], ['tw', '이적시장'], ['iw', 'A매치 기간'], ['it', '국제 대회'], ['dl', '이적 마감일']],
+    legend: [['today', '오늘'], ['cer', '시상식'], ['tw', '이적시장'], ['iw', 'A매치 기간'], ['it', '국제 대회'], ['dl', '이적 마감일']],
     hint: '날짜를 누르면 그날까지 진행' });
   const out = [grid];
   if (sel != null) {
@@ -1066,7 +1068,9 @@ function matchCard(m) {
     s.red ? h('div', { class: 'chip bad', style: { justifySelf: 'center' } }, '퇴장') : null);
 }
 async function runTo(target) {
-  if (busy) return; busy = true;
+  if (busy) return;
+  { const c = S.w.cer, d0 = S.w.cal.d; if (c && !c.seen && c.d > d0 && c.d < target) target = c.d; } // 발롱도르 시상식 날에는 멈춘다
+  busy = true;
   const btn = $('#runBtn'); if (btn) btn.style.display = 'none';
   const cw = $('#calWrap'); if (cw) cw.style.display = 'none';
   const live = $('#live');
@@ -1112,10 +1116,10 @@ async function runTo(target) {
     },
     moment: mc => U.playMoment(mc)
   };
-  let lastPaint = 0;
+  let lastPaint = 0; const t0run = Date.now();
   const onDay = async d => {
     prog.firstChild.style.width = Math.min(100, (d - d0) / span * 100) + '%';
-    dayTxt.firstChild.textContent = `${C.fmtDateY(d)} 진행 중…`;
+    dayTxt.firstChild.textContent = `${C.fmtDateY(d)} 진행 중… (${C.fmtDateY(target)}까지 · ${U.etaTxt ? U.etaTxt(t0run, d - d0, span) : ''})`;
     if (U.txTick) U.txTick(S, d, txTk, ss.club);
     const t = Date.now(); if (t - lastPaint > 60) { lastPaint = t; await sleep(0); }
   };

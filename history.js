@@ -429,14 +429,13 @@ function archiveSeason(S, tables) {
     delete ss.mx._pm;
     w.mxPending = w.mxPending || {}; w.mxPending[ss.label] = ss.mx;
     w.mxKeys = (w.mxKeys || []).filter(x => x !== ss.label).concat(ss.label);
-    // 경기 상세 기록은 최근 3시즌만 보관 (시즌당 약 4~6MB)
-    while (w.mxKeys.length > 3) { const old = w.mxKeys.shift(); if (w.mxPending[old]) delete w.mxPending[old]; (w.mxDrop = w.mxDrop || []).push(old); }
+    // 경기 상세 기록은 모든 시즌 보관 (시즌당 약 10MB, IndexedDB)
     ss.mx = null;
   }
   w.arch[ss.label] = A;
   // 용량 관리: 3시즌 지난 기록은 1부 리그만 전체 순위, 나머지는 우승팀만
   const labels = Object.keys(w.arch).sort();
-  labels.slice(0, -3).forEach(lb => {
+  [].forEach(lb => {
     const a = w.arch[lb]; if (a.slim) return;
     for (const id in a.lg) {
       const lg = w.lg[id], L = a.lg[id];

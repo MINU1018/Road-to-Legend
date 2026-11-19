@@ -18,17 +18,32 @@ function calGrid(o) {
   for (const x of days) {
     const d = x.d, past = d < today, isT = d === today;
     const can = o.pick && (o.canPick ? o.canPick(d) : true);
-    const cls = ['cd', past ? 'past' : '', isT ? 'today' : '', x.tw ? 'tw tw-' + x.tw : '', x.iw ? 'iw' : '', x.it ? 'it' : '', x.dl ? 'dl' : '', can ? 'pick' : '', o.sel === d ? 'sel' : '', o.mark ? o.mark(x) : ''].filter(Boolean).join(' ');
+    const cls = ['cd', past ? 'past' : '', isT ? 'today' : '', x.tw ? 'tw tw-' + x.tw : '', x.iw ? 'iw' : '', x.it ? 'it' : '', x.dl ? 'dl' : '', x.cer ? 'cer' : '', can ? 'pick' : '', o.sel === d ? 'sel' : '', o.mark ? o.mark(x) : ''].filter(Boolean).join(' ');
     const tip = [`${C.fmtDateY(d)} (${DOW[C.toDate(d).getUTCDay()]})`].concat(o.tip ? o.tip(x) : []);
     if (can && d > today) tip.push(`▶ 누르면 이날까지 진행 (${d - today}일)`);
     cells.push(h(can ? 'button' : 'span', { class: cls, title: tip.join('\n'), onclick: can ? () => o.pick(d) : null },
       h('span', { class: 'cdn' }, C.ymd(d)[2], x.dl ? h('b', { class: 'dlx' }, '마감') : x.tw0 ? h('b', { class: 'twx' }, '개장') : null),
-      ...(o.cell ? o.cell(x) : [])));
+      ...(x.cer ? [h('span', { class: 'mk cerm' }, U.trophy ? U.trophy('ballon', 18, '#f2c14e') : null, h('span', null, '발롱도르'))] : []), ...(o.cell ? o.cell(x) : [])));
   }
   const nav = (dl, lbl) => h('button', { class: 'btn ghost sm', onclick: () => o.nav(dl) }, lbl);
   const [ty, tm] = C.ymd(today);
+  // 연·월 드롭다운으로 바로 이동. 날짜 입력으로 그날까지 진행
+  let ym = h('b', null, `${y}년 ${m}월`), goto = null;
+  if (o.jump) {
+    const y0 = o.minY || Math.min(y, ty) - 1, y1 = o.maxY || Math.max(y, ty) + 2;
+    const ys = h('select', { class: 'wsel calsel', onchange: ev => o.jump(+ev.target.value, m) }, ...Array.from({ length: y1 - y0 + 1 }, (_, i) => { const v = y0 + i, op = h('option', { value: v }, `${v}년`); if (v === y) op.selected = true; return op; }));
+    const ms = h('select', { class: 'wsel calsel', onchange: ev => o.jump(y, +ev.target.value) }, ...Array.from({ length: 12 }, (_, i) => { const op = h('option', { value: i + 1 }, `${i + 1}월`); if (i + 1 === m) op.selected = true; return op; }));
+    ym = h('span', { class: 'calym' }, ys, ms);
+    if (o.pick) {
+      const iso = d => { const [a, b, c] = C.ymd(d); return `${a}-${String(b).padStart(2, '0')}-${String(c).padStart(2, '0')}`; };
+      const inp = h('input', { type: 'date', class: 'wsel caldate', min: iso(today + 1), value: iso(o.sel != null && o.sel > today ? o.sel : today + 7) });
+      if (o.maxD) inp.max = iso(o.maxD);
+      const go = () => { const v = inp.value; if (!v) return; const [a, b, c] = v.split('-').map(Number), d = C.day(a, b, c); if (d <= today) { U.toast('오늘 이후 날짜를 고르세요.'); return; } if (o.maxD && d > o.maxD) { U.toast('이 날짜까지는 진행할 수 없습니다.'); return; } if (o.canPick && !o.canPick(d)) return; o.pick(d); };
+      goto = h('span', { class: 'calgo' }, inp, h('button', { class: 'btn sm', onclick: go }, '이 날짜까지 진행'));
+    }
+  }
   return h('div', { class: 'cal' },
-    h('div', { class: 'calhd' }, nav(-1, '◂'), h('b', null, `${y}년 ${m}월`), nav(1, '▸'), (ty !== y || tm !== m) ? h('button', { class: 'btn ghost sm', onclick: () => o.nav(0) }, '오늘') : null, o.head || null),
+    h('div', { class: 'calhd' }, nav(-1, '◂'), ym, nav(1, '▸'), (ty !== y || tm !== m) ? h('button', { class: 'btn ghost sm', onclick: () => o.nav(0) }, '오늘') : null, o.head || null, goto),
     h('div', { class: 'calw' }, ...[...DOW].map((c, i) => h('span', { class: i === 0 ? 'sun' : i === 6 ? 'sat' : '' }, c))),
     h('div', { class: 'calg' }, ...cells),
     h('div', { class: 'callg' }, ...(o.legend || []).map(([c, t]) => h('span', null, h('i', { class: 'sw ' + c }), t)), o.hint ? h('span', { class: 'mute' }, o.hint) : null));
@@ -37,6 +52,7 @@ U.calGrid = calGrid;
 // 공통 툴팁 줄
 U.calTip = function (S, x) {
   const w = S.w, t = [];
+  if (x.cer) t.push(`🏆 발롱도르 시상식`);
   if (x.it) t.push('🏆 ' + x.it);
   for (const e of x.E) t.push(`${C.COMPS[e[0]] ? C.COMPS[e[0]].short : e[0]} ${e[2]}`);
   for (const [id, r, n, pred] of x.L) t.push(`${w.lg[id].name} ${r}/${n}라운드${pred ? ' (예정)' : ''}`);
@@ -153,6 +169,18 @@ U.txPanel = function (S, opt = {}) {
   return sec;
 };
 // 진행 중 속보: d일에 성사된 큰 거래를 ticker 맨 위에 붙인다
+// 먼 날짜까지 진행할 때 띄우는 진행 창: 진행률·현재 날짜·남은 시간 예상·멈춤
+U.etaTxt = (t0, done, total) => { const el = (Date.now() - t0) / 1000; if (done < 3 || el < 1.2) return '남은 시간 계산 중…'; const r = (total - done) / (done / el); return r < 60 ? `약 ${Math.max(1, Math.round(r))}초 남음` : `약 ${Math.floor(r / 60)}분 ${Math.round(r % 60)}초 남음`; };
+U.progModal = function (label, d0, d1, onStop) {
+  const bar = h('i'), txt = h('div', { class: 'rpd' }, C.fmtDateY(d0)), eta = h('div', { class: 'rpe mute' }, '남은 시간 계산 중…'), tick = h('div', { class: 'txtick rptk' });
+  const stop = h('button', { class: 'btn ghost', onclick: () => { stop.disabled = true; stop.textContent = '멈추는 중…'; if (onStop) onStop(); } }, '여기서 멈춤');
+  const total = Math.max(1, d1 - d0), t0 = Date.now();
+  const el = h('div', { class: 'runov' }, h('div', { class: 'runbox' },
+    h('div', { class: 'kk' }, '시뮬레이션 진행 중'), h('h3', null, label), h('div', { class: 'mute', style: { fontSize: '12px' } }, `${C.fmtDateY(d0)} → ${C.fmtDateY(d1)} · ${total}일`),
+    h('div', { class: 'prog big' }, bar), h('div', { class: 'rprow' }, txt, eta), tick, h('div', { class: 'rpbtn' }, stop)));
+  document.body.append(el);
+  return { el, tick, upd: d => { const dn = d - d0; bar.style.width = Math.min(100, dn / total * 100) + '%'; txt.textContent = `${C.fmtDateY(d)} · ${Math.round(dn / total * 100)}%`; eta.textContent = U.etaTxt(t0, dn, total); }, close: () => el.remove() };
+};
 U.txTick = function (S, d, el, my) {
   if (!el) return 0;
   const win = C.txWindowAt(d); if (!win) return 0;

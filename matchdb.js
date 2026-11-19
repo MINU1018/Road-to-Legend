@@ -39,6 +39,8 @@ const CW = { CB: 1.4, DM: 1.5, FB: 1.2, CM: 1.1, AM: .8, W: .75, ST: .85, GK: .3
 MD.clubSide = (w, cid, y) => {
   const c = w.clubs[cid]; if (!c) return { key: cid, sq: [] };
   const sq = C.squadOf(w, c, y).map(x => ({ id: x.id ? String(x.id) : '~' + cid + '~' + x.n, n: x.n, pos: x.pos, ovr: x.ovr, yb: x.yb || 0 }));
+  // 부상자는 명단에서 뺀다 (남은 인원이 너무 적으면 그대로)
+  if (!c.lite && c.sq && c.sq.some(e => e[14])) { const inj = new Set(c.sq.filter(e => e[14]).map(e => String(e[0]))), ok = sq.filter(x => !inj.has(x.id)); if (ok.length >= 13) return { key: cid, sq: ok }; }
   return { key: cid, sq };
 };
 MD.natSide = (w, nat, pools, y) => {
@@ -67,10 +69,37 @@ function lineup(sq, excludeId, cup) {
 MD.play = function (st, A, B, ga, gb, u, opt) {
   const sides = [A, B], goals = [ga, gb], out = [], cup = !!(opt && opt.cup);
   const P = [[], []]; // 출전 선수: { id, pos, ovr, on, off, start, g, a, y, r, ri }
+  const Ls = sides.map(sd => lineup(sd.sq, null, cup));
+  const avg = Ls.map(L => L.xi.length ? L.xi.reduce((a, x) => a + x.ovr, 0) / L.xi.length : 60);
   for (let s = 0; s < 2; s++) {
     const me = u && u.side === s && u.rec && u.rec.played ? u.rec : null;
-    const L = lineup(sides[s].sq, null, cup);
+    const L = Ls[s];
     let xi = L.xi.slice(), bench = L.bench.slice();
+    // 유망주 기회: 약한 상대와의 컵 경기는 선발 1~2명, 크게 이기는 경기·컵 경기는 막판 교체로 경험을 쌓게 한다
+    let cameo = [];
+    if (!me && !(opt && opt.nat)) {
+      const yp = sides[s].sq.filter(x => (x.yb || 0) > 0 && GRP[x.pos] !== 'G').sort((a, b) => (b.yb + b.ovr * .15) - (a.yb + a.ovr * .15));
+      if (yp.length) {
+        const adv = goals[s] - goals[1 - s], diff = avg[s] - avg[1 - s];
+        if (cup && diff >= 3) {
+          let k = diff >= 7 ? 2 : 1;
+          for (const y of yp) {
+            if (k <= 0) break; if (xi.includes(y) || y.ovr < avg[s] - 20) continue;
+            const g = GRP[y.pos] || 'M'; let bi = -1;
+            xi.forEach((x, i) => { if ((GRP[x.pos] || 'M') === g && (bi < 0 || x.ovr < xi[bi].ovr)) bi = i; });
+            if (bi < 0) continue;
+            bench = [xi[bi]].concat(bench.filter(b => b !== y)); xi[bi] = y; k--;
+          }
+        }
+        const pc = adv >= 3 ? .9 : adv >= 2 ? .7 : cup ? .5 : adv >= 1 ? .22 : 0;
+        if (pc && R() < pc) {
+          // 유망주 여럿이면 돌아가며 (기대치 높은 선수가 조금 더 자주)
+          const cand = yp.filter(y => !xi.includes(y) && y.ovr >= avg[s] - 24).slice(0, 6), n = adv >= 3 && R() < .5 ? 2 : 1;
+          for (let k = 0; k < n && cand.length; k++) { let t = 0; for (const y of cand) t += y.yb + 1; let r = R() * t, j = 0; for (; j < cand.length - 1; j++) { r -= cand[j].yb + 1; if (r <= 0) break; } cameo.push(cand.splice(j, 1)[0]); }
+        }
+        if (cameo.length) bench = bench.filter(b => !cameo.includes(b));
+      }
+    }
     if (me) { // 내 선수를 명단에 넣는다: 선발이면 같은 포지션 선수 하나를 빼고, 교체면 교체 1명 자리를 쓴다
       const myPos = me.pos || u.pos || 'CM';
       const meObj = { id: 'ME', pos: myPos, ovr: u.ovr || 70 };
@@ -79,13 +108,14 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
     }
     for (const x of xi) P[s].push({ id: x.id, pos: x.pos, ovr: x.ovr, on: 0, off: 90, start: 1, g: 0, a: 0, y: 0, r: 0 });
     // 교체: 보통 3~5명
-    const nSub = Math.min(bench.length, me && !me.start ? Math.max(1, Math.round(N(3.3, .8))) : Math.round(N(3.3, .8)));
-    const subs = me && !me.start ? [bench[0]].concat(bench.slice(1).sort(() => R() - .5)).slice(0, nSub) : bench.slice().sort(() => R() - .5).slice(0, nSub);
+    const nSub = Math.min(bench.length, 5 - cameo.length, me && !me.start ? Math.max(1, Math.round(N(3.3, .8))) : Math.round(N(3.3, .8)));
+    const subs = (me && !me.start ? [bench[0]].concat(bench.slice(1).sort(() => R() - .5)).slice(0, nSub) : bench.slice().sort(() => R() - .5).slice(0, Math.max(0, nSub))).concat(cameo);
     for (const sb of subs) {
       const outs = P[s].filter(x => x.start && x.off === 90 && GRP[x.pos] !== 'G' && x.id !== 'ME');
       if (!outs.length) break;
       let minute;
       if (sb.id === 'ME') minute = clamp(90 - (me.min || 15), 1, 89);
+      else if (cameo.includes(sb)) minute = Math.round(clamp(N(79, 6), 62, 89));
       else minute = Math.round(clamp(N(68, 11), 46, 88));
       const o = outs.find(x => GRP[x.pos] === GRP[sb.pos]) || outs[Math.floor(R() * outs.length)];
       o.off = minute;

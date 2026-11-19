@@ -40,7 +40,11 @@ function buildWorld() {
     const c = F.clubs[p[4]]; if (!c) return;
     const age = Math.floor((refDay - p[9]) / 365.25);
     const ovr = p[11];
-    const pot = age <= 23 ? Math.round(ovr + Math.max(0, (24 - age)) * rnd(.6, 2.2)) : ovr;
+    // 숨은 잠재력 (FM처럼 선수마다 다르게): 나이 대비 여유분 + 개인 편차. 일부는 대형 유망주, 일부는 정체
+    let pot = ovr;
+    if (age <= 23) pot = ovr + Math.max(0, 24 - age) * rnd(.35, 2.1) + N(0, 2.4) + (age <= 21 && R() < .07 ? rint(4, 11) : 0);
+    else if (age <= 26) pot = ovr + Math.max(0, N(.6, 1.6));
+    pot = Math.round(clamp(pot, ovr, 96));
     w.clubs[c[0]].sq.push([i, POSMAP[p[2]] || 'CM', ovr, age, pot, p[5]]);
   });
   for (const id in w.clubs) { const c = w.clubs[id]; c.str = xiStrength(c.sq); c.base = c.str; c.pres = c.str; }
@@ -183,14 +187,29 @@ function ageSquad(c) {
     else if (age <= 28) o += N(0, 1.1) + perf * play * .6;
     else if (age <= 30) o += N(-.5, 1.1);
     else o -= Math.max(0, (age - 30 - lg * .5)) * rnd(.25, .75) + rnd(0, .7);
+    // 지난 시즌 슬럼프였던 선수는 원래 수준으로 돌아오려는 힘이 있다
+    if (age >= 24 && age <= 30 && pot > o) o += (pot - o) * rnd(.25, .6);
+    // 변수: 해마다 같은 선수가 같은 길을 가지 않도록 (돌파·정체·슬럼프·반등·급격한 노쇠·큰 부상)
+    const rr = R(); e[16] = 0;
+    if (age >= 18 && age <= 25 && rr < .055) { o += rint(2, 5); pot += rint(1, 4); e[16] = 1; }                 // 돌파형 시즌 5.5%
+    else if (age <= 23 && rr < .135) { o -= Math.max(0, o - e[2]) * .7; pot -= rint(2, 5); e[16] = 2; }          // 성장 정체 8%
+    else if (age >= 24 && age <= 31 && rr < .155) { o -= rint(2, 4); e[16] = 3; }                                // 슬럼프 10% (잠재력은 남아 반등 가능)
+    else if (age >= 24 && age <= 27 && rr < .185) { o += rint(2, 4); pot = Math.max(pot, o + 1); e[16] = 4; }    // 늦게 피는 선수 3%
+    if (age >= 30 && !e[16] && R() < .1) { o -= rint(2, 4); e[16] = 5; }                                         // 급격한 노쇠 10%
+    // 큰 부상(90일 이상)을 당한 시즌: 기량·잠재력 손실
+    if (e[15]) { o -= rnd(1, age >= 28 ? 4.5 : 3); pot -= rnd(0, 3); e[15] = 0; }
     o = clamp(Math.round(o), 35, 95);
+    // 뉴스용: 크게 오른 선수·크게 떨어진 스타
+    if (C._w && (typeof e[0] === 'number' || String(e[0])[0] !== '~')) { const dd = o - e[2];
+      if ((dd >= 4 && o >= 74 && age <= 25) || (dd <= -3 && e[2] >= 84 && age <= 32)) (C._w.devEv = C._w.devEv || []).push({ y: C._w.year, pid: String(e[0]), k: dd > 0 ? 'up' : 'down', d: dd, o0: e[2], o1: o, age }); }
     // 은퇴 확률: 개인별 은퇴 나이 근처에서 서서히 오른다. 아직 팀에서 주전으로 뛰는 선수는 잘 은퇴하지 않고,
     // 기량이 떨어져 출전이 줄거나 팀 수준보다 처지면 그때 은퇴한다 (갑작스러운 은퇴 방지)
-    const retAge = 35.5 + lg + clamp((o - 74) * .1, -2, 2.5);
-    let pr = age < 32 ? 0 : 1 / (1 + Math.exp(-(age - retAge) * .9));
+    const retAge = 36 + lg + clamp((o - 74) * .1, -1.2, 2.5);
+    let pr = age < 32 ? 0 : 1 / (1 + Math.exp(-(age - retAge) * .85));
     const rel = o - (c.str || o);
     pr *= apps >= 25 && rel >= -2 ? .3 : apps >= 15 ? .7 : apps < 6 ? 1.6 : 1;
     if (rel < -8) pr *= 1.4;
+    if (o >= 83 && age <= 34) pr *= .25; // 아직 정상급인 선수는 30대 초반에 잘 은퇴하지 않는다
     if (age >= 39) pr = Math.max(pr, .25);
     if (age >= 41) pr = Math.max(pr, .85);
     if (age >= 30 && o < 48) pr = Math.max(pr, .2);
@@ -251,7 +270,7 @@ function worldTransfers(w, winter) {
       if (winter) {
         // 겨울: 계약 만료 처리는 없고, 뛰지 못하는 유망주 임대·불만 선수 판매·보강만 소규모로
         if (wantsOut && (gap >= 3 || rr === 2) && R() < .3) kind = 'sale';
-        else if (!e[13] && age <= 21 && rr === 2 && (e[11] == null || e[11] < 8) && R() < .22) kind = 'loan';
+        else if (!e[13] && age <= 21 && rr === 2 && (e[11] == null || e[11] < 8) && R() < (prospect ? .38 : .22)) kind = 'loan';
         else if (f < -1.4 && age >= 24 && R() < .06) kind = 'sale';
         if (kind) market.push([e, c, kind]);
         continue;
@@ -260,7 +279,8 @@ function worldTransfers(w, winter) {
       if (ct <= 0) {
         // 계약 만료: 재계약(에이스는 인상, 애매한 선수는 삭감) 또는 자유계약. 전성기 핵심 선수는 거의 다 붙잡는다
         const core = age <= 31 && (o >= 78 || (rr === 0 && gap >= 0));
-        if (core ? R() < (wantsOut ? .8 : .97) : (!wantsOut && R() < want)) { renew(rr === 0 && gap >= 1 ? rnd(1.1, 1.35) : rr === 2 || age >= 31 ? rnd(.6, .9) : rnd(.92, 1.1)); stat.renew++; }
+        const keepP = age <= 22 && e[4] >= o + 5 && o >= c.str - 22; // 키울 만한 유망주는 계약을 이어 간다
+        if (core ? R() < (wantsOut ? .8 : .97) : keepP ? R() < .9 : (!wantsOut && R() < want)) { renew(rr === 0 && gap >= 1 ? rnd(1.1, 1.35) : rr === 2 || age >= 31 ? rnd(.6, .9) : rnd(.92, 1.1)); stat.renew++; }
         else kind = 'free';
       } else if (ct === 1) {
         // 계약 1년 남음: 지키려면 지금 연장, 안 되면 몸값 있을 때 판다 (월드클래스를 공짜로 놓치지 않도록)
@@ -271,6 +291,7 @@ function worldTransfers(w, winter) {
         if (wantsOut && (gap >= 3 || rr === 2)) kind = 'sale';
         else if (rr === 0 && ct === 2 && age <= 29 && gap >= -1 && R() < .3) { renew(rnd(1.05, 1.25)); stat.ext++; }
         else if (e[13]) { /* 임대 복귀 기대주는 남겨서 쓴다 */ }
+        else if (prospect && rr === 2 && (e[11] || 0) < 12 && o < c.str - 3 && R() < (age <= 18 ? .45 : .7)) kind = 'loan'; // 뛸 자리가 없는 유망주는 임대로 경기 경험
         else if (age <= 21 && rr >= 1 && R() < (o >= c.str - 4 ? .12 : age <= 19 ? .3 : .45)) kind = 'loan';
         else if (age === 22 && rr === 2 && o < c.str - 4 && R() < .35) kind = 'loan';
         else if (f < -1.2 && age >= 23 && R() < .25) kind = 'sale';
@@ -311,6 +332,9 @@ function worldTransfers(w, winter) {
     let d = pickClub(lo, hi, e, c, kind, fee, wk);
     if (!d && kind === 'sale') d = pickClub(L - 7, L + 2, e, c, kind, fee * .8, wk);
     if (!d && kind === 'free') d = pickClub(L - 10, L + 2, e, c, kind, 0, wk) || (age < 33 || o >= 65 ? pickClub(L - 25, L, e, c, kind, 0, wk) : null);
+    // 실력 있는 선수는 연봉을 깎아서라도 새 팀을 찾는다 (아직 뛸 수 있는데 갈 곳이 없어 은퇴하는 일 방지)
+    let cut = 1;
+    if (!d && kind === 'free' && o >= 68 && age <= 35) { const wk2 = x => Math.max(50, Math.round(wk(x) * .45 / 50) * 50); d = pickClub(L - 30, L + 2, e, c, kind, 0, wk2); if (d) cut = .45; }
     if (!d) {
       if (kind === 'free') { stat.rel++; if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, age >= 30 ? 'ret' : 'rel', 0); }
       else {
@@ -323,7 +347,7 @@ function worldTransfers(w, winter) {
     const paid = kind === 'sale' && d.cash < fee ? Math.round(fee * .8) : fee;
     big(e, c, d, kind, paid); w._moved.add(e);
     if (kind === 'loan') { e[7] = c.id; stat.loan++; d.cash -= paid; c.cash += paid; txLog(w, e, c, d, 'loan', paid); }
-    else { d.cash -= paid; c.cash += paid; e[6] = ctFor(age); e[8] = wk(d); d.wb += e[8]; txLog(w, e, c, d, kind === 'sale' ? 'buy' : 'free', paid); stat[kind]++; }
+    else { d.cash -= paid; c.cash += paid; e[6] = cut < 1 ? Math.min(2, ctFor(age)) : ctFor(age); e[8] = cut < 1 ? Math.max(50, Math.round(wk(d) * cut / 50) * 50) : wk(d); d.wb += e[8]; txLog(w, e, c, d, kind === 'sale' ? 'buy' : 'free', paid); stat[kind]++; }
     d.sq.push(e);
   }
   w.lastTx = stat.free + stat.sale + stat.loan; w.txStat = stat;
@@ -372,12 +396,18 @@ function refillSquad(c, w, pool, winter) {
     poach(pick(posList), Math.min(c.pres + 2, 90));
   }
   // 정원 초과: 약한 선수는 비슷한 수준 구단으로 자유 이적, 없으면 방출
+  // 정원 초과: 키울 유망주는 남기고(넘치면 임대), 나이 들고 약한 선수부터 내보낸다
+  const keepScore = e => e[2] + (e[3] <= 22 && e[4] >= e[2] + 5 ? 6 + Math.min(6, (e[4] - e[2]) * .4) : e[3] <= 21 ? 2 : 0) - (e[3] >= 32 ? 3 : 0) - (e[7] ? 4 : 0);
   while (c.sq.length > 31) {
-    let mi = 0; c.sq.forEach((e, i) => { if (e[2] - (e[3] < 21 ? 6 : 0) < c.sq[mi][2] - (c.sq[mi][3] < 21 ? 6 : 0)) mi = i; });
+    let mi = 0; c.sq.forEach((e, i) => { if (keepScore(e) < keepScore(c.sq[mi])) mi = i; });
     const e = c.sq.splice(mi, 1)[0]; c.wb -= e[8] || 0;
     const L = pool._byStr; let d = null;
-    if (L) { for (let k = 0; k < 30 && !d; k++) { const x = L[(R() * L.length) | 0]; if (x !== c && x.sq.length < 28 && Math.abs(x.str - e[2]) < 4) d = x; } }
-    if (d) { e[6] = ctFor(e[3]); e[7] = 0; e[8] = aiWage(d, e[2], e[3]); txLog(w, e, c, d, 'free', 0); d.sq.push(e); d.wb = (d.wb || 0) + e[8]; }
+    // 임대 온 선수는 원소속팀으로 돌려보낸다
+    if (e[7] && w.clubs[e[7]] && w.clubs[e[7]].sq) { const p = w.clubs[e[7]]; e[7] = 0; p.sq.push(e); txLog(w, e, c, p, 'lret', 0); continue; }
+    const prospect = e[3] <= 22 && e[4] >= e[2] + 4;
+    if (L) { for (let k = 0; k < 40 && !d; k++) { const x = L[(R() * L.length) | 0]; if (x !== c && x.sq.length < (prospect ? 29 : 28) && (prospect ? x.str >= e[2] - 3 && x.str <= e[2] + 5 && x.str < c.str : Math.abs(x.str - e[2]) < 4)) d = x; } }
+    if (d && prospect) { e[7] = c.id; txLog(w, e, c, d, 'loan', 0); d.sq.push(e); }
+    else if (d) { e[6] = ctFor(e[3]); e[7] = 0; e[8] = aiWage(d, e[2], e[3]); txLog(w, e, c, d, 'free', 0); d.sq.push(e); d.wb = (d.wb || 0) + e[8]; }
     else { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, 'rel', 0); }
   }
 }
@@ -433,7 +463,6 @@ function advanceWorld(w, results) {
   // 이번 여름 이적 기록은 다음 시즌 이름으로 보관 (예: 2026/27 시즌이 끝난 뒤 = 2027/28 여름 이적시장)
   const lbl = `${w.year + 1}/${String(w.year + 2).slice(2)}`;
   w.txPending = w.txPending || {}; w.txPending[lbl] = w._tx; w.txKeys = (w.txKeys || []).filter(x => x !== lbl).concat(lbl);
-  while (w.txKeys.length > 30) (w.txDrop = w.txDrop || []).push(w.txKeys.shift());
   w._tx = null; C._w = null;
   w.year++;
 }
@@ -444,8 +473,18 @@ C.advanceWorld = advanceWorld;
 function marketWindow(w, kind, d0, d1, resAdj) {
   C._ps = w.ps || null; C._year = w.year; C._w = w; w._tx = [];
   if (kind === 'summer') {
+    w.clubEv = (w.clubEv || []).filter(x => x.y >= w.year - 1); w.devEv = (w.devEv || []).filter(x => x.y >= w.year);
     for (const id in w.clubs) {
       const c = w.clubs[id];
+      // 구단 규모도 고정이 아니다: 명성이 오래 오르거나 떨어지면 기본 규모도 따라 움직인다 (+ 해마다 작은 변동)
+      if (!c.lite) c.base = clamp(c.base + (c.pres - c.base) * .08 + N(0, .45), 35, 92);
+      // 드물게 큰 변화: 새 구단주(투자), 재정 위기(긴축)
+      const L = c.lg && w.lg[c.lg];
+      if (L && L.tier <= 2 && c.sq && c.sq.length && !c.lite) {
+        const r = R();
+        if (r < .008 && c.base < 84) { const up = rnd(4, 9); c.base = clamp(c.base + up, 35, 90); c.pres = clamp(c.pres + up * .5, 30, 90); c.cash = (c.cash || 0) + (c.rev || 2e6) * rnd(1.2, 2.6); w.clubEv.push({ y: w.year, id, k: 'takeover' }); }
+        else if (r < .015 && c.base >= 68) { const dn = rnd(3, 6); c.base = clamp(c.base - dn, 35, 92); c.pres = clamp(c.pres - dn * .4, 30, 90); c.cash = Math.min(c.cash || 0, (c.rev || 2e6) * .05); w.clubEv.push({ y: w.year, id, k: 'crisis' }); }
+      }
       const d = (c.base - c.pres) * .1 + N(0, .45) + ((resAdj && resAdj[id]) || 0);
       c.pres = clamp(c.pres + d, 30, 90);
       if (c.lite) materialize(w, c);
@@ -483,6 +522,8 @@ C.lambdas = lambdas;
 function quickMatch(sA, sB, home) { const [a, b] = lambdas(sA, sB, home); return [poisson(a), poisson(b)]; }
 function koWinner(sA, sB, ga, gb) { if (ga !== gb) return ga > gb ? 0 : 1; return R() < 1 / (1 + Math.exp(-(sA - sB) * .05)) ? 0 : 1; }
 C.quickMatch = quickMatch; C.koWinner = koWinner;
+// 경기 당일 전력: 스쿼드 전력 + 시즌 폼(감독·분위기, 달마다 조금씩 변함) + 부상자 공백
+C.mstr = (w, id) => { const c = typeof id === 'object' ? id : w.clubs[id]; return c ? (c.str || 60) + (c.fm || 0) + (c.injd || 0) : 60; };
 
 // 리그 일정 (더블 라운드 로빈, 홈/원정)
 function roundRobin(ids) {

@@ -54,6 +54,7 @@ U.isFollowMatch = function (x, s) {
 };
 U.isFollowNews = function (n, s) {
   s = s || S(); const F = fset(s), w = s.w;
+  if (n.gl) return true;
   if (n.lg && F.lg.has(n.lg)) return true;
   if (n.comp && (F.comp.has(n.comp) || F.cupNat.has(String(n.comp).split(':')[0]))) return true;
   for (const id of n.cl || []) { if (F.club.has(id)) return true; const c = w.clubs[id]; if (c && F.lg.has(c.lg)) return true; }
@@ -112,8 +113,10 @@ U.openMatchRef = function (ref, title) {
       if (ref.mk === 'C') { for (const k in w.cal.cup) { const c = w.cal.cup[k]; if (c.nat + ':' + c.kind === ref.sk) rows = (w.cal.h[k] || {}).rows; } }
       else if (ref.mk === 'E') { for (const k in w.cal.cont) if (w.cal.cont[k].k === ref.sk) { const r = pickRow((w.cal.h[k] || {}).rows); if (r) { rows = [r]; break; } } }
       else if (ref.mk === 'I') { for (const k in w.cal.intl) if (w.cal.intl[k].k === ref.sk) rows = (w.cal.h[k] || {}).rows; }
-      else if (ref.mk === 'A') rows = (w.cal.h['A:' + ref.sk + ':' + ref.wy] || {}).rows;
+      else if (ref.mk === 'A') { const wy = ref.wy != null ? ref.wy : w.cal.am ? w.cal.am.wy : w.year; rows = (w.cal.h['A:' + ref.sk + ':' + wy] || {}).rows; }
       const r = pickRow(rows); if (r) { showRow(U.liveSt(), r); return; }
+      // 진행 중인 시즌 저장소 (끝난 대회·A매치 기간은 여기로 옮겨진다)
+      if (ref.mk !== 'L') { const st = U.liveSt(), grp = ref.mk === 'C' ? st.CUP : ref.mk === 'E' ? st.CONT : st.INTL; const r2 = pickRow(grp && grp[ref.sk]); if (r2) { showRow(st, r2); return; } }
     }
   }
   // 보관 기록 (최근 시즌부터)
@@ -125,7 +128,7 @@ U.openMatchRef = function (ref, title) {
     const grp = ref.mk === 'C' ? st.CUP : ref.mk === 'E' ? st.CONT : st.INTL;
     const r = pickRow(grp && grp[ref.sk]); if (r) { showRow(st, r); return; }
   }
-  U.toast('이 경기의 상세 기록을 찾을 수 없습니다. (경기별 기록은 최근 3시즌만 보관)');
+  U.toast('이 경기의 상세 기록을 찾을 수 없습니다.');
 };
 // 경기 한 줄: 홈 · 점수(또는 예정) · 원정. 줄을 누르면 경기 상세
 U.matchLine = function (s, x, mine) {
@@ -213,8 +216,8 @@ function groupMini(s, T, g) {
 }
 
 // ---------- 뉴스 탭 ----------
-const CAT = { result: ['경기', 'c-res'], thriller: ['난타전', 'c-thr'], rout: ['대승', 'c-thr'], upset: ['이변', 'c-ups'], hat: ['해트트릭', 'c-hat'], record: ['기록', 'c-rec'], champ: ['우승', 'c-chp'], sack: ['감독', 'c-sack'], transfer: ['이적', 'c-tx'], rumor: ['루머', 'c-rum'], interview: ['인터뷰', 'c-int'], gossip: ['가십', 'c-gos'], award: ['시상', 'c-chp'] };
-const FILT = [['all', '전체'], ['match', '경기', ['result', 'thriller', 'rout', 'upset', 'hat']], ['tx', '이적·루머', ['transfer', 'rumor']], ['record', '기록·우승', ['record', 'champ', 'award']], ['talk', '인터뷰·가십', ['interview', 'gossip']], ['sack', '감독', ['sack']]];
+const CAT = { result: ['경기', 'c-res'], thriller: ['난타전', 'c-thr'], rout: ['대승', 'c-thr'], upset: ['이변', 'c-ups'], hat: ['해트트릭', 'c-hat'], record: ['기록', 'c-rec'], champ: ['우승', 'c-chp'], sack: ['감독', 'c-sack'], transfer: ['이적', 'c-tx'], rumor: ['루머', 'c-rum'], interview: ['인터뷰', 'c-int'], gossip: ['가십', 'c-gos'], award: ['시상', 'c-chp'], retire: ['은퇴', 'c-res'], stat: ['기록', 'c-rec'], streak: ['연승·연패', 'c-ups'], injury: ['부상', 'c-sack'], club: ['구단', 'c-tx'] };
+const FILT = [['all', '전체'], ['match', '경기', ['result', 'thriller', 'rout', 'upset', 'hat']], ['tx', '이적·은퇴', ['transfer', 'rumor', 'retire']], ['record', '기록·우승', ['record', 'champ', 'award', 'stat', 'streak']], ['inj', '부상', ['injury']], ['talk', '인터뷰·가십', ['interview', 'gossip']], ['sack', '감독·구단', ['sack', 'club']]];
 function newsItem(s, n, big) {
   const w = s.w, cat = CAT[n.c] || ['뉴스', ''];
   const lead = (n.cl || []).find(id => w.clubs[id]), ln = (n.n || [])[0];

@@ -69,7 +69,7 @@ function cupResolve(w, st, u) {
   const ms = [], next = [];
   for (const [a, b] of cur.pairs) {
     if (u && u.a === a && u.b === b) { ms.push([a, b, u.ga, u.gb, u.ga === u.gb ? u.win : 0, u.ui]); next.push(u.win); continue; }
-    const sa = (w.clubs[a] || {}).str || 60, sb = (w.clubs[b] || {}).str || 60;
+    const sa = C.mstr ? C.mstr(w, a) : (w.clubs[a] || {}).str || 60, sb = C.mstr ? C.mstr(w, b) : (w.clubs[b] || {}).str || 60;
     const [ga, gb] = C.quickMatch(sa, sb, fin ? 0 : 1);
     const win = C.koWinner(sa, sb, ga, gb) === 0 ? a : b;
     ms.push([a, b, ga, gb, ga === gb ? win : 0]); next.push(win);
