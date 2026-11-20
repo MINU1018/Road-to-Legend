@@ -30,6 +30,14 @@ C.CUPNAME = CUPNAME; C.LCUPNAME = LCUPNAME;
 
 // ---------- 월드 생성 ----------
 function dayOf(y, m, d) { return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2000, 0, 1)) / 864e5); }
+// 25~28세 선수의 OVR별 몸값 중앙값 (FC27). 몸값 → 그 몸값에 맞는 OVR
+const VCURVE = [[60, .2e6], [62, .3e6], [64, .5e6], [66, .8e6], [68, 1.5e6], [70, 2.1e6], [72, 3.6e6], [74, 5.6e6], [76, 11.1e6], [78, 16.3e6], [80, 26.9e6], [82, 41.7e6], [84, 64.8e6], [86, 68.1e6], [88, 80.2e6], [90, 82.9e6]];
+function valueOvr(v) {
+  if (!v || v <= VCURVE[0][1]) return 58;
+  for (let i = 1; i < VCURVE.length; i++) { const [o1, v1] = VCURVE[i], [o0, v0] = VCURVE[i - 1]; if (v <= v1) return o0 + (o1 - o0) * Math.log(v / v0) / Math.log(v1 / v0); }
+  return Math.min(93, 90 + Math.log(v / 82.9e6) / Math.log(1.6)); // 곡선 위: 몸값이 1.6배 될 때마다 +1
+}
+C.valueOvr = valueOvr;
 function buildWorld() {
   const w = { year: START_YEAR, clubs: {}, lg: {}, hist: { lg: {}, cont: {}, cup: {}, nt: {} }, last: {}, gen: 0 };
   const refDay = dayOf(START_YEAR, 8, 1);
@@ -41,10 +49,11 @@ function buildWorld() {
     const age = Math.floor((refDay - p[9]) / 365.25);
     const ovr = p[11];
     // 숨은 잠재력 (FM처럼 선수마다 다르게): 나이 대비 여유분 + 개인 편차. 일부는 대형 유망주, 일부는 정체
+    // 시장가치가 잠재력을 말해 준다: 어린 선수의 몸값을 25~28세 기준 몸값 곡선에 대 보면 '지금 몸값에 맞는 OVR'이 나오고, 남은 성장 기간만큼 더한다
     let pot = ovr;
-    if (age <= 23) pot = ovr + Math.max(0, 24 - age) * rnd(.35, 2.1) + N(0, 2.4) + (age <= 21 && R() < .07 ? rint(4, 11) : 0);
+    if (age <= 23) { const vo = valueOvr(p[12]); pot = Math.max(ovr + 1, vo + Math.max(0, 23 - age) * 1.35) + N(0, 2) + (age <= 20 && R() < .05 ? rint(3, 7) : 0); }
     else if (age <= 26) pot = ovr + Math.max(0, N(.6, 1.6));
-    pot = Math.round(clamp(pot, ovr, 96));
+    pot = Math.round(clamp(pot, ovr, 95));
     w.clubs[c[0]].sq.push([i, POSMAP[p[2]] || 'CM', ovr, age, pot, p[5]]);
   });
   for (const id in w.clubs) { const c = w.clubs[id]; c.str = xiStrength(c.sq); c.base = c.str; c.pres = c.str; }
@@ -58,8 +67,15 @@ function buildWorld() {
     }
     for (const lid in w.lg) w.lg[lid].clubs = w.lg[lid].clubs.filter(id => w.clubs[id] && w.clubs[id].lg === lid);
   }
+  // 2군(B팀, data_yth.js): 1군과 같은 색, 소속 리그 평균 수준. 1군과 같은 리그로는 승격하지 않고 국내 컵에는 나가지 않는다
+  for (const [id, name, short, par, lgId, en] of F.BTEAMS || []) { const p = w.clubs[par], L = w.lg[lgId]; if (!p || !L || w.clubs[id]) continue;
+    const ss = L.clubs.map(x => w.clubs[x].str), avg = ss.length ? ss.reduce((a, b) => a + b, 0) / ss.length : 62, str = Math.round((avg - .8) * 10) / 10;
+    w.clubs[id] = { id, name, short, c1: p.c1, c2: p.c2, nat: p.nat, en, fc: Math.round(str), lg: lgId, sq: [], lite: true, str, base: str, pres: str, parent: par, cty: p.cty };
+    L.clubs.push(id); p.bteam = id; }
   // 하부 구단도 모두 실제(가상) 선수 명단을 갖는다
   for (const id in w.clubs) if (w.clubs[id].lite) materialize(w, w.clubs[id]);
+  // 2군 명단은 어린 선수 위주 (17~22세, 잠재력 높게)
+  for (const id in w.clubs) { const c = w.clubs[id]; if (!c.parent || !c.sq) continue; for (const e of c.sq) { e[3] = rint(17, 22); e[4] = Math.min(92, e[2] + rint(4, 15)); e[6] = rint(1, 3); } }
   initFinance(w);
   // 실제 무소속 선수 (data_fa.js): 2026/27 시즌 초 기준
   w.fa = [];
@@ -67,7 +83,17 @@ function buildWorld() {
   if (F.FA) for (const i of F.FA) { const e = ensureE(mkE(i), null); e[6] = 0; e[8] = 0; e[18] = 0; e[19] = F.FA_LAST[i] || ''; w.fa.push(e); }
   const touched = new Set();
   if (F.FA_MOVE) for (const id in w.clubs) { const c = w.clubs[id]; if (!c.sq || c.lite) continue; for (let k = c.sq.length - 1; k >= 0; k--) { const e = c.sq[k]; if (typeof e[0] === 'number' && F.FA_MOVE[F.P[e[0]][1]]) { c.sq.splice(k, 1); c.wb = (c.wb || 0) - (e[8] || 0); e[6] = 0; e[7] = 0; e[8] = 0; e[18] = 0; e[19] = c.id; w.fa.push(e); touched.add(c); } } }
-  if (F.EXTRA) for (const x of F.EXTRA) { const c = w.clubs[x.club]; if (c && c.sq) { const e = ensureE(mkE(x.i), c); e[6] = x.ct || 1; c.sq.push(e); if (!c.lite) touched.add(c); } }
+  if (F.EXTRA) for (const x of F.EXTRA) { const c = w.clubs[x.club]; if (c && c.sq) { if (c.parent) { const k = c.sq.findIndex(q => typeof q[0] !== 'number' && q[1] === (POSMAP[F.P[x.i][2]] || 'CM')); if (k >= 0) c.sq.splice(k, 1); } const e = ensureE(mkE(x.i), c); e[6] = x.ct || 1; if (e[3] <= 23) { const vo = valueOvr(F.P[x.i][12]); e[4] = Math.round(clamp(Math.max(e[2] + 1, vo + Math.max(0, 23 - e[3]) * 1.35) + N(0, 1.5), e[2], 95)); } c.sq.push(e); if (!c.lite) touched.add(c); } }
+  // 실제 임대 선수 (data_loans.js): 원소속팀 표시, 원소속팀에 있으면 임대 구단으로
+  if (F.LOANS) {
+    const fold = x => String(x).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z ]/g, '').trim();
+    const idx = new Map(); for (const id in w.clubs) { const c = w.clubs[id]; for (const e of c.sq || []) if (typeof e[0] === 'number') { const k = fold(F.P[e[0]][1]); if (!idx.has(k)) idx.set(k, []); idx.get(k).push([e, c]); } }
+    w.loanN = 0;
+    for (const [nm, from, to] of F.LOANS) { const P = w.clubs[from], T = w.clubs[to], L = idx.get(fold(nm)); if (!P || !T || !L || !T.sq) continue;
+      const at = L.find(x => x[1] === T) || L.find(x => x[1] === P); if (!at) continue; const [e, c] = at;
+      if (c === P) { P.sq.splice(P.sq.indexOf(e), 1); T.sq.push(e); touched.add(P); touched.add(T); }
+      e[7] = from; e[6] = Math.max(1, e[6] || 1); w.loanN++; }
+  }
   for (const c of touched) c.str = xiStrength(c.sq);
   // 지난 시즌 순위 대용: 전력순
   for (const id in w.lg) { const l = w.lg[id]; w.last[id] = l.clubs.slice().sort((a, b) => w.clubs[b].str - w.clubs[a].str); }
@@ -79,6 +105,8 @@ function pName(w, e) { return typeof e[0] === 'number' ? F.P[e[0]][1] : String(e
 let UID = 0;
 const uid = n => n + '#' + (Date.now() % 1e6).toString(36) + (++UID).toString(36);
 C.pName = pName;
+// 1군 인원 (유스 유망주 제외): 영입 가능 여부 판단용
+C.sqN = c => { if (!c || !c.sq) return 0; let n = 0; const st = c.str || 70; for (const e of c.sq) if (!(e[3] <= 19 && e[4] >= e[2] + 6 && e[2] < st - 8)) n++; return n; };
 
 // 베스트 11 전력 (4-3-3): GK1, CB2, 풀백2, 미드3, 공격3
 const XI = [['GK', ['GK'], 1], ['CB', ['CB'], 2], ['FB', ['LB', 'RB'], 2], ['MID', ['CDM', 'CM', 'CAM'], 3], ['ATT', ['LW', 'RW', 'LM', 'RM', 'ST'], 3]];
@@ -186,8 +214,9 @@ function ageSquad(c) {
     const apps = e[11] == null ? 20 : e[11], rt = e[12] ? e[12] / 100 : 6.6;
     const play = clamp(apps / 28, 0, 1.15), perf = apps >= 6 ? clamp(rt - 6.65, -.8, 1) : 0;
     if (age <= 23) {
-      pot += perf * 2 * play + N(0, .9) - (play < .2 && age >= 19 ? rnd(.5, 2) : 0);
-      if (pot > o) o += (pot - o) * rnd(.12, .3) * (.45 + .75 * play) + perf * 2.2 * play + N(.2, 1);
+      // 어린 선수는 훈련만으로도 꾸준히 큰다 (출전은 가속 요인). 못 뛰는 잠재력 하락은 20세부터, 완만하게
+      pot += perf * 2 * play + N(0, .9) - (play < .2 && age >= 20 ? rnd(0, 1.3) : 0);
+      if (pot > o) o += (pot - o) * rnd(.15, .32) * (.62 + .6 * play) * (age <= 20 ? 1.1 : 1) + perf * 2.2 * play + N(.45, 1);
       else o += N(0, 1) + perf * play;
       pot = clamp(Math.round(pot), o, 97);
     } else if (pot > o) pot = Math.max(o, Math.round(pot - rnd(0, 1.8)));
@@ -199,7 +228,7 @@ function ageSquad(c) {
     if (age >= 24 && age <= 30 && pot > o) o += (pot - o) * rnd(.25, .6);
     // 변수: 해마다 같은 선수가 같은 길을 가지 않도록 (돌파·정체·슬럼프·반등·급격한 노쇠·큰 부상)
     const rr = R(); e[16] = 0;
-    if (age >= 18 && age <= 25 && rr < .055) { o += rint(2, 5); pot += rint(1, 4); e[16] = 1; }                 // 돌파형 시즌 5.5%
+    if (age >= 18 && age <= 25 && rr < (age <= 22 && pot >= o + 6 ? .09 : .055)) { o += rint(2, 5) + (age <= 21 && pot >= o + 8 ? rint(0, 3) : 0); pot += rint(1, 4); e[16] = 1; }                 // 돌파형 시즌 5.5%
     else if (age <= 23 && rr < .135) { o -= Math.max(0, o - e[2]) * .7; pot -= rint(2, 5); e[16] = 2; }          // 성장 정체 8%
     else if (age >= 24 && age <= 31 && rr < .155) { o -= rint(2, 4); e[16] = 3; }                                // 슬럼프 10% (잠재력은 남아 반등 가능)
     else if (age >= 24 && age <= 27 && rr < .185) { o += rint(2, 4); pot = Math.max(pot, o + 1); e[16] = 4; }    // 늦게 피는 선수 3%
@@ -223,7 +252,7 @@ function ageSquad(c) {
     if (age >= 30 && o < 48) pr = Math.max(pr, .2);
     pr = Math.min(pr, .97);
     if (R() < pr) { e[2] = o; e[3] = age; if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; if (C._w) txLog(C._w, e, c, null, 'ret', 0); continue; }
-    e[2] = o; e[3] = age; e[4] = Math.max(pot, o); e[6] -= 1;
+    e[2] = o; e[3] = age; e[4] = Math.round(Math.max(pot, o)); e[6] -= 1;
     out.push(e);
   }
   c.sq = out;
@@ -279,11 +308,19 @@ function worldTransfers(w, winter) {
   // 2) 재정: 이번 시즌 수입과 이적 예산 (지난 예산 일부 이월)
   for (const c of clubs) { if (!winter || c.rev == null) { c.rev = clubRev(w, c); c.cash = Math.max(0, Math.round((c.cash || 0) * .55 + c.rev * .16)); } c.wb = c.sq.reduce((a, e) => a + (e[8] || 0), 0); }
   const wageRoom = (d, wk) => d.wb + wk <= d.rev * .62 / 52;
+  // 2) 1군·2군 사이 이동 (여름): 2군에서 1군 수준이 된 어린 선수는 승격, 1군에서 뛰지 못하는 어린 선수는 2군으로
+  if (!winter) for (const b of clubs) { if (!b.parent) continue; const p = w.clubs[b.parent]; if (!p || !p.sq || p.lite) continue;
+    for (const e of b.sq.slice()) { if (e[7] || e[3] > 23 || e[2] < p.str - 7) continue; b.sq.splice(b.sq.indexOf(e), 1); p.sq.push(e); txLog(w, e, b, p, 'bu', 0); w._moved.add(e); }
+    const rl0 = roles(p);
+    for (const e of p.sq.slice()) { if (b.sq.length >= 30) break; if (e[7] || e[3] < 17 || e[3] > 21 || e[2] >= p.str - 8 || rl0.get(e) !== 2 || R() > .65) continue; p.sq.splice(p.sq.indexOf(e), 1); b.sq.push(e); txLog(w, e, p, b, 'bt', 0); w._moved.add(e); }
+    p.wb = p.sq.reduce((a, e) => a + (e[8] || 0), 0); b.wb = b.sq.reduce((a, e) => a + (e[8] || 0), 0);
+  }
   // 3) 선수별 결정
   const market = [];
   for (const c of clubs) {
     const rl = roles(c);
     for (const e of c.sq) {
+      if (e[7] && e[7] !== c.id) continue; // 임대 온 선수는 원소속팀 소유: 임대 구단이 팔거나 다시 임대 보낼 수 없다
       const o = e[2], age = e[3], f = e[9] || 0, rr = rl.get(e), gap = o - c.str, ct = e[6];
       const prospect = age <= 21 && e[4] >= o + 5;
       // 구단이 원하는 정도
@@ -294,10 +331,12 @@ function worldTransfers(w, winter) {
       const ambition = !top && gap >= 3 && age <= 30 ? clamp(.25 + (gap - 3) * .1 + Math.max(0, f) * .08, .2, .85) : rr === 2 && age >= 22 && age <= 30 ? .45 : .05;
       const wantsOut = R() < ambition;
       let kind = null;
+      // 2군: 23세가 넘으면 내보낸다 (계약 만료면 자유계약, 아니면 판매)
+      if (!winter && c.parent && age >= 23) { market.push([e, c, ct <= 0 ? 'free' : 'sale']); continue; }
       if (winter) {
         // 겨울: 계약 만료 처리는 없고, 뛰지 못하는 유망주 임대·불만 선수 판매·보강만 소규모로
         if (wantsOut && (gap >= 3 || rr === 2) && R() < .3) kind = 'sale';
-        else if (!e[13] && age <= 21 && rr === 2 && (e[11] == null || e[11] < 8) && R() < (prospect ? .38 : .22)) kind = 'loan';
+        else if (!e[13] && age >= 18 && age <= 21 && rr === 2 && (e[11] == null || e[11] < 8) && R() < (prospect ? .38 : .22)) kind = 'loan';
         else if (f < -1.4 && age >= 24 && R() < .06) kind = 'sale';
         if (kind) market.push([e, c, kind]);
         continue;
@@ -318,8 +357,8 @@ function worldTransfers(w, winter) {
         if (wantsOut && (gap >= 3 || rr === 2)) kind = 'sale';
         else if (rr === 0 && ct === 2 && age <= 29 && gap >= -1 && R() < .3) { renew(rnd(1.05, 1.25)); stat.ext++; }
         else if (e[13]) { /* 임대 복귀 기대주는 남겨서 쓴다 */ }
-        else if (prospect && rr === 2 && (e[11] || 0) < 12 && o < c.str - 3 && R() < (age <= 18 ? .45 : .7)) kind = 'loan'; // 뛸 자리가 없는 유망주는 임대로 경기 경험
-        else if (age <= 21 && rr >= 1 && R() < (o >= c.str - 4 ? .12 : age <= 19 ? .3 : .45)) kind = 'loan';
+        else if (prospect && age >= 18 && rr === 2 && (e[11] || 0) < 12 && o < c.str - 3 && R() < (age <= 18 ? .45 : .7)) kind = 'loan'; // 뛸 자리가 없는 유망주는 임대로 경기 경험
+        else if (age >= 18 && age <= 21 && rr >= 1 && R() < (o >= c.str - 4 ? .12 : age <= 19 ? .3 : .45)) kind = 'loan';
         else if (age === 22 && rr === 2 && o < c.str - 4 && R() < .35) kind = 'loan';
         else if (f < -1.2 && age >= 23 && R() < .25) kind = 'sale';
         else if (age >= 31 && gap < 0 && R() < .1) kind = 'sale';
@@ -338,7 +377,7 @@ function worldTransfers(w, winter) {
     // 후보 구단이 많으면(하부 리그) 무작위 48곳만 살펴본다 (속도)
     let range = byStr.slice(i0, i1);
     if (range.length > 48) { const pickd = []; for (let k = 0; k < 48; k++) pickd.push(range[(R() * range.length) | 0]); range = [...new Set(pickd)]; }
-    const cand = range.filter(c => c !== from && c.sq.length < 31 && (!fee || c.cash >= fee) && (kind === 'loan' || wageRoom(c, wk(c))));
+    const cand = range.filter(c => c !== from && (!c.parent || e[3] <= 21) && C.sqN(c) < 31 && (!fee || c.cash >= fee) && (kind === 'loan' || wageRoom(c, wk(c))));
     if (!cand.length) return null;
     const nat = e[5], age = e[3], o = e[2];
     return wpick(cand, c => Math.exp((c.str - lo) * (kind === 'loan' ? .05 : .22)) * (c.str >= topS - .6 ? .4 : c.str >= topS - 1.6 ? .7 : 1) * (c.nat === nat ? 2 : 1) * (from && c.nat === from.nat ? 1.5 : 1) * need(c, e[1]) * (c.sq.length < 25 ? 1.4 : c.sq.length > 28 ? .5 : 1)
@@ -358,6 +397,7 @@ function worldTransfers(w, winter) {
     const wk = d => Math.round(aiWage(d, o, age) * (kind === 'free' ? rnd(1.05, 1.25) : kind === 'sale' ? rnd(1, 1.2) : 1) / 50) * 50;
     let d = pickClub(lo, hi, e, c, kind, fee, wk);
     if (!d && kind === 'sale') d = pickClub(L - 7, L + 2, e, c, kind, fee * .8, wk);
+    if (!d && kind === 'loan') d = pickClub(L - 8, L + 3, e, c, kind, 0, wk);
     if (!d && kind === 'free') d = pickClub(L - 10, L + 2, e, c, kind, 0, wk) || (age < 33 || o >= 65 ? pickClub(L - 25, L, e, c, kind, 0, wk) : null);
     // 실력 있는 선수는 연봉을 깎아서라도 새 팀을 찾는다 (아직 뛸 수 있는데 갈 곳이 없어 은퇴하는 일 방지)
     let cut = 1;
@@ -386,8 +426,9 @@ function refillSquad(c, w, pool, winter) {
   const add = (e, kind, from) => { e[8] = aiWage(c, e[2], e[3]); c.sq.push(e); c.wb = (c.wb || 0) + e[8]; txLog(w, e, from || null, c, kind, 0); };
   const youth = (pos) => {
     const nat = genNat(c.nat), age = rint(16, 18);
-    const o = clamp(Math.round(N(c.pres - 17, 4)), 35, 80);
-    const pot = clamp(Math.round(N(c.pres - 1, 6.5)), o + 3, 95);
+    const par = c.parent && w.clubs[c.parent];
+    const o = par ? clamp(Math.round(N(c.str - 5, 3)), 45, 75) : clamp(Math.round(N(c.pres - 17, 4)), 35, 80);
+    const pot = clamp(Math.round(N(par ? par.pres - 4 : c.pres - 1, 6.5)), o + 3, 95);
     add([uid(genName(nat)), pos, o, age, pot, nat, rint(2, 4), 0, 0, 0, Math.round(N(0, 1.5) * 10) / 10, 0], 'yth');
   };
   const poach = (pos, lv) => {
@@ -414,25 +455,27 @@ function refillSquad(c, w, pool, winter) {
   const nY = winter ? 0 : R() < .55 ? 1 : 2; const ypos = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST', 'ST', 'CM', 'CB'];
   for (let i = 0; i < nY; i++) { const p = pick(ypos); youth(p); cnt[p] = (cnt[p] || 0) + 1; }
   for (const pos in MINPOS) while ((cnt[pos] || 0) < MINPOS[pos]) {
-    if (!poach(pos, c.pres - 3)) { if (R() < .35) youth(pos); else journeyman(pos); }
+    if (c.parent) youth(pos); else if (!poach(pos, c.pres - 3)) { if (R() < .35) youth(pos); else journeyman(pos); }
     cnt[pos] = (cnt[pos] || 0) + 1;
   }
   for (let t = 0; t < (winter ? 1 : 4); t++) {
     const s = xiStrength(c.sq); if (s >= c.pres - .8) break;
     const posList = ['GK', 'CB', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST', 'ST'];
-    poach(pick(posList), Math.min(c.pres + 2, 90));
+    if (!c.parent) poach(pick(posList), Math.min(c.pres + 2, 90));
   }
   // 정원 초과: 약한 선수는 비슷한 수준 구단으로 자유 이적, 없으면 방출
   // 정원 초과: 키울 유망주는 남기고(넘치면 임대), 나이 들고 약한 선수부터 내보낸다
-  const keepScore = e => e[2] + (e[3] <= 22 && e[4] >= e[2] + 5 ? 6 + Math.min(6, (e[4] - e[2]) * .4) : e[3] <= 21 ? 2 : 0) - (e[3] >= 32 ? 3 : 0) - (e[7] ? 4 : 0);
-  while (c.sq.length > 31) {
+  const keepScore = e => (e[3] < 18 && e[4] >= e[2] + 8 ? 60 : 0) + e[2] + (e[3] <= 22 && e[4] >= e[2] + 5 ? 6 + Math.min(6, (e[4] - e[2]) * .4) : e[3] <= 21 ? 2 : 0) - (e[3] >= 32 ? 3 : 0) - (e[7] ? 4 : 0);
+  // 1군 31명 + 키우는 어린 유망주(19세 이하)는 따로 최대 16명까지 (유스 팀)
+  const cap = 31 + Math.min(16, c.sq.filter(e => e[3] <= 19 && e[4] >= e[2] + 6 && !e[7]).length);
+  while (c.sq.length > cap) {
     let mi = 0; c.sq.forEach((e, i) => { if (keepScore(e) < keepScore(c.sq[mi])) mi = i; });
     const e = c.sq.splice(mi, 1)[0]; c.wb -= e[8] || 0;
     const L = pool._byStr; let d = null;
     // 임대 온 선수는 원소속팀으로 돌려보낸다
     if (e[7] && w.clubs[e[7]] && w.clubs[e[7]].sq) { const p = w.clubs[e[7]]; e[7] = 0; p.sq.push(e); txLog(w, e, c, p, 'lret', 0); continue; }
     const prospect = e[3] <= 22 && e[4] >= e[2] + 4;
-    if (L) { for (let k = 0; k < 40 && !d; k++) { const x = L[(R() * L.length) | 0]; if (x !== c && x.sq.length < (prospect ? 29 : 28) && (prospect ? x.str >= e[2] - 3 && x.str <= e[2] + 5 && x.str < c.str : Math.abs(x.str - e[2]) < 4)) d = x; } }
+    if (L) { for (let k = 0; k < 40 && !d; k++) { const x = L[(R() * L.length) | 0]; if (x !== c && C.sqN(x) < (prospect ? 29 : 28) && (prospect ? x.str >= e[2] - 3 && x.str <= e[2] + 5 && x.str < c.str : Math.abs(x.str - e[2]) < 4)) d = x; } }
     if (d && prospect) { e[7] = c.id; txLog(w, e, c, d, 'loan', 0); d.sq.push(e); }
     else if (d) { e[6] = ctFor(e[3]); e[7] = 0; e[8] = aiWage(d, e[2], e[3]); txLog(w, e, c, d, 'free', 0); d.sq.push(e); d.wb = (d.wb || 0) + e[8]; }
     else if (faOk(e)) { txLog(w, e, c, null, 'rel', 0); faAdd(w, e, c); }
@@ -543,7 +586,7 @@ function marketWindow(w, kind, d0, d1, resAdj) {
   // 날짜 붙이기 (선수별로 순서 유지)
   const rows = w._tx, span = d1 - d0, last = {};
   const dateOf = k => {
-    if (k === 'lret' || k === 'rel' || k === 'ret' || k === 'yth') return d0;
+    if (k === 'lret' || k === 'rel' || k === 'ret' || k === 'yth' || k === 'bt' || k === 'bu') return d0;
     if (k === 'ext') return d0 + Math.floor(R() * Math.min(span, 50));
     if (R() < (kind === 'winter' ? .22 : .12)) return d1 - Math.floor(R() * 3); // 마감 직전
     const u = kind === 'winter' ? R() : Math.min(R(), R()) * .35 + R() * .65; // 여름은 7월에 조금 더 몰림
@@ -649,7 +692,9 @@ function applyPromotion(w, tables) {
       if (!k) continue;
       // 위 티어 각 리그에서 하위 k팀 강등, 아래 티어 전체에서 같은 수만큼 승격(각 조 1위부터)
       const rel = []; for (const u of ups) rel.push(...tables[u.id].slice(-k).map(r => [r.id, u]));
-      const cand = []; for (const d of dns) tables[d.id].forEach((r, pos) => cand.push([r.id, d, pos, r.pts / Math.max(1, r.p)]));
+      // 2군은 1군과 같은 등급(또는 그 위)으로 올라갈 수 없다 → 다음 순위 팀이 대신 승격
+      const okUp = id => { const c = w.clubs[id], p = c && c.parent && w.clubs[c.parent]; if (!p) return true; const pl = w.lg[p.lg]; return !pl || pl.nation !== n || pl.tier < tiers[i]; };
+      const cand = []; for (const d of dns) tables[d.id].forEach((r, pos) => { if (okUp(r.id)) cand.push([r.id, d, pos, r.pts / Math.max(1, r.p)]); });
       cand.sort((a, b) => a[2] - b[2] || b[3] - a[3]);
       const pro = cand.slice(0, rel.length);
       // 승격팀은 강등팀이 빠진 리그로, 강등팀은 승격팀이 빠진 리그로
@@ -661,6 +706,11 @@ function applyPromotion(w, tables) {
       }
     }
   }
+  // 1군이 2군과 같은 등급 이하로 떨어지면 2군도 한 단계 내려간다 (아래 리그 1위와 자리 교환)
+  for (const id in w.clubs) { const b = w.clubs[id]; if (!b.parent || !b.lg) continue; const p = w.clubs[b.parent], bl = w.lg[b.lg], pl = p && w.lg[p.lg]; if (!pl || !bl || pl.nation !== bl.nation || pl.tier < bl.tier) continue;
+    const low = Object.values(w.lg).filter(l => l.nation === bl.nation && l.tier === bl.tier + 1); if (!low.length) continue;
+    const L2 = low[0], sw = L2.clubs.map(x => w.clubs[x]).filter(c => c && !c.parent).sort((a, c) => c.str - a.str)[0]; if (!sw) continue;
+    bl.clubs = bl.clubs.filter(x => x !== id).concat(sw.id); sw.lg = bl.id; L2.clubs = L2.clubs.filter(x => x !== sw.id).concat(id); b.lg = L2.id; moves[id] = (moves[id] || 0) - 1; moves[sw.id] = (moves[sw.id] || 0) + 1.4; }
   return moves;
 }
 C.applyPromotion = applyPromotion;

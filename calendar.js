@@ -207,6 +207,9 @@ function lgFinalize(S, LS) {
   const per = Math.max(1, Math.floor(lg.clubs.length / 2));
   st.L[LS.id] = { p: per, s: h.s.join(';'), e: h.e, l: h.l, d: h.d, r: h.r, sl: LS.label };
   A.lg[LS.id] = Object.assign({ t: rows.map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]), n: lg.name, sl: LS.label, md: 1, d0: LS.start, d1: LS.end }, lgLeaders(S, LS, agg));
+  // 지난 시즌 출전 수(e[11])·평점(e[12]): 겨울에 리그를 옮긴 선수는 두 리그 출전을 합친다 (반 시즌만 뛴 것으로 보여 바로 방출되는 일 방지)
+  // e[20] = 이 값을 쓴 시즌
+  const addApps = (e, y, apps, rs10) => { if (e[20] === y && e[11]) { const a0 = e[11], r0 = (e[12] || 0) * a0; e[11] = a0 + apps; e[12] = e[11] ? Math.round((r0 + (rs10 || 0) * 10) / e[11]) : 0; } else { e[11] = apps; e[12] = apps ? Math.round(rs10 / apps * 10) : 0; } e[20] = y; };
   // 선수 시즌 기록: [시즌, 구단, 경기, 골, 도움, 평점×100, OVR, 나이, 임대, 출전 분, 클린시트]
   const yOff = w.year - 2000, me = meClub(S), written = new Set();
   w.ps = w.ps || {};
@@ -217,7 +220,7 @@ function lgFinalize(S, LS) {
       if (x && cid(w, x[0]) !== id) continue; // 시즌 도중 이 구단에 온 선수의 다른 구단 기록은 아래에서
       written.add(pid);
       const apps = x ? x[1] : 0;
-      e[11] = apps; e[12] = apps ? Math.round(x[8] / apps * 10) : 0;
+      addApps(e, yOff, apps, x ? x[8] : 0);
       if (!apps && ((lg.tier || 1) >= 3 || (e[2] < 50 && !w.ps[pid]))) continue;
       C.psDirty = true;
       const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
@@ -234,7 +237,7 @@ function lgFinalize(S, LS) {
     const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
     if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
     Pp.h += [yOff, x[0], x[1], x[4], x[5], x[1] ? Math.round(x[8] / x[1] * 10) : 0, e ? e[2] : '', e ? e[3] : '', 0, x[3], x[9], x[10] || 0].join(',') + ';';
-    if (e && f[1].lg !== LS.id && (e[11] || 0) < x[1]) { e[11] = x[1]; e[12] = Math.round(x[8] / x[1] * 10); }
+    if (e && f[1].lg !== LS.id) addApps(e, yOff, x[1], x[8]);
     C.psDirty = true;
   }
   (w.hist.lg[LS.id] = w.hist.lg[LS.id] || []).push({ y: LS.label, c: rows[0] && rows[0].id });
@@ -272,10 +275,13 @@ function cupCreate(w, nat, kind, sy) {
   st.dates = cupDates(nat, kind, sy, st.rounds.length);
   w.cal.cup[st.k] = st; w.cal.h[st.k] = { rows: [], agg: {} };
   st.dates.forEach(d => idxAdd(w, d, st.k));
+  // 1라운드 추첨: 첫 경기 3주 전 (이미 지났으면 오늘)
+  const dd = Math.max((w.cal && w.cal.d) || 0, st.dates[0] - 21); C.cupDraw(st, dd); if (dd < st.dates[0]) idxAdd(w, dd, st.k);
   return st;
 }
 async function cupDay(S, st, d, hooks) {
   const w = S.w, h = H(w, st.k); if (!h.rows) Object.assign(h, { rows: [], agg: {} });
+  if (st.cur && !st.cur.nw && (st.cur.d == null || st.cur.d <= d)) drawNews(S, st, st.cur, d);
   while (st.ri < st.rounds.length && st.dates[st.ri] <= d) {
     const rd = st.rounds[st.ri], cur = C.cupDraw(st), ss = S.ss, me = ss && ss.noCup ? null : meClub(S);
     let u = null, urec = null;
@@ -303,6 +309,8 @@ async function cupDay(S, st, d, hooks) {
     }
     w.cal.dirty = 1;
   }
+  // 라운드가 끝나면 바로 다음 라운드 추첨
+  if (st.ri < st.rounds.length && !st.cur && st.res.length && st.dates[st.ri - 1] <= d) { C.cupDraw(st, d); drawNews(S, st, st.cur, d); }
   if (st.ri >= st.rounds.length) cupFinalize(S, st);
 }
 function cupFinalize(S, st) {
@@ -332,6 +340,95 @@ const CONTSCH = {
 };
 const CONT_CY = new Set(['LIB', 'SUD', 'CCC']);
 C.CONT_CY = CONT_CY;
+const DRAWNAT = new Set(['ENG', 'ESP', 'GER', 'ITA', 'FRA', 'POR', 'NED', 'BEL', 'TUR', 'SCO', 'BRA', 'ARG', 'USA', 'KOR', 'JPN', 'SAU', 'MEX']);
+// 추첨 뉴스 (팔로우한 대회면 뉴스 탭에 나온다). 누르면 추첨 연출
+function drawNews(S, st, cur, d) {
+  if (!cur || cur.nw) return; cur.nw = 1;
+  const w = S.w; if (!C.wn || !cur.pairs.length) return;
+  // 뉴스는 본선(○○강) 추첨만, 주요 리그 나라와 팔로우한 리그의 나라만 (추첨 기록·달력 표시는 모든 컵)
+  const fl = ((S.follow && S.follow.lg) || []).map(id => (w.lg[id] || {}).nation);
+  if (cur.pairs.length < 2 || (!/강/.test(cur.n) && cur.pairs.length > 40)) return;
+  if (!DRAWNAT.has(st.nat) && !fl.includes(st.nat)) return;
+  const sc = p => C.mstr(w, p[0]) + C.mstr(w, p[1]) - Math.abs(C.mstr(w, p[0]) - C.mstr(w, p[1])) * .6;
+  const big = cur.pairs.slice().sort((a, b) => sc(b) - sc(a))[0];
+  const nm = id => (w.clubs[id] || {}).name || id;
+  C.wn.push(S, { c: 'draw', d, h: `${st.n} ${cur.n} 대진 추첨`, s: `${cur.pairs.length}경기${cur.mode === 'two' ? ' · 상·하위 리그 포트 분리, 하위 리그 팀 홈' : ' · 오픈 추첨'} · 빅매치 ${nm(big[0])} vs ${nm(big[1])}`, comp: st.nat + ':' + st.kind, cl: big.slice(), imp: cur.pairs.length <= 4 ? 2 : 1, drw: { k: 'C', key: st.k, ri: cur.ri } });
+}
+// UEFA 리그 페이즈 추첨 (실제 방식): 36팀을 전력순 4포트(9팀). 각 팀은 포트마다 2팀(홈 1·원정 1)씩 8경기.
+// 같은 나라끼리는 만나지 않고, 한 나라 팀은 최대 2팀까지만 상대한다. 그다음 8경기일에 나눠 배치 (경기일마다 모든 팀이 한 경기)
+// UECL: 6포트(6팀)에서 포트마다 1팀씩 6경기 (홈 3·원정 3)
+function potSchedule(w, teams, K, per) {
+  const nat = id => (w.clubs[id] || {}).nat || id;
+  const sorted = teams.slice().sort((a, b) => ((w.clubs[b] || {}).str || 0) - ((w.clubs[a] || {}).str || 0));
+  const sz = teams.length / K, pots = Array.from({ length: K }, (_, i) => sorted.slice(i * sz, (i + 1) * sz));
+  const nG = K * per;
+  for (let att = 0; att < 300; att++) {
+    const games = [], opp = {}, cnt = {}; teams.forEach(t => { opp[t] = new Set(); cnt[t] = {}; });
+    const ok = (a, b) => a !== b && nat(a) !== nat(b) && !opp[a].has(b) && (cnt[a][nat(b)] || 0) < 2 && (cnt[b][nat(a)] || 0) < 2;
+    const add = (h_, a_) => { games.push([h_, a_]); opp[h_].add(a_); opp[a_].add(h_); cnt[h_][nat(a_)] = (cnt[h_][nat(a_)] || 0) + 1; cnt[a_][nat(h_)] = (cnt[a_][nat(h_)] || 0) + 1; };
+    let fail = false;
+    const blocks = []; for (let i = 0; i < K; i++) for (let j = i; j < K; j++) blocks.push([i, j]);
+    for (const [i, j] of shuffle(blocks)) {
+      let done = false;
+      for (let t = 0; t < 200 && !done; t++) {
+        const P = shuffle(pots[i].slice());
+        let pl = [];
+        if (i === j) {
+          if (per === 2) { for (let q = 0; q < P.length; q++) pl.push([P[q], P[(q + 1) % P.length]]); }
+          else { for (let q = 0; q + 1 < P.length; q += 2) pl.push([P[q], P[q + 1]]); }
+        } else {
+          const Q = shuffle(pots[j].slice());
+          if (per === 2) { const tau = shuffle(Q.slice()); let bad = false; for (let q = 0; q < P.length; q++) { if (tau[q] === Q[q]) { bad = true; break; } pl.push([P[q], Q[q]]); pl.push([tau[q], P[q]]); } if (bad) continue; }
+          else for (let q = 0; q < P.length; q++) pl.push([P[q], Q[q]]);
+        }
+        // 조건 검사 (블록 안에서도 누적)
+        const tmpO = {}, tmpC = {}; let bad = false;
+        const seen = (a, b) => (tmpO[a] && tmpO[a].has(b));
+        for (const [a, b] of pl) { if (!ok(a, b) || seen(a, b)) { bad = true; break; }
+          const na = nat(a), nb = nat(b); tmpC[a] = tmpC[a] || {}; tmpC[b] = tmpC[b] || {};
+          if ((cnt[a][nb] || 0) + (tmpC[a][nb] || 0) >= 2 || (cnt[b][na] || 0) + (tmpC[b][na] || 0) >= 2) { bad = true; break; }
+          tmpC[a][nb] = (tmpC[a][nb] || 0) + 1; tmpC[b][na] = (tmpC[b][na] || 0) + 1; (tmpO[a] = tmpO[a] || new Set()).add(b); (tmpO[b] = tmpO[b] || new Set()).add(a); }
+        if (bad) continue;
+        for (const [a, b] of pl) add(a, b);
+        done = true;
+      }
+      if (!done) { fail = true; break; }
+    }
+    if (fail) continue;
+    // 홈·원정: UCL·UEL은 구성 자체가 포트마다 홈 1·원정 1. UECL은 오일러 회로 방향으로 홈 3·원정 3
+    if (per === 1) {
+      const adj = {}; teams.forEach(t => adj[t] = []); games.forEach((g, gi) => { adj[g[0]].push(gi); adj[g[1]].push(gi); });
+      const used = new Array(games.length).fill(false);
+      for (const st0 of teams) { const stack = [st0]; while (stack.length) { const v = stack[stack.length - 1]; let e = -1; while (adj[v].length) { const gi = adj[v].pop(); if (!used[gi]) { e = gi; break; } } if (e < 0) { stack.pop(); continue; } used[e] = true; const g = games[e], u = g[0] === v ? g[1] : g[0]; games[e] = [v, u]; stack.push(u); } }
+    }
+    // 경기일 배치: 남은 경기에서 완전 매칭을 하나씩 뽑는다 (실패하면 다시)
+    for (let t2 = 0; t2 < 30; t2++) {
+      let rest = shuffle(games.slice()); const md = [];
+      let okAll = true;
+      for (let r = 0; r < nG; r++) {
+        const m = perfectMatch(teams, rest); if (!m) { okAll = false; break; }
+        md.push(m); const ms = new Set(m); rest = rest.filter(g => !ms.has(g));
+      }
+      if (okAll) return { pots, md: md.map(m => m.map(g => [g[0], g[1]])) };
+    }
+  }
+  return null;
+}
+function perfectMatch(teams, games) {
+  const by = {}; teams.forEach(t => by[t] = []); for (const g of games) { by[g[0]].push(g); by[g[1]].push(g); }
+  const used = new Set(), out = []; let steps = 0;
+  const go = () => {
+    if (++steps > 20000) return false;
+    let best = null, bc = 1e9;
+    for (const t of teams) { if (used.has(t)) continue; let c = 0; for (const g of by[t]) if (!used.has(g[0]) && !used.has(g[1])) c++; if (c < bc) { bc = c; best = t; if (!c) break; } }
+    if (best == null) return true;
+    if (!bc) return false;
+    for (const g of shuffle(by[best].filter(g => !used.has(g[0]) && !used.has(g[1])))) { used.add(g[0]); used.add(g[1]); out.push(g); if (go()) return true; out.pop(); used.delete(g[0]); used.delete(g[1]); }
+    return false;
+  };
+  return go() ? out.slice() : null;
+}
+C.potSchedule = potSchedule;
 function contCreate(w, k, sy, parts) {
   const def = C.COMPS[k], sch = CONTSCH[k], teams = (parts || C.contParticipants(w))[k] || [];
   if (teams.length < 8) return null;
@@ -357,6 +454,9 @@ function contCreate(w, k, sy, parts) {
       if (bad < bestBad) { bestBad = bad; best = md; }
     }
     cs.md = best;
+    // UEFA 대회 (36팀): 실제와 같은 포트 추첨으로 대진을 다시 만든다
+    const PK = { UCL: [4, 2], UEL: [4, 2], UECL: [6, 1] }[k];
+    if (PK && teams.length === 36 && nPh === PK[0] * PK[1]) { const ps = potSchedule(w, teams, PK[0], PK[1]); if (ps) { cs.md = ps.md; cs.pots = ps.pots; cs.drawD = Math.max((w.cal && w.cal.d) || 0, day(sy, 8, 28)); } }
   }
   const nKO = Math.log2(def.ko);
   cs.rounds = (def.playoff ? sch.kd : sch.kd.filter(r => r[2] !== '플레이오프').slice(-nKO)).map(r => [dd(r[0]), r[1] ? dd(r[1]) : null, r[2]]);
@@ -366,6 +466,8 @@ function contCreate(w, k, sy, parts) {
   cs.di = 0;
   w.cal.cont[cs.key] = cs; w.cal.h[cs.key] = { rows: [], agg: {} };
   cs.dates.forEach(d => idxAdd(w, d, cs.key));
+  if (cs.drawD != null && cs.drawD < cs.dates[0]) idxAdd(w, cs.drawD, cs.key);
+  cs.tdraw = {};
   return cs;
 }
 async function contUser(S, cs, oid, home, stage, imp, d, hooks) {
@@ -401,6 +503,7 @@ function contDraw(cs, ri) {
 }
 async function contDay(S, cs, d, hooks) {
   const w = S.w, h = H(w, cs.key); if (!h.rows) Object.assign(h, { rows: [], agg: {} });
+  if (cs.pots && !cs.drawNw && d >= cs.drawD) { cs.drawNw = 1; if (C.wn) { const top = cs.pots[0].slice(0, 2).map(id => (w.clubs[id] || {}).name).join('·'); C.wn.push(S, { c: 'draw', d, h: `${cs.name} 리그 페이즈 추첨`, s: `36팀 · ${cs.pots.length}포트 · 포트마다 ${cs.pots.length === 4 ? '2팀(홈·원정 1경기씩)' : '1팀'} · 1포트 ${top} 등`, comp: cs.k, cl: cs.pots[0].slice(0, 2), imp: C.COMPS[cs.k].tier === 1 ? 2 : 1, drw: { k: 'E', key: cs.key, ri: -1 } }); } }
   const ss = S.ss, me = ss && ss.noCont ? null : meClub(S);
   while (cs.di < cs.dates.length && cs.dates[cs.di] <= d) {
     const i = cs.di++;
@@ -449,6 +552,17 @@ async function contDay(S, cs, d, hooks) {
     }
     if (final) { cs.done = true; cs.winner = cs.ties[ri][0] && cs.ties[ri][0].win; }
     w.cal.dirty = 1;
+  }
+  // 토너먼트 추첨: 대진에 들어갈 팀이 모두 정해지면 바로
+  if (!cs.done) for (let ri = 0; ri < (cs.rounds || []).length; ri++) {
+    if (cs.ties[ri]) continue;
+    const def = C.COMPS[cs.k];
+    const prevDone = ri > 0 && !!(cs.ties[ri - 1] && cs.ties[ri - 1].length && cs.ties[ri - 1].every(t => t.win));
+    const ready = def.phase === 0 ? (ri === 0 || prevDone) : ri === 0 ? !!cs.phaseDone : !!cs.phaseDone && prevDone;
+    if (!ready) break;
+    contDraw(cs, ri); (cs.tdraw = cs.tdraw || {})[ri] = d;
+    if (C.wn && cs.ties[ri].length) { const rd = cs.rounds[ri]; C.wn.push(S, { c: 'draw', d, h: `${cs.name} ${rd[2]} 대진 추첨`, s: cs.ties[ri].slice(0, 3).map(t => `${(w.clubs[t[0]] || {}).short || ''} vs ${(w.clubs[t[1]] || {}).short || ''}`).join(' · ') + (cs.ties[ri].length > 3 ? ' 외' : ''), comp: cs.k, cl: cs.ties[ri][0].slice(), imp: C.COMPS[cs.k].tier === 1 ? 2 : 1, drw: { k: 'E', key: cs.key, ri } }); }
+    break;
   }
   if (cs.di >= cs.dates.length && !cs.finalized) contFinalize(S, cs);
 }
@@ -794,6 +908,7 @@ function applyWindow(S, kind, d0, d1, opt) {
     const holder = past.length ? past[past.length - 1][2] : fut[0][1];
     fin.sq.splice(fin.sq.indexOf(e), 1);
     const hc = holder && w.clubs[holder] && w.clubs[holder].sq ? w.clubs[holder] : null;
+    if (fut[0][3] === 'loan' && e[7] === fut[0][1]) e[7] = 0; // 임대 날짜 전까지는 원소속팀 선수 (임대 표시는 이동하는 날 붙인다)
     if (hc && fut[0][3] !== 'free' && fut[0][3] !== 'new') hc.sq.push(e); else (w.cal.limbo = w.cal.limbo || {})[pid] = e;
     for (const r of fut) w.cal.tq.push([r[10], pid, r[1], r[2], r[3]]);
   }
@@ -813,6 +928,7 @@ function runQueue(S, d) {
     if (e) delete w.cal.limbo[pid];
     else { const fc = w.clubs[from]; if (fc && fc.sq) { const i = fc.sq.findIndex(x => String(x[0]) === pid); if (i >= 0) e = fc.sq.splice(i, 1)[0]; } if (!e) { const f = findE(w, pid); if (f) { e = f[0]; f[1].sq.splice(f[1].sq.indexOf(e), 1); touched.add(f[1].id); } } }
     if (!e) continue;
+    if (kind === 'loan') e[7] = from; else if (kind === 'buy' || kind === 'free' || kind === 'new') e[7] = 0;
     const tc = w.clubs[to];
     if (tc && tc.sq) tc.sq.push(e); else (w.cal.limbo = w.cal.limbo || {})[pid] = e;
     moved = true;
@@ -938,7 +1054,7 @@ C.txLabelAt = txLabelAt;
 function faTick(S, d) {
   const w = S.w; if (!w.fa || !w.fa.length) return;
   const inWin = !!(w.cal.win && d >= w.cal.win.d0 && d <= w.cal.win.d1);
-  const clubs = Object.values(w.clubs).filter(c => c.sq && c.lg && c.sq.length < 29).sort((a, b) => a.str - b.str), strs = clubs.map(c => c.str);
+  const clubs = Object.values(w.clubs).filter(c => c.sq && c.lg && C.sqN(c) < 29).sort((a, b) => a.str - b.str), strs = clubs.map(c => c.str);
   const lower = x => { let lo = 0, hi = strs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (strs[m] < x) lo = m + 1; else hi = m; } return lo; };
   const GR = { GK: 'G', CB: 'D', LB: 'D', RB: 'D', CDM: 'M', CM: 'M', CAM: 'M', LM: 'A', RM: 'A', LW: 'A', RW: 'A', ST: 'A' };
   // 나라별 1부 리그 수준(상위 6개 구단 평균): 이름 있는 선수는 수준 높은 리그나 돈 많은 리그(사우디·미국·튀르키예 등)로 간다
@@ -953,14 +1069,14 @@ function faTick(S, d) {
     // 이 선수가 주전·로테이션이 될 만한 구단 (전력 o-11 ~ o+2)
     const i0 = lower(o - (o >= 74 ? 9 : 11)), i1 = lower(o + 2.001); let best = null, bs = 0;
     for (let k = 0; k < 40 && i1 > i0; k++) {
-      const c = clubs[i0 + ((R() * (i1 - i0)) | 0)]; if (!c || c.sq.length >= 29) continue;
+      const c = clubs[i0 + ((R() * (i1 - i0)) | 0)]; if (!c || C.sqN(c) >= 29) continue;
       const g = GR[e[1]] || 'M', same = c.sq.filter(x => (GR[x[1]] || 'M') === g), better = same.filter(x => x[2] >= o - 1 && !x[14]).length;
       const want = { G: 2, D: 6, M: 5, A: 5 }[g]; if (better >= want) continue;
       const wage = Math.max(100, Math.round(C.aiWage(c, o, age) * Math.max(.45, 1 - idle / 365 * .55) / 50) * 50);
       const room = (c.rev || 2e6) * .62 / 52 - (c.wb != null ? c.wb : c.sq.reduce((a, x) => a + (x[8] || 0), 0));
       if (room < wage * .6) continue;
       const L = w.lg[c.lg] || {}, n = L.nation || c.nat;
-      const sc = (want - better) * (c.sq.length < 24 ? 1.5 : 1) * (n === e[5] ? 1.6 : 1) * Math.exp((c.str - o) * .12) * (.5 + R())
+      const sc = (want - better) * (C.sqN(c) < 24 ? 1.5 : 1) * (n === e[5] ? 1.6 : 1) * Math.exp((c.str - o) * .12) * (.5 + R())
         * (o >= 72 ? Math.pow(clamp((c.rev || 2e6) / 25e6, .1, 8), .8) * (L.tier === 1 ? 1 : .35) : 1) * (age >= 29 && o >= 72 ? RICH[n] || 1 : 1);
       if (sc > bs) { bs = sc; best = [c, wage]; }
     }
@@ -1191,13 +1307,16 @@ function predDates(w, lg, sy, n) {
 // 달력 한 달치 표시 정보. majorNat(nat): 리그를 표시할 나라인지
 C.calMonth = function (S, y, m, majorNat) {
   const w = S.w, d0 = day(y, m, 1), d1 = day(y, m + 1, 1) - 1, out = [];
-  for (let d = d0; d <= d1; d++) out.push({ d, L: [], E: [], C: [], I: [], iw: null, tw: null, dl: 0, it: null });
+  for (let d = d0; d <= d1; d++) out.push({ d, L: [], E: [], C: [], I: [], DR: [], iw: null, tw: null, dl: 0, it: null });
   const at = d => d >= d0 && d <= d1 ? out[d - d0] : null;
   const isMaj = majorNat || (() => true);
   for (const id in w.cal.lg) { const LS = w.cal.lg[id], lg = w.lg[id]; if (!lg || lg.tier !== 1 || !isMaj(lg.nation)) continue;
     LS.dates.forEach((d, i) => { const o = at(d); if (o) o.L.push([id, i + 1, LS.dates.length]); });
     if (d1 > LS.dates[LS.dates.length - 1]) predDates(w, lg, LS.sy + 1, LS.dates.length).forEach((d, i, a) => { const o = at(d); if (o && !o.L.some(x => x[0] === id)) o.L.push([id, i + 1, a.length, 1]); }); }
   for (const k in w.cal.cup) { const st = w.cal.cup[k]; if (!isMaj(st.nat)) continue; st.dates.forEach((d, i) => { const o = at(d); if (o) o.C.push(`${st.n} ${st.rounds[i] ? st.rounds[i].n : ''}`); }); }
+  // 추첨일
+  for (const k in w.cal.cup) { const st = w.cal.cup[k]; if (!isMaj(st.nat)) continue; for (const dr of st.draws || []) { const o = dr.d != null && at(dr.d); if (o) o.DR.push({ n: `${st.n} ${dr.n} 추첨`, k: 'C', key: st.k, ri: dr.ri }); } }
+  for (const k in w.cal.cont) { const cs = w.cal.cont[k]; if (cs.drawD != null) { const o = at(cs.drawD); if (o) o.DR.push({ n: `${C.COMPS[cs.k].short} 리그 페이즈 추첨`, k: 'E', key: cs.key, ri: -1 }); } for (const ri in cs.tdraw || {}) { const o = at(cs.tdraw[ri]); if (o) o.DR.push({ n: `${C.COMPS[cs.k].short} ${(cs.rounds[ri] || [])[2] || ''} 추첨`, k: 'E', key: cs.key, ri: +ri }); } }
   for (const k in w.cal.cont) { const cs = w.cal.cont[k];
     cs.dates.forEach((d, i) => { const o = at(d); if (!o) return; let stg; if (i < cs.phaseN) stg = `리그 페이즈 ${i + 1}차전`; else { const [ri, leg] = cs.kmap[i - cs.phaseN]; const r = cs.rounds[ri]; stg = r[2] + (r[1] ? (leg ? ' 2차전' : ' 1차전') : ''); } o.E.push([cs.k, cs.name, stg]); }); }
   const made = new Set();

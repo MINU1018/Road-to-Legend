@@ -222,7 +222,7 @@ function fixturesSec(s, root, lg, label, live) {
   const open = r => {
     if (r.pend) return;
     if (!r.det) { U.toast('이 경기는 상세 기록이 없습니다.'); return; }
-    U.showMatch({ title: `${lg.name} ${(archOf(w, label).lg[lg.id] || {}).sl || label} · ${r.r + 1}라운드${r.d != null ? ' · ' + C.fmtDateY(r.d) : ''}`, a: r.a, b: r.b, ga: r.ga, gb: r.gb, d: C.MD.leagueMatch(st, L, r.i), key: key + '|' + r.i, sa: sp(r.a), sb: sp(r.b) });
+    U.showMatch({ title: `${lg.name} ${(archOf(w, label).lg[lg.id] || {}).sl || label} · ${r.r + 1}라운드${r.d != null ? ' · ' + C.fmtDateY(r.d) : ''}`, a: r.a, b: r.b, ga: r.ga, gb: r.gb, d: C.MD.leagueMatch(st, L, r.i), key: key + '|' + r.i, sa: sp(r.a), sb: sp(r.b), ctx: { st, lg: lg.id, L, i: r.i, date: r.d } });
   };
   const row = r => r.pend ? h('div', { class: 'fx pend' + (r.a === myClub || r.b === myClub ? ' me' : '') }, h('span', { class: 'mute fr' }, v.fxT ? `${r.r + 1}R` : ''), h('span', { class: 'fh' }, teamTag(w, r.a, false, true)), h('b', { class: 'fs mute' }, r.d != null ? C.fmtDate(r.d) : 'vs'), h('span', { class: 'fa' }, teamTag(w, r.b, false, false)), h('span', { class: 'mute', style: { fontSize: '11px' } }, '예정'))
     : fxRow(w, r.a, r.b, r.ga, r.gb, v.fxT ? `${r.r + 1}R` : '', v.fxT ? resOf(r, v.fxT) : '', r.a === myClub || r.b === myClub, () => open(r));
@@ -378,9 +378,9 @@ function bracket(nameOf, rounds, finalWinner, onMatch) {
 // 시즌 경기 기록에서 한 경기 찾아 보여주기
 const stOf = label => label === LIVE ? liveSt() : (S().w.mxKeys || []).includes(label) ? U.withMx(label, () => rerender()) : null;
 const mxNote = label => label === LIVE ? '진행 중 · 경기를 누르면 득점자·카드·출전 명단' : (S().w.mxKeys || []).includes(label) ? (U.mxCached(label) ? '경기를 누르면 득점자·카드·출전 명단' : '경기 기록 불러오는 중…') : '이 시즌은 경기별 상세 기록이 없습니다';
-function showRow(st, row, title, nat) {
+function showRow(st, row, title, nat, grp, gk) {
   const w = S().w, id = x => nat ? x : (typeof x === 'number' ? w.cix[x] : x);
-  U.showMatch({ title, a: id(row[1]), b: id(row[2]), ga: row[3], gb: row[4], pw: row[7] != null ? id(row[7]) : null, d: C.MD.decode(st, row), nat, key: title + '|' + row[1] + '|' + row[2] });
+  U.showMatch({ title, a: id(row[1]), b: id(row[2]), ga: row[3], gb: row[4], pw: row[7] != null ? id(row[7]) : null, d: C.MD.decode(st, row), nat, key: title + '|' + row[1] + '|' + row[2], ctx: grp ? { st, grp, key: gk, stage: row[0], date: row[8] } : null });
 }
 function findRow(list, stage, a, b, nat) {
   const w = S().w, k = x => nat ? x : C.cix(w, x);
@@ -403,9 +403,11 @@ function cupView(s, root) {
   const cup = cups.find(c => c.k === v.ckind);
   root.append(subTabs('csub', [['br', '대진'], ['fx', '라운드별 결과'], ['rec', '개인 기록·팀 통계']]));
   const list = st && st.CUP[v.cnat + ':' + cup.k];
-  const on = list ? (r, m) => { const row = findRow(list, r.n, m[0], m[1]); if (row) showRow(st, row, `${cup.n} ${v.cseason} · ${r.n}`); } : null;
+  const on = list ? (r, m) => { const row = findRow(list, r.n, m[0], m[1]); if (row) showRow(st, row, `${cup.n} ${v.cseason} · ${r.n}`, false, 'CUP', v.cnat + ':' + cup.k); } : null;
   const head = h('h3', null, h('span', { class: 'cc' }, U.trophy ? U.trophy(cup.k === 'cup' ? 'cup' : 'lcup', 18, '#f2c14e') : null, `${cup.n} ${cup.sl || v.cseason}`), cup.live ? h('span', { class: 'chip good' }, cup.next ? `진행 중 · 다음 ${cup.next[0]} ${C.fmtDateY(cup.next[1])}` : '진행 중') : h('span', { class: 'chip gold' }, '우승 ', w.clubs[cup.w] ? w.clubs[cup.w].name : ''));
   const meta = `${cup.N ? cup.N + '팀 참가 · ' : ''}${cup.r.length}라운드 (${cup.r.map(r => r.n).join(' → ')})`;
+  if (cup.live && w.cal) { const lst = Object.values(w.cal.cup).find(x => x.nat === v.cnat && x.kind === cup.k); const drs = lst ? (lst.draws || []).filter(dr => dr.d == null || dr.d <= w.cal.d).slice().reverse() : [];
+    if (drs.length) root.append(h('div', { class: 'drday' }, h('span', { class: 'lbl' }, '🎱 조추첨'), ...drs.slice(0, 6).map((dr, i) => h('button', { class: 'btn sm' + (i ? ' ghost' : ' gold'), onclick: () => U.openDraw({ k: 'C', key: lst.k, ri: dr.ri }) }, `${dr.n} 추첨`)))); }
   if (v.csub === 'br' && !cup.r.length) root.append(h('div', { class: 'sec' }, head, h('div', { class: 'empty' }, '아직 치른 라운드가 없습니다.')));
   else if (v.csub === 'br') {
     const br = cup.r.slice(-5);
@@ -443,6 +445,8 @@ function contView(s, root) {
   if (archOf(w, v.ckseason).cont[v.ck].live && !archOf(w, v.ckseason).cont[v.ck].w) { const nx = archOf(w, v.ckseason).cont[v.ck].next; root.append(h('div', { class: 'mute', style: { fontSize: '12px', padding: '0 4px' } }, `진행 중${nx != null ? ` · 다음 경기일 ${C.fmtDateY(nx)}` : ''}`)); }
   const K = archOf(w, v.ckseason).cont[v.ck];
   const myId = userClubOf(s, v.ckseason);
+  if (K.live && w.cal) { const cs = Object.values(w.cal.cont).find(x => x.k === v.ck); if (cs) { const bs = []; if (cs.pots && cs.drawD <= w.cal.d) bs.push([-1, '리그 페이즈 추첨']); for (const ri in cs.tdraw || {}) if (cs.ties[ri]) bs.push([+ri, `${(cs.rounds[ri] || [])[2] || ''} 추첨`]);
+    if (bs.length) root.append(h('div', { class: 'drday' }, h('span', { class: 'lbl' }, '🎱 조추첨'), ...bs.reverse().map(([ri, l], i) => h('button', { class: 'btn sm' + (i ? ' ghost' : ' gold'), onclick: () => U.openDraw({ k: 'E', key: cs.key, ri }) }, l)))); } }
   if (K.w) root.append(h('div', { class: 'wchamp', style: U.tintStyle ? U.tintStyle(w.clubs[K.w], .3) : null }, crest(w.clubs[K.w], 52), h('div', null, h('div', { class: 'lbl' }, `${K.n} ${v.ckseason} 우승`), h('h2', null, w.clubs[K.w] ? w.clubs[K.w].name : ''))));
   root.append(subTabs('ksub', [['br', '대진·순위'], ['rec', '개인 기록·팀 통계']]));
   if (v.ksub === 'rec') { compRecSec(s, root, v.ckseason, x => x.CONT[v.ck], false, 'cont|' + v.ckseason + '|' + v.ck, '모든 숫자는 이 대회 경기 기록(리그 페이즈·토너먼트 1·2차전)을 더한 값입니다.'); return; }
@@ -453,9 +457,9 @@ function contView(s, root) {
     if (!list) return;
     const legs = list.filter(x => String(x[0]).startsWith(r.n) && [x[1], x[2]].sort().join() === [C.cix(w, t[0]), C.cix(w, t[1])].sort().join());
     if (!legs.length) return;
-    if (legs.length === 1) { showRow(st, legs[0], `${K.n} ${v.ckseason} · ${legs[0][0]}`); return; }
+    if (legs.length === 1) { showRow(st, legs[0], `${K.n} ${v.ckseason} · ${legs[0][0]}`, false, 'CONT', v.ck); return; }
     U.overlay(close => [h('div', { class: 'head' }, h('h2', null, `${K.n} ${r.n}`), h('span', { class: 'mute' }, `합계 ${clubName(w, t[0])} ${t[3]} - ${t[4]} ${clubName(w, t[1])}${t[5] ? ' · 승부차기' : ''}`)),
-      h('div', { class: 'body', style: { display: 'grid', gap: '8px' } }, ...legs.map(x => fxRow(w, w.cix[x[1]], w.cix[x[2]], x[3], x[4], x[0].replace(r.n, '').trim() || r.n, '', false, () => { close(); setTimeout(() => showRow(st, x, `${K.n} ${v.ckseason} · ${x[0]}`), 200); })), h('div', { style: { textAlign: 'right' } }, h('button', { class: 'btn ghost', onclick: () => close() }, '닫기')))], { clickClose: true });
+      h('div', { class: 'body', style: { display: 'grid', gap: '8px' } }, ...legs.map(x => fxRow(w, w.cix[x[1]], w.cix[x[2]], x[3], x[4], x[0].replace(r.n, '').trim() || r.n, '', false, () => { close(); setTimeout(() => showRow(st, x, `${K.n} ${v.ckseason} · ${x[0]}`, false, 'CONT', v.ck), 200); })), h('div', { style: { textAlign: 'right' } }, h('button', { class: 'btn ghost', onclick: () => close() }, '닫기')))], { clickClose: true });
   };
   if (rounds.length) root.append(h('div', { class: 'sec' }, h('h3', null, '토너먼트'), h('div', { class: 'sub' }, mxNote(v.ckseason)), h('div', { class: 'in tscroll' }, h('div', { class: 'bracket' }, ...rounds.map(r => h('div', { class: 'bcol' }, h('div', { class: 'lbl' }, r.n), h('div', { class: 'bms' }, ...r.t.map(t => h('div', { class: 'bm' + (t[0] === myId || t[1] === myId ? ' me' : '') + (list ? ' click' : ''), onclick: list ? () => openTie(r, t) : null }, ...[t[0], t[1]].map((id, k) => h('div', { class: 'bt' + (t[2] === id ? ' w' : '') }, clubCell(w, id, 16), t[3] != null ? h('b', null, k ? t[4] : t[3]) : null, t[5] && t[2] === id ? h('small', null, 'PK') : null)))))))))));
   if (K.ph) root.append(h('div', { class: 'sec' }, h('h3', null, '리그 페이즈 순위'), h('div', { class: 'in' }, leagueTable(s, { nation: '', tier: 9 }, K.ph, myId))));
@@ -466,7 +470,7 @@ function contView(s, root) {
     if (!v.phT || !teams.includes(v.phT)) v.phT = teams.includes(myId) ? myId : teams[0];
     const mine = ph.filter(x => w.cix[x[1]] === v.phT || w.cix[x[2]] === v.phT);
     root.append(h('div', { class: 'sec' }, h('h3', null, '리그 페이즈 경기', sel(v.phT, teams.map(id => [id, clubName(w, id)]), x => { v.phT = x; rerender(); }, true)),
-      h('div', { class: 'in fxlist' }, ...mine.map(x => fxRow(w, w.cix[x[1]], w.cix[x[2]], x[3], x[4], '', resOf({ a: w.cix[x[1]], b: w.cix[x[2]], ga: x[3], gb: x[4] }, v.phT), false, () => showRow(st, x, `${K.n} ${v.ckseason} · 리그 페이즈`))))));
+      h('div', { class: 'in fxlist' }, ...mine.map(x => fxRow(w, w.cix[x[1]], w.cix[x[2]], x[3], x[4], '', resOf({ a: w.cix[x[1]], b: w.cix[x[2]], ga: x[3], gb: x[4] }, v.phT), false, () => showRow(st, x, `${K.n} ${v.ckseason} · 리그 페이즈`, false, 'CONT', v.ck))))));
   }
   const hist = (w.hist.cont[v.ck] || []).slice(-12).reverse();
   if (hist.length) root.append(h('div', { class: 'sec' }, h('h3', null, '역대 우승'), h('div', { class: 'in' }, h('table', { class: 'ltable lc' }, h('tbody', null, ...hist.map(x => h('tr', null, h('td', null, x.y), h('td', null, clubCell(w, x.c)))))))));
@@ -520,7 +524,7 @@ function intlView(s, root) {
   root.append(subTabs('isub', [['br', '대진·조별리그'], ['rec', '개인 기록·팀 통계']]));
   if (v.isub === 'rec') { compRecSec(s, root, ilabel, x => x.INTL[v.ik], true, 'intl|' + ilabel + '|' + v.ik, '모든 숫자는 이 대회 경기 기록(조별리그·토너먼트)을 더한 값입니다.'); return; }
   const ist = stOf(ilabel), ilist = ist && ist.INTL[v.ik];
-  const iopen = (stage, a, b) => { if (!ilist) return; const row = findRow(ilist, stage, a, b, true); if (row) showRow(ist, row, `${T.n} ${T.y} · ${row[0]}`, true); };
+  const iopen = (stage, a, b) => { if (!ilist) return; const row = findRow(ilist, stage, a, b, true); if (row) showRow(ist, row, `${T.n} ${T.y} · ${row[0]}`, true, 'INTL', v.ik); };
   root.append(h('div', { class: 'sec' }, h('h3', null, '토너먼트 대진'), h('div', { class: 'sub' }, mxNote(ilabel)), h('div', { class: 'in tscroll' }, bracket(nm, T.ko, T.w, ilist ? (r, m) => iopen(r.n, m[0], m[1]) : null))));
   if (T.g && T.g.length) {
     const grid = h('div', { class: 'ggrid' }, ...T.g.map(g => h('div', { class: 'gcard' + (g.rows.some(r => r[0] === me) ? ' mine' : '') },

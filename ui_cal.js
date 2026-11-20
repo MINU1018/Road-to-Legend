@@ -23,7 +23,7 @@ function calGrid(o) {
     if (can && d > today) tip.push(`▶ 누르면 이날까지 진행 (${d - today}일)`);
     cells.push(h(can ? 'button' : 'span', { class: cls, title: tip.join('\n'), onclick: can ? () => o.pick(d) : null },
       h('span', { class: 'cdn' }, C.ymd(d)[2], x.dl ? h('b', { class: 'dlx' }, '마감') : x.tw0 ? h('b', { class: 'twx' }, '개장') : null),
-      ...(x.cer ? [h('span', { class: 'mk cerm' }, U.trophy ? U.trophy('ballon', 18, '#f2c14e') : null, h('span', null, '발롱도르'))] : []), ...(o.cell ? o.cell(x) : [])));
+      ...(x.cer ? [h('span', { class: 'mk cerm' }, U.trophy ? U.trophy('ballon', 18, '#f2c14e') : null, h('span', null, '발롱도르'))] : []), ...(o.cell ? o.cell(x) : []), ...(x.DR && U.isFollowDraw && x.DR.some(U.isFollowDraw) ? [h('span', { class: 'mk drm', title: x.DR.filter(U.isFollowDraw).map(z => z.n).join('\n') }, '추첨')] : [])));
   }
   const nav = (dl, lbl) => h('button', { class: 'btn ghost sm', onclick: () => o.nav(dl) }, lbl);
   const [ty, tm] = C.ymd(today);
@@ -53,6 +53,7 @@ U.calGrid = calGrid;
 U.calTip = function (S, x) {
   const w = S.w, t = [];
   if (x.cer) t.push(`🏆 발롱도르 시상식`);
+  for (const z of (x.DR || []).filter(z => !U.isFollowDraw || U.isFollowDraw(z)).slice(0, 4)) t.push(`🎱 ${z.n}`);
   if (x.it) t.push('🏆 ' + x.it);
   for (const e of x.E) t.push(`${C.COMPS[e[0]] ? C.COMPS[e[0]].short : e[0]} ${e[2]}`);
   for (const [id, r, n, pred] of x.L) t.push(`${w.lg[id].name} ${r}/${n}라운드${pred ? ' (예정)' : ''}`);

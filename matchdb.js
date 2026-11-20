@@ -91,7 +91,7 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
             bench = [xi[bi]].concat(bench.filter(b => b !== y)); xi[bi] = y; k--;
           }
         }
-        const pc = adv >= 3 ? .9 : adv >= 2 ? .7 : cup ? .5 : adv >= 1 ? .22 : 0;
+        const pc = adv >= 3 ? .9 : adv >= 2 ? .7 : cup ? .5 : adv >= 1 ? .25 : adv === 0 ? .14 : .22; // 지고 있을 때도 분위기 반전용으로 유망주를 넣어 본다
         if (pc && R() < pc) {
           // 유망주 여럿이면 돌아가며 (기대치 높은 선수가 조금 더 자주)
           const cand = yp.filter(y => !xi.includes(y) && y.ovr >= avg[s] - 24).slice(0, 6), n = adv >= 3 && R() < .5 ? 2 : 1;
@@ -107,17 +107,35 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
       else bench.unshift(meObj);
     }
     for (const x of xi) P[s].push({ id: x.id, pos: x.pos, ovr: x.ovr, on: 0, off: 90, start: 1, g: 0, a: 0, y: 0, r: 0 });
-    // 교체: 보통 3~5명
-    const nSub = Math.min(bench.length, 5 - cameo.length, me && !me.start ? Math.max(1, Math.round(N(3.3, .8))) : Math.round(N(3.3, .8)));
+    // 교체: 특별한 일이 없으면 5명을 거의 다 쓴다. 경기 중 교체 타이밍은 3번(+하프타임)이라 두세 명씩 묶어서 들어간다
+    const rq = R(), want = rq < .58 ? 5 : rq < .82 ? 4 : rq < .95 ? 3 : 2;
+    const nSub = Math.min(bench.length, 5 - cameo.length, me && !me.start ? Math.max(1, want - cameo.length) : Math.max(0, want - cameo.length));
     const subs = (me && !me.start ? [bench[0]].concat(bench.slice(1).sort(() => R() - .5)).slice(0, nSub) : bench.slice().sort(() => R() - .5).slice(0, Math.max(0, nSub))).concat(cameo);
+    // 교체 묶음(웨이브): 첫 교체 55~70분(가끔 하프타임), 다음은 70~80분, 마지막은 막판. 유망주 카메오는 마지막 묶음
+    const PAT = { 1: [[1]], 2: [[1, 1], [2]], 3: [[1, 1, 1], [2, 1], [1, 2]], 4: [[2, 1, 1], [1, 2, 1], [2, 2], [1, 1, 2]], 5: [[2, 2, 1], [1, 2, 2], [2, 1, 2], [3, 1, 1], [2, 3], [1, 1, 3]] };
+    const subMin = [];
+    { const k = subs.filter(x => x.id !== 'ME').length;
+      if (k) { const pats = PAT[Math.min(5, k)], pat = pats[(R() * pats.length) | 0];
+        let t = R() < .09 ? 46 : Math.round(clamp(N(61, 7), 50, 74));
+        const inj = R() < .07 ? Math.round(clamp(N(30, 9), 8, 44)) : 0; // 부상 교체 (전반)
+        let first = true;
+        for (let wv = 0; wv < pat.length; wv++) {
+          for (let q = 0; q < pat[wv]; q++) subMin.push(first && inj ? inj : t), first = false;
+          t = Math.round(clamp(t + N(wv === 0 ? 13 : 8, 4), t + 3, 89));
+        }
+        while (subMin.length < k) subMin.push(Math.round(clamp(N(84, 4), 75, 90)));
+        subMin.sort((a, b) => a - b); } }
+    let si = 0;
     for (const sb of subs) {
       const outs = P[s].filter(x => x.start && x.off === 90 && GRP[x.pos] !== 'G' && x.id !== 'ME');
       if (!outs.length) break;
       let minute;
       if (sb.id === 'ME') minute = clamp(90 - (me.min || 15), 1, 89);
-      else if (cameo.includes(sb)) minute = Math.round(clamp(N(79, 6), 62, 89));
-      else minute = Math.round(clamp(N(68, 11), 46, 88));
-      const o = outs.find(x => GRP[x.pos] === GRP[sb.pos]) || outs[Math.floor(R() * outs.length)];
+      else minute = subMin[Math.min(si++, subMin.length - 1)] || 70;
+      if (cameo.includes(sb) && minute < 70) minute = Math.round(clamp(N(80, 5), 70, 89));
+      // 같은 포지션끼리 교체. 후반 늦게는 지친 공격수·미드필더부터
+      const same = outs.filter(x => GRP[x.pos] === GRP[sb.pos]);
+      const o = same.length ? same[(R() * same.length) | 0] : outs[Math.floor(R() * outs.length)];
       o.off = minute;
       P[s].push({ id: sb.id, pos: sb.pos, ovr: sb.ovr, on: minute, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 });
     }

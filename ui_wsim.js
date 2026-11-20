@@ -136,6 +136,7 @@ function dayMatchesSec(s, sv, today, home) {
       day !== today ? h('button', { class: 'btn ghost sm', onclick: () => { sv.day = today; U.stay(); } }, '오늘') : null,
       home ? h('button', { class: 'btn ghost sm', onclick: () => U.setTab('sched') }, '달력') : null,
       h('div', { class: 'seg', style: { marginLeft: 'auto' } }, segB('fol', '팔로우'), segB('major', '주요'), segB('all', '전체'))),
+    (() => { const dr = C.calDayDraws ? C.calDayDraws(s, day).filter(z => mode === 'all' || U.isFollowDraw(z) || (mode === 'major' && (z.k === 'E' || BIGLG.includes(z.nat)))) : []; return dr.length ? h('div', { class: 'in drday' }, h('span', { class: 'lbl' }, '🎱 조추첨'), ...dr.slice(0, 12).map(z => h('button', { class: 'btn sm' + (U.isFollowDraw(z) && day <= today ? ' gold' : ' ghost'), disabled: day > today ? true : null, onclick: () => U.openDraw(z) }, z.n + (day > today ? ' (예정)' : '')))) : null; })(),
     order.length ? h('div', { class: 'in calgrid' }, ...order.slice(0, mode === 'all' ? 80 : 40).map(g => h('div', { class: 'wsitem' + (g.fol ? ' fol' : ''), style: { display: 'block' } }, h('div', { class: 'lbl', style: { marginBottom: '4px' } }, h('span', { class: 'cc' }, gflag(g), gname(g))),
       ...(g.fol || mode !== 'all' ? g.ms : g.ms.slice(0, 20)).map(x => U.matchLine(s, x))))) : h('div', { class: 'in empty' }, nAll ? (mode === 'fol' ? '팔로우한 경기가 없는 날입니다. [주요]·[전체]로 다른 경기를 볼 수 있습니다.' : '해당하는 경기가 없습니다.') : fut ? '이날은 정해진 경기가 없습니다.' : '이날은 경기가 없습니다.'));
 }

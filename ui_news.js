@@ -94,14 +94,14 @@ U.openMatchRef = function (ref, title) {
   const showL = (st, L, i, lb) => {
     const rows = C.MD.leagueRows(w, L), r = rows.find(x => x.i === i); if (!r) return false;
     const sp = U.ppgStr ? U.ppgStr(w, ref.lg, lb) : () => null;
-    U.showMatch({ title: title || `${(w.lg[ref.lg] || {}).name || ''} ${ref.sl || ''} · ${r.r + 1}라운드${r.d != null ? ' · ' + C.fmtDateY(r.d) : ''}`, a: r.a, b: r.b, ga: r.ga, gb: r.gb, d: C.MD.leagueMatch(st, L, i), key: ref.lg + '|' + lb + '|' + i, sa: sp(r.a), sb: sp(r.b) });
+    U.showMatch({ title: title || `${(w.lg[ref.lg] || {}).name || ''} ${ref.sl || ''} · ${r.r + 1}라운드${r.d != null ? ' · ' + C.fmtDateY(r.d) : ''}`, a: r.a, b: r.b, ga: r.ga, gb: r.gb, d: C.MD.leagueMatch(st, L, i), key: ref.lg + '|' + lb + '|' + i, sa: sp(r.a), sb: sp(r.b), ctx: { st, lg: ref.lg, L, i, date: r.d } });
     return true;
   };
   const nat = ref.mk === 'I' || ref.mk === 'A';
   const showRow = (st, row) => {
     const id = x => nat ? x : C.cidOf(w, x);
     const cn = ref.mk === 'C' ? (() => { const [n, k] = ref.sk.split(':'); return `${C.natName(n)} ${k === 'cup' ? '국내 컵' : '리그컵'}`; })() : COMPN(ref.sk);
-    U.showMatch({ title: title || `${cn} · ${row[0]} · ${C.fmtDateY(row[8])}`, a: id(row[1]), b: id(row[2]), ga: row[3], gb: row[4], pw: row[7] != null ? id(row[7]) : null, d: C.MD.decode(st, row), nat, key: keyOf('') + '|' + row[1] + '|' + row[2] });
+    U.showMatch({ title: title || `${cn} · ${row[0]} · ${C.fmtDateY(row[8])}`, a: id(row[1]), b: id(row[2]), ga: row[3], gb: row[4], pw: row[7] != null ? id(row[7]) : null, d: C.MD.decode(st, row), nat, key: keyOf('') + '|' + row[1] + '|' + row[2], ctx: ref.mk === 'A' ? null : { st, grp: ref.mk === 'C' ? 'CUP' : ref.mk === 'E' ? 'CONT' : 'INTL', key: ref.sk, stage: row[0], date: row[8] } });
     return true;
   };
   const pickRow = rows => { if (!rows) return null; const r = rows[ref.ri]; if (r && r[8] === ref.d && r[1] === ref.a && r[2] === ref.b) return r; return rows.find(x => x[8] === ref.d && x[1] === ref.a && x[2] === ref.b) || null; };
@@ -216,12 +216,12 @@ function groupMini(s, T, g) {
 }
 
 // ---------- 뉴스 탭 ----------
-const CAT = { result: ['경기', 'c-res'], thriller: ['난타전', 'c-thr'], rout: ['대승', 'c-thr'], upset: ['이변', 'c-ups'], hat: ['해트트릭', 'c-hat'], record: ['기록', 'c-rec'], champ: ['우승', 'c-chp'], sack: ['감독', 'c-sack'], transfer: ['이적', 'c-tx'], rumor: ['루머', 'c-rum'], interview: ['인터뷰', 'c-int'], gossip: ['가십', 'c-gos'], award: ['시상', 'c-chp'], retire: ['은퇴', 'c-res'], stat: ['기록', 'c-rec'], streak: ['연승·연패', 'c-ups'], injury: ['부상', 'c-sack'], club: ['구단', 'c-tx'] };
-const FILT = [['all', '전체'], ['match', '경기', ['result', 'thriller', 'rout', 'upset', 'hat']], ['tx', '이적·은퇴', ['transfer', 'rumor', 'retire']], ['record', '기록·우승', ['record', 'champ', 'award', 'stat', 'streak']], ['inj', '부상', ['injury']], ['talk', '인터뷰·가십', ['interview', 'gossip']], ['sack', '감독·구단', ['sack', 'club']]];
+const CAT = { result: ['경기', 'c-res'], thriller: ['난타전', 'c-thr'], rout: ['대승', 'c-thr'], upset: ['이변', 'c-ups'], hat: ['해트트릭', 'c-hat'], record: ['기록', 'c-rec'], champ: ['우승', 'c-chp'], sack: ['감독', 'c-sack'], transfer: ['이적', 'c-tx'], rumor: ['루머', 'c-rum'], interview: ['인터뷰', 'c-int'], gossip: ['가십', 'c-gos'], award: ['시상', 'c-chp'], retire: ['은퇴', 'c-res'], stat: ['기록', 'c-rec'], streak: ['연승·연패', 'c-ups'], injury: ['부상', 'c-sack'], club: ['구단', 'c-tx'] , draw: ['추첨', 'c-rec']};
+const FILT = [['all', '전체'], ['match', '경기', ['result', 'thriller', 'rout', 'upset', 'hat']], ['tx', '이적·은퇴', ['transfer', 'rumor', 'retire']], ['record', '기록·우승·추첨', ['record', 'champ', 'award', 'stat', 'streak', 'draw']], ['inj', '부상', ['injury']], ['talk', '인터뷰·가십', ['interview', 'gossip']], ['sack', '감독·구단', ['sack', 'club']]];
 function newsItem(s, n, big) {
   const w = s.w, cat = CAT[n.c] || ['뉴스', ''];
   const lead = (n.cl || []).find(id => w.clubs[id]), ln = (n.n || [])[0];
-  const open = () => { if (n.ref) U.openMatchRef(n.ref); else if (n.p && n.p[0]) U.openPlayer(n.p[0]); else if (lead) U.openClub(lead); else if (ln) U.openNat(ln); };
+  const open = () => { if (n.drw && U.openDraw) U.openDraw(n.drw); else if (n.ref) U.openMatchRef(n.ref); else if (n.p && n.p[0]) U.openPlayer(n.p[0]); else if (lead) U.openClub(lead); else if (ln) U.openNat(ln); };
   return h('div', { class: 'nitem' + (big ? ' big' : '') + (n.imp >= 3 ? ' hot' : ''), onclick: open },
     h('div', { class: 'nic' }, lead ? crest(w.clubs[lead], big ? 40 : 26) : ln ? U.natCrest(ln, big ? 40 : 26) : h('span', { class: 'ndot ' + cat[1] })),
     h('div', { style: { minWidth: 0 } }, h('div', { class: 'nmeta' }, h('span', { class: 'ncat ' + cat[1] }, cat[0]), h('span', { class: 'mute' }, C.fmtDate(n.d)), n.imp >= 3 ? h('span', { class: 'nhot' }, '주요') : null),

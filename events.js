@@ -996,7 +996,11 @@ function ballonDor(S) {
   if (C.pickXI) {
     const cxi = rows.filter(r => r.st.apps >= 20).map(r => ({ pid: r.pid, n: C.pName(w, r.e), club: r.c.id, pos: r.e[1], rt: r.st.rs / r.st.apps, apps: r.st.apps + r.st.napps, g: r.st.g + r.st.ng, a: r.st.a + r.st.na, ovr: r.e[2], lf: lgFOf(r.c), tp: (champ.has(r.c.id) ? 1 : 0) + (contPts[r.c.id] || 0) * .15 }));
     if (me && me._st.apps >= 20) cxi.push({ pid: 'ME', n: me.n, club: me.cid, pos: me.pos, rt: me.rt, apps: me.apps, g: me.g, a: me.a, ovr: me.ovr, lf: w.clubs[me.cid] ? lgFOf(w.clubs[me.cid]) : .5, tp: (me._tp || 0) * .15 });
-    const xi = C.pickXI(cxi, x => x.rt + Math.min(.6, (x.g + x.a * .7) / Math.max(1, x.apps) * .45) + (x.ovr - 82) * .07 + x.tp * .12 - (1 - (x.lf || 1)) * .6 + (x.pos === 'GK' ? .15 : 0), 3);
+    // 후보는 발롱도르 점수 상위권에서만 (발롱 후보에 한참 못 미치는 선수가 월드 XI에 들어가지 않게). 자리를 못 채우면 범위를 넓힌다
+    const order = all.map(x => x.me ? 'ME' : x.pid);
+    let xi = null;
+    for (const n of [45, 70, 110, 1e9]) { const ok = new Set(order.slice(0, n)); xi = C.pickXI(cxi.filter(x => ok.has(x.pid)), sc, 3); if (xi) break; }
+    function sc(x) { return x.rt + Math.min(.6, (x.g + x.a * .7) / Math.max(1, x.apps) * .45) + (x.ovr - 82) * .07 + x.tp * .12 - (1 - (x.lf || 1)) * .6 + (x.pos === 'GK' ? .15 : 0); }
     if (xi) { wxi = xi.map(x => [x.n, x.club, +x.rt.toFixed(2), x.pos, x.pid === 'ME' ? '' : x.pid, x.apps, x.g, x.a, x.pid === 'ME' ? 1 : 0]); wxiMe = wxi.some(x => x[8]) ? 1 : 0; (w.wxiHist = w.wxiHist || []).push({ y: w.year + 1, xi: wxi }); }
   }
   return { y: w.year + 1, rank: rank && rank <= 30 ? rank : null, top: all.slice(0, 30), youngRank: gb.rank, gb: gb.top, gsRank: gs.rank, gs: gs.top, maxG, isGK: p && p.pos === 'GK', wxi, wxiMe };
