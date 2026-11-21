@@ -17,7 +17,7 @@ U.navBack = () => {
   if (!e) { d.view = 'home'; d.id = null; U.setTab('db'); return; }
   d.view = e.view; d.id = e.id; if (e.q != null) d.q = e.q;
   if (e.wv) st.wv = e.wv; if (e.wsv) st.wsv = e.wsv; if (e.nv) st.nv = e.nv;
-  U.setTabQuiet(e.tab); U.render(); scrollTo(0, e.y || 0);
+  U.setTabQuiet(e.tab); U._keepY = null; U.render(); scrollTo(0, e.y || 0);
   if (e.ov) setTimeout(() => reopen(e.ov), 30);
 };
 U.navDepth = () => NAV.length;
@@ -195,7 +195,7 @@ function playerView(s, root, pid) {
   if (e && c && !c.lite) {
     const loan = e[7] && w.clubs[e[7]];
     const rl = C.squadRoles ? C.squadRoles(c).get(e) : null;
-    const val = C.aiFee(e[2], e[3], (w.lg[(loan || c).lg] || {}).nation || c.nat, Math.max(0, e[6]), .5);
+    const val = U.valueNow ? U.valueNow(s, pid, e, c) : C.aiFee(e[2], e[3], (w.lg[(loan || c).lg] || {}).nation || c.nat, Math.max(0, e[6]), .5);
     const cells = [['계약 남은 기간', loan ? `임대 (원소속 ${loan.name})` : `${Math.max(1, e[6])}년 · ${w.year + Math.max(1, e[6])}년 6월 만료`], [C.wageUnit(), e[8] ? C.fmtWage(e[8], true) : '-'], ['연봉 환산', e[8] ? C.fmtEUR(e[8] * 52) : '-'], ['팀 내 역할', rl != null ? ['주전', '로테이션', '백업'][rl] : '-'], ['추정 이적료', C.fmtEUR(Math.round(val / 1e5) * 1e5)]];
     main.append(h('div', { class: 'wsum' }, ...cells.map(([k, v2]) => h('div', null, h('div', { class: 'lbl' }, k), h('div', null, h('b', null, v2))))));
   }
@@ -516,12 +516,17 @@ function clubSquad(s, root, id, d) {
   if (!d.sqs) d.sqs = 'pos';
   const sortF = { pos: (a, b) => (POSORD[a.pos] - POSORD[b.pos]) || b.ovr - a.ovr, ovr: (a, b) => b.ovr - a.ovr, age: (a, b) => a.age - b.age, ct: (a, b) => ((ent[a.id] || [])[6] || 0) - ((ent[b.id] || [])[6] || 0), wage: (a, b) => ((ent[b.id] || [])[8] || 0) - ((ent[a.id] || [])[8] || 0) }[d.sqs];
   sq.sort(sortF);
+  // 1군과 유스(U19) 분리: 19세 이하이면서 1군 주전·로테이션이 아닌 선수는 유스로 (2군 구단은 나누지 않는다)
+  const isY = x => { if (c.parent || c.lite) return false; const e = ent[x.id]; return x.age != null && x.age <= 19 && !(e && rl && rl.has(e) && rl.get(e) <= 1) && !(e && e[7] && e[7] !== id); };
+  const sqY = sq.filter(isY), sqA = sq.filter(x => !isY(x));
+  const rowF = x => { const e = ent[x.id], lin = e && e[7] && e[7] !== id && w.clubs[e[7]], lout = e && e[7] === id; return h('tr', null, h('td', null, h('span', { class: 'tpos' }, x.pos)), h('td', null, nameLink(x.n, x.id, lin ? 'loanin' : lout ? 'loanout' : ''), e && e[14] && e[14] > (w.cal ? w.cal.d : 0) ? h('span', { class: 'injb', title: `부상 · ${C.fmtDateY(e[14])} 복귀 예정` }, `부상 ~${C.fmtDate ? C.fmtDate(e[14]) : ''}`) : null, (w.susp || {})[x.id] ? h('span', { class: 'injb sus', title: '출전 정지 (남은 경기)' }, `출전 정지 ${Object.values(w.susp[x.id]).reduce((a, b) => Math.max(a, b), 0)}경기`) : null, e && e[7] && w.clubs[e[7]] ? h('span', { class: 'mute', style: { fontSize: '11px' } }, e[7] === id ? ' (임대 이적 예정)' : ` (${w.clubs[e[7]].name}에서 임대)`) : null), h('td', null, x.age != null ? U.ageNow(w, x.id, x.age) : ''), h('td', null, x.nat ? flag(x.nat, 18) : ''), h('td', null, Math.round(x.ovr)),
+          h('td', { class: 'mute', style: { fontSize: '12px' } }, e && rl && rl.has(e) ? RL[rl.get(e)] : ''), h('td', { class: 'mute', style: { fontSize: '12px' } }, e ? ctTxt(e) : ''), h('td', null, e && e[8] ? C.fmtWage(e[8], true) : '')); };
   const th = (k, l) => k ? h('th', { class: 'lnk' + (d.sqs === k ? ' on' : ''), onclick: () => { d.sqs = k; stay(); } }, l) : h('th', null, l);
-  root.append(h('div', { class: 'sec' }, h('h3', null, `스쿼드 ${sq.length + (meHere ? 1 : 0)}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, c.lite ? ' 하부 리그 구단은 대략적인 명단입니다' : ` ${unit} 총액 ${C.fmtWage(bill)} · 열 제목을 누르면 정렬`)),
+  root.append(h('div', { class: 'sec' }, h('h3', null, sqY.length ? `1군 ${sqA.length + (meHere ? 1 : 0)}명 · 유스 ${sqY.length}명` : `스쿼드 ${sq.length + (meHere ? 1 : 0)}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, c.lite ? ' 하부 리그 구단은 대략적인 명단입니다' : ` ${unit} 총액 ${C.fmtWage(bill)} · 열 제목을 누르면 정렬`)),
     h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '640px' } }, h('thead', null, h('tr', null, th('pos', '포지션'), th(null, '이름'), th('age', '나이'), th(null, '국적'), th('ovr', 'OVR'), th(null, '역할'), th('ct', '계약'), th('wage', unit))),
       h('tbody', null, ...(meHere ? [h('tr', { class: 'me' }, h('td', null, s.p.pos), h('td', null, h('span', { class: 'lnk', onclick: () => U.setTab('profile') }, `${s.p.name} (나)`)), h('td', null, s.p.age), h('td', null, flag(s.p.nat, 18)), h('td', null, C.ovrOf(s.p)), h('td'), h('td', { class: 'mute', style: { fontSize: '12px' } }, s.car.status === 'loan' ? '임대' : s.car.contract ? `${s.car.contract + 1}.6` : ''), h('td', null, s.car.wage ? C.fmtWage(s.car.wage, true) : ''))] : []),
-        ...sq.map(x => { const e = ent[x.id], lin = e && e[7] && e[7] !== id && w.clubs[e[7]], lout = e && e[7] === id; return h('tr', null, h('td', null, h('span', { class: 'tpos' }, x.pos)), h('td', null, nameLink(x.n, x.id, lin ? 'loanin' : lout ? 'loanout' : ''), e && e[14] && e[14] > (w.cal ? w.cal.d : 0) ? h('span', { class: 'injb', title: `부상 · ${C.fmtDateY(e[14])} 복귀 예정` }, `부상 ~${C.fmtDate ? C.fmtDate(e[14]) : ''}`) : null, e && e[7] && w.clubs[e[7]] ? h('span', { class: 'mute', style: { fontSize: '11px' } }, e[7] === id ? ' (임대 이적 예정)' : ` (${w.clubs[e[7]].name}에서 임대)`) : null), h('td', null, x.age != null ? x.age : ''), h('td', null, x.nat ? flag(x.nat, 18) : ''), h('td', null, Math.round(x.ovr)),
-          h('td', { class: 'mute', style: { fontSize: '12px' } }, e && rl && rl.has(e) ? RL[rl.get(e)] : ''), h('td', { class: 'mute', style: { fontSize: '12px' } }, e ? ctTxt(e) : ''), h('td', null, e && e[8] ? C.fmtWage(e[8], true) : '')); }),
+        ...sqA.map(rowF),
+        ...(sqY.length ? [h('tr', { class: 'grp' }, h('td', { colspan: 8 }, `유스 (U19) ${sqY.length}명`, h('span', { class: 'mute', style: { fontWeight: 400 } }, ' 1군 명단 밖에서 뛰는 아카데미 선수')))].concat(sqY.map(rowF)) : []),
         // 임대 보낸 선수 (원소속팀: 빨간 이름 · 임대 중 표시)
         ...(outs.length ? [h('tr', { class: 'grp' }, h('td', { colspan: 8 }, `임대 보낸 선수 ${outs.length}명`))].concat(outs.map(([e, lc]) => h('tr', null, h('td', null, h('span', { class: 'tpos' }, e[1])), h('td', null, nameLink(C.pName(w, e), String(e[0]), 'loanout'), h('span', { class: 'loantag' }, '임대 중 → ', h('span', { class: 'lnk', onclick: ev => { ev.stopPropagation(); U.openClub(lc.id); } }, lc.name))),
           h('td', null, e[3]), h('td', null, flag(e[5], 18)), h('td', null, e[2]), h('td', { class: 'mute', style: { fontSize: '12px' } }, e[3] <= 21 ? '유망주 임대' : '임대'), h('td', { class: 'mute', style: { fontSize: '12px' } }, '시즌 끝나면 복귀'), h('td', null, e[8] ? C.fmtWage(e[8], true) : '')))) : []))))));

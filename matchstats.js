@@ -66,7 +66,7 @@ function build(o) {
     });
   });
   const has = PL[0].length && PL[1].length;
-  const onAt = (s, m) => PL[s].filter(p => p.on <= m && p.off >= m);
+  const onAt = (s, m) => PL[s].filter(p => p.on <= m && (p.off >= m || p.off >= 90));
   const gkAt = (s, m) => onAt(s, m).find(p => p.role === 'GK') || PL[s].find(p => p.role === 'GK') || null;
   const perf = p => Math.exp((p.rt - 6.6) * .45);
   const half = m => m <= 45 ? 0 : 1;

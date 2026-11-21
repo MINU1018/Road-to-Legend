@@ -122,7 +122,7 @@ function overlay(content, opts = {}) {
     // 다시 열 수 있는 팝업(경기 상세 등): 이 팝업에서 다른 화면으로 가면 '뒤로'가 팝업까지 되살린다
     if (opts.reopen) { if (!opts.reopen.parent && U._ovClosed && U._ovClosed.fn !== opts.reopen && Date.now() - U._ovClosed.t < 700) opts.reopen.parent = U._ovClosed.fn; U._ov = opts.reopen; }
     const close = v => { if (opts.reopen && U._ov === opts.reopen) { U._ov = null; U._ovClosed = { fn: opts.reopen, t: Date.now() }; } ov.style.animation = 'fadeIn .2s reverse both'; setTimeout(() => ov.remove(), 180); res(v); };
-    const box = h('div', { class: 'ovbox' }, typeof content === 'function' ? content(close) : content);
+    const box = h('div', { class: 'ovbox' + (opts.cls ? ' ' + opts.cls : '') }, typeof content === 'function' ? content(close) : content);
     ov.append(box); document.body.append(ov);
     if (opts.clickClose) ov.addEventListener('click', e => { if (e.target === ov) close(); });
   });
@@ -258,6 +258,10 @@ function trophy(kind, size = 28, col) {
   return svg(`<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true">${T[k]}</svg>`);
 }
 U.trophy = trophy;
+// 경기 시간 표시: 91분 이상은 후반 추가시간 (90+3')
+// 나이: 생년월일이 있는 실제 선수는 오늘 날짜 기준, 없으면 시즌 나이
+U.ageNow = (w, id, fb) => { const F = G.FC27, k = /^\d+$/.test(String(id)) && F && F.P[+id]; if (!k || !w || !w.cal) return fb; const a = Math.floor((w.cal.d - C.dayOf(2000, 1, 1) - k[9]) / 365.25); return a > 10 && a < 50 ? a : fb; };
+U.fmtMin = m => m > 90 ? `90+${m - 90}'` : `${m}'`;
 const IC = {
   feud: 'M4 5h11v8H8l-4 3zM20 10h-3v5h-5v2l4 3 0-3h4z', pill: 'M7 17 17 7a4 4 0 0 1 6 6L13 23a4 4 0 0 1-6-6zM12 12l6 6', coach: 'M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 22c1-5 4-7 8-7s7 2 8 7M17 3l3 3', mentor: 'M9 5a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM3 21c0-4 3-6 6-6s6 2 6 6M17 7a2.5 2.5 0 1 1 0 5M17 15c2.5 0 4 2 4 5',
   tactic: 'M3 4h18v16H3zM7 8l3 3M10 8l-3 3M15 14a2 2 0 1 0 0 .1M9 16c2-3 4-4 6-4', sun: 'M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10zM12 1v3M12 20v3M1 12h3M20 12h3M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2', party: 'M4 20l5-14 9 9zM14 4l1-2M18 8l3-1M17 4l2-2', phone: 'M7 2h10v20H7zM11 18h2',
@@ -303,9 +307,13 @@ function render() {
   else if (scr === 'settings') { const inG = !!(S && (S.mode === 'world' || (S.car && S.car.club))); frag.append(topbar(inG)); frag.append(inG ? h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, U.viewSettings())) : U.viewSettings()); if (inG && st.navOpen) frag.append(h('div', { class: 'drawerbg', onclick: () => { st.navOpen = false; render(); } }), sideNav(true)); }
   else if (scr === 'ach') { frag.append(topbar(false)); frag.append(U.pages.ach(true)); }
   else frag.append(viewGame());
-  const y = scrollY;
+  // 비동기 기록 로딩으로 잠시 페이지가 짧아져도, 곧 이어지는 다시 그리기에서 원래 위치로 돌아간다
+  const kp = U._keepY && Date.now() - U._keepY.t < 2500 ? U._keepY.y : 0, y = Math.max(scrollY, kp);
+  const mh = app.offsetHeight; app.style.minHeight = mh + 'px';
   app.replaceChildren(frag);
   if (Math.abs(scrollY - y) > 1) scrollTo(0, y);
+  U._keepY = Math.abs(scrollY - y) > 1 ? { y, t: Date.now() } : (kp && scrollY >= kp - 1 ? null : U._keepY);
+  requestAnimationFrame(() => { app.style.minHeight = ''; });
   if (scr !== 'game' && scr !== 'settings') setAtmo(null);
   if (U.flushAch) U.flushAch();
 }
@@ -316,11 +324,11 @@ U.stay = function () {
   const app = $('#app'); app.querySelectorAll('.screen').forEach(e => e.classList.add('still'));
   if (Math.abs(scrollY - y) > 1) scrollTo(0, y);
 };
-U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; render(); scrollTo(0, 0); };
+U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; U._keepY = null; render(); scrollTo(0, 0); };
 U.back = () => U.go(prevScr === 'settings' ? 'home' : prevScr);
 U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; o.w.txKeys = []; } repairSave(o); S = o; S.w.ps = S.w.ps || {}; if (S.w.cal) S.w.cal.dirty = 1; await flushCal(S); await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
 U.clearSave = async () => { await purgeMx(S); S = null; await kvDel('save'); await kvDel('ps'); hasSave = false; U.go('home'); };
-U.setTab = t => { tab = t; render(); scrollTo(0, 0); };
+U.setTab = t => { tab = t; U._keepY = null; render(); scrollTo(0, 0); };
 U.curTab = () => tab;
 U.setTabQuiet = t => { tab = t; };
 
@@ -818,13 +826,13 @@ function windowBlock() {
     if (st0.back && st0.expired) {
       const pc = club(st0.club);
       if (st0.renew) opts.push(stanceRow(pc, `${pc.name} 복귀 · 재계약 제안`, ['임대 종료와 함께 원소속팀 계약 만료', `${st0.years}년`, h('b', null, wageTxt(st0.wage)), '역할 ', ROLECHIP(st0.role)], 'renew', '재계약'));
-      else opts.push(h('div', { class: 'result' }, h('b', { style: { color: '#ff9a9d' } }, '임대 종료 · 원소속팀 계약 만료'), h('span', { class: 'mute' }, `${pc.name}이(가) 재계약을 제안하지 않았습니다${why}. 이제 자유 계약 선수입니다.`)));
+      else opts.push(h('div', { class: 'result' }, h('b', { style: { color: '#ff9a9d' } }, '임대 종료 · 원소속팀 계약 만료'), h('span', { class: 'mute' }, `${C.jo(pc.name, '이', '가')} 재계약을 제안하지 않았습니다${why}. 이제 자유 계약 선수입니다.`)));
     }
     else if (st0.back) opts.push(h('div', { class: 'offer' }, crest(club(st0.club), 40), h('div', null, h('div', { class: 'cn' }, `${club(st0.club).name} 복귀`), h('div', { class: 'terms' }, `임대 종료 · 계약 ${S.car.contract + 1}년 여름까지 · 예상 역할 `, ROLECHIP(st0.role))), h('div', { class: 'btns' }, h('button', { class: 'btn sm', onclick: () => decide({ kind: 'back' }) }, '복귀'))));
     else if (st0.promote) opts.push(stanceRow(cur, '1군 프로 계약 제안', ['3년 계약', '예상 역할 ', ROLECHIP(st0.role)], 'promote', '서명'), stanceRow(cur, 'U21에서 한 시즌 더', ['유스 계약 유지'], 'youth', '잔류', true));
     else if (st0.youthEnd) { if (st0.release) opts.push(h('div', { class: 'result' }, h('b', { style: { color: '#ff9a9d' } }, `${cur.name}에서 방출 통보를 받았습니다.`), h('span', { class: 'mute' }, '다른 팀 제안을 받거나 무소속으로 남아야 합니다.'))); else opts.push(stanceRow(cur, '1군 백업 계약', ['2년 계약', '예상 역할 ', ROLECHIP(st0.role)], 'promote', '서명')); }
     else if (S.car.status === 'youth') opts.push(stanceRow(cur, '유스 잔류', ['1군 콜업을 노린다', '예상 역할 ', ROLECHIP('youth')], 'youth', '잔류'));
-    else if (st0.expired) { if (st0.renew) opts.push(stanceRow(cur, '재계약 제안', [`${st0.years}년`, h('b', null, wageTxt(st0.wage)), '역할 ', ROLECHIP(st0.role)], 'renew', '재계약')); else opts.push(h('div', { class: 'result' }, h('b', { style: { color: '#ff9a9d' } }, '계약 만료'), h('span', { class: 'mute' }, `${cur.name}이(가) 재계약을 제안하지 않았습니다${why}.`))); }
+    else if (st0.expired) { if (st0.renew) opts.push(stanceRow(cur, '재계약 제안', [`${st0.years}년`, h('b', null, wageTxt(st0.wage)), '역할 ', ROLECHIP(st0.role)], 'renew', '재계약')); else opts.push(h('div', { class: 'result' }, h('b', { style: { color: '#ff9a9d' } }, '계약 만료'), h('span', { class: 'mute' }, `${C.jo(cur.name, '이', '가')} 재계약을 제안하지 않았습니다${why}.`))); }
     else {
       if (st0.extend) opts.push(stanceRow(cur, st0.extend.asked ? '재계약 요청 수락' : st0.extend.proactive ? '구단의 선제 재계약 제안' : '계약 연장 제안', [st0.extend.proactive || st0.extend.asked ? `새 계약 ${st0.extend.years}년` : `계약 마지막 해 · ${st0.extend.years}년 연장`, h('b', null, wageTxt(st0.extend.wage)), S.car.wage ? h('span', { class: 'chip good' }, `주급 +${Math.round((st0.extend.wage / S.car.wage - 1) * 100)}%`) : '', '신뢰 +5'], 'extend', '서명'));
       else if (S.car.status === 'first' && S.renY !== S.w.year) opts.push(h('div', { class: 'reqbox' }, h('div', null, h('b', null, '구단에 재계약·연봉 인상 요청'), h('div', { class: 'mute', style: { fontSize: '12px' } }, '활약·역할·현재 주급에 따라 결과가 갈립니다. 거절되면 감독 신뢰가 조금 떨어집니다. 이적시장마다 1회.')), h('div', null, h('button', { class: 'btn ghost sm', onclick: () => { const r = GM.askRenewal(S); toast(r && r.ok ? '구단이 재계약 요청을 받아들였습니다.' : `거절: ${r ? r.why : ''}`); U.save(); render(); } }, '재계약 요청'))));
@@ -861,7 +869,7 @@ function stanceRow(c, title, terms, kind, btn, ghost) {
 }
 function offerRow(o, i) {
   const c = club(o.club), lg = S.w.lg[c.lg];
-  const negBtn = o.neg ? h('span', { class: 'chip ' + (o.negRes === 'up' ? 'good' : '') }, o.negRes === 'up' ? '조건 개선' : '조건 동일') : h('button', { class: 'btn ghost sm', title: '50% 조건 개선 · 30% 동일 · 20% 제안 철회', onclick: () => { const r = GM.negotiate(S, i); toast(r.negRes === 'up' ? '연봉이 올랐습니다!' : r.negRes === 'gone' ? `${c.name}이(가) 제안을 철회했습니다.` : '조건은 그대로입니다.'); render(); } }, '협상');
+  const negBtn = o.neg ? h('span', { class: 'chip ' + (o.negRes === 'up' ? 'good' : '') }, o.negRes === 'up' ? '조건 개선' : '조건 동일') : h('button', { class: 'btn ghost sm', title: '50% 조건 개선 · 30% 동일 · 20% 제안 철회', onclick: () => { const r = GM.negotiate(S, i); toast(r.negRes === 'up' ? '연봉이 올랐습니다!' : r.negRes === 'gone' ? `${C.jo(c.name, '이', '가')} 제안을 철회했습니다.` : '조건은 그대로입니다.'); render(); } }, '협상');
   return h('div', { class: 'offer', style: Object.assign(tintStyle(c, .22), { animationDelay: i * 60 + 'ms' }) }, watermark(c), crest(c, 40),
     h('div', { style: { minWidth: 0 } }, h('div', { class: 'cn' }, c.name, ' ', o.type === 'loan' ? h('span', { class: 'chip blue' }, '임대') : o.free ? h('span', { class: 'chip good' }, '자유 계약') : null, o.cut ? h('span', { class: 'chip bad' }, `주급 ${o.cut}% 삭감`) : null, o.req ? h('span', { class: 'chip' }, '역제의') : null),
       h('div', { class: 'terms' }, h('span', null, lg.name), h('span', null, '전력 ', h('b', null, c.str.toFixed(1))), h('span', null, '역할 ', ROLECHIP(o.role)), o.type !== 'loan' ? h('span', null, h('b', null, wageTxt(o.wage)), ` · ${o.years}년`) : h('span', null, '1시즌'), o.fee ? h('span', null, '이적료 ', h('b', null, C.fmtEUR(o.fee))) : null)),

@@ -150,10 +150,35 @@ C.materialize = materialize;
 
 // ---------- 이름 생성 ----------
 const LANGS = Object.keys(WD.NAMES);
+// 이름 풀: 기본 풀 + FC27 실제 선수 이름을 언어권별로 쪼갠 이름·성 (실제 선수와 같은 전체 이름은 만들지 않는다)
+// ko·zh는 성이 앞 (FC27 표기와 같게). 같은 이름이 이미 쓰였으면 다시 뽑는다
+const FAMFIRST = { ko: 1, zh: 1 };
+let NPOOL = null; const USEDN = new Set();
+function namePools() {
+  if (NPOOL) return NPOOL;
+  NPOOL = {}; const add = (lang, a, b) => { const P = NPOOL[lang] = NPOOL[lang] || [new Set(), new Set(), new Set()]; if (a) P[0].add(a); if (b) P[1].add(b); };
+  for (const lang of LANGS) { const [fs, ls] = WD.NAMES[lang]; if (FAMFIRST[lang]) { for (const l of ls) add(lang, l, null); for (const f of fs) add(lang, null, f); } else { for (const f of fs) add(lang, f, null); for (const l of ls) add(lang, null, l); } }
+  for (const p of F.P) {
+    const nm = String(p[1]); USEDN.add(nm);
+    const lang = (NAT[p[5]] && NAT[p[5]][1]) || null; if (!lang || !WD.NAMES[lang]) continue;
+    const t = nm.split(' ').filter(Boolean); if (t.some(x => x.length < 2 || /[.\d]/.test(x))) continue;
+    if (t.length === 1) { const P = NPOOL[lang] || (add(lang), NPOOL[lang]); P[2].add(t[0]); continue; }
+    if (t.length > 3) continue;
+    add(lang, t[0], t.slice(1).join(' ')); add('@' + p[5], t[0], t.slice(1).join(' '));
+  }
+  for (const k in NPOOL) { NPOOL[k] = NPOOL[k].map(x => [...x]); if (k[0] === '@' && (NPOOL[k][0].length < 40 || NPOOL[k][1].length < 40)) delete NPOOL[k]; }
+  return NPOOL;
+}
 function genName(nat) {
   const lang = (NAT[nat] && WD.NAMES[NAT[nat][1]]) ? NAT[nat][1] : 'en';
-  const [fs, ls] = WD.NAMES[lang];
-  return pick(fs) + ' ' + pick(ls);
+  const NP = namePools(), [fs, ls, mono] = (NP['@' + nat] && R() < .85) ? NP['@' + nat] : NP[lang]; // 그 나라 선수 이름이 충분하면 그 나라 풀을 주로 쓴다
+  let nm = '';
+  for (let k = 0; k < 12; k++) {
+    nm = (mono.length > 20 && (lang === 'br' || lang === 'pt') && R() < .1) ? pick(mono) : pick(fs) + ' ' + pick(ls);
+    if (!USEDN.has(nm)) break;
+  }
+  USEDN.add(nm);
+  return nm;
 }
 const FOREIGN = WD.FOREIGN.default.split(',').map(s => { const [c, k] = s.split(':'); return [c, +k]; });
 function genNat(clubNat) { if (R() < .62) return clubNat; return wpick(FOREIGN, f => f[1])[0]; }
@@ -215,7 +240,7 @@ function ageSquad(c) {
     const play = clamp(apps / 28, 0, 1.15), perf = apps >= 6 ? clamp(rt - 6.65, -.8, 1) : 0;
     if (age <= 23) {
       // 어린 선수는 훈련만으로도 꾸준히 큰다 (출전은 가속 요인). 못 뛰는 잠재력 하락은 20세부터, 완만하게
-      pot += perf * 2 * play + N(0, .9) - (play < .2 && age >= 20 ? rnd(0, 1.3) : 0);
+      pot += perf * 2 * play + N(-.35, 1.1) - (play < .2 && age >= 20 ? rnd(0, 1.5) : 0) - (age >= 21 && pot - o >= 8 ? rnd(0, 1.2) : 0); // 잠재력은 보장이 아니다: 평범하게 보내면 조금씩 깎인다
       if (pot > o) o += (pot - o) * rnd(.15, .32) * (.62 + .6 * play) * (age <= 20 ? 1.1 : 1) + perf * 2.2 * play + N(.45, 1);
       else o += N(0, 1) + perf * play;
       pot = clamp(Math.round(pot), o, 97);
@@ -283,7 +308,7 @@ function txLog(w, e, from, to, kind, fee, oldWage) { if (!w._tx) return; const r
 C.txLog = txLog;
 const natOf = (w, c) => c && c.lg && w.lg[c.lg] ? w.lg[c.lg].nation : (c ? c.nat : '');
 // 이적료 (무작위성 없는 기준값): 가치 × 남은 계약
-const feeOf = (w, e, from) => C.aiFee(e[2], e[3], natOf(w, from), Math.max(0, e[6]));
+const feeOf = (w, e, from) => C.aiFee(e[2], e[3], natOf(w, from), Math.max(0, e[6]), undefined, e[11] ? { rt: (e[12] || 660) / 100, apps: e[11], of: 38 } : null);
 // ---------- 세계 이적 시장 ----------
 // 1) 임대 복귀 2) 재정 갱신 3) 선수별 결정: 연장·재계약(주급 인상/삭감)·판매(계약 1년 남은 스타 포함)·임대·방출
 // 4) 큰 선수부터 행선지: 예산(이적료)·주급 감당 가능한 구단만, 상위 구단 선호
@@ -676,6 +701,8 @@ function tiersOf(w, nation) { return Object.values(w.lg).filter(l => l.nation ==
 const NOREL = new Set(['USA', 'AUS', 'IND', 'MEX']);
 const RELN = { KOR1: 1, SCO1: 1, AUT1: 1, SUI1: 1, DEN1: 2, FRA1: 2, NED1: 2, POR1: 2, BEL1: 2, TUR1: 4, ARG1: 2, BRA1: 4, JPN1: 3, KSA1: 3, CHN1: 2, GRE1: 2, ITA1: 3, ESP1: 3, ENG1: 3, ENG2: 3, ENG3: 4, BRA2: 4, JPN2: 2, KOR2: 1 };
 C.NOREL = NOREL;
+// 승강 플레이오프 형식 (나라+위 리그 등급)
+const POFMT = { ENG1: 'p4', ENG2: 'p4', ENG3: 'p4', ESP1: 'p4', ITA1: 'p4', GER1: 'rel', GER2: 'rel', FRA1: 'rel', NED1: 'p4' };
 function applyPromotion(w, tables) {
   const nations = [...new Set(Object.values(w.lg).map(l => l.nation))];
   const moves = {};
@@ -696,7 +723,24 @@ function applyPromotion(w, tables) {
       const okUp = id => { const c = w.clubs[id], p = c && c.parent && w.clubs[c.parent]; if (!p) return true; const pl = w.lg[p.lg]; return !pl || pl.nation !== n || pl.tier < tiers[i]; };
       const cand = []; for (const d of dns) tables[d.id].forEach((r, pos) => { if (okUp(r.id)) cand.push([r.id, d, pos, r.pts / Math.max(1, r.p)]); });
       cand.sort((a, b) => a[2] - b[2] || b[3] - a[3]);
-      const pro = cand.slice(0, rel.length);
+      let pro = cand.slice(0, rel.length);
+      // 플레이오프 (실제 방식): 'p4' = 마지막 승격 한 자리를 아래 리그 k~k+3위가 준결승(홈·원정)·결승(단판)으로
+      //                         'rel' = 위 리그 (끝에서 k+1)위와 아래 리그 (k+1)위가 홈·원정 승강 플레이오프
+      const po = POFMT[n + tiers[i]];
+      if (po && ups.length === 1 && dns.length === 1 && cand.length >= k + 3) {
+        const S2 = id => C.mstr(w, id), tie = (a, b, two) => { const [g1, g2] = C.quickMatch(S2(a), S2(b), 1); if (!two) { const wn = C.koWinner(S2(a), S2(b), g1, g2) === 0 ? a : b; return { a, b, s: [[g1, g2]], w: wn }; } const [h1, h2] = C.quickMatch(S2(b), S2(a), 1); const ta = g1 + h2, tb = g2 + h1; const wn = ta !== tb ? (ta > tb ? a : b) : (C.koWinner(S2(b), S2(a), h1, h2) === 0 ? b : a); return { a, b, s: [[g1, g2], [h1, h2]], w: wn }; };
+        const rec = { n: ups[0].name, ln: dns[0].name, y: w.year, kind: po };
+        if (po === 'p4') {
+          const c4 = cand.slice(k - 1, k + 3).map(x => x[0]);
+          const s1 = tie(c4[3], c4[0], true), s2 = tie(c4[2], c4[1], true), f = tie(s1.w, s2.w, false);
+          pro = cand.slice(0, k - 1).concat([cand.find(x => x[0] === f.w)]);
+          rec.sf = [s1, s2]; rec.f = f;
+        } else if (po === 'rel' && tables[ups[0].id].length > k + 1) {
+          const up16 = tables[ups[0].id][tables[ups[0].id].length - k - 1].id, lo3 = cand[k] && cand[k][0];
+          if (lo3) { const t = tie(lo3, up16, true); rec.f = t; if (t.w === lo3) { rel.push([up16, ups[0]]); pro = cand.slice(0, k + 1); } }
+        }
+        (w.poHist = w.poHist || []).push(rec); if (w.poHist.length > 60) w.poHist.shift();
+      }
       // 승격팀은 강등팀이 빠진 리그로, 강등팀은 승격팀이 빠진 리그로
       for (let j = 0; j < rel.length; j++) {
         const [rid, ul] = rel[j], [pid, dl] = pro[j] || [];
@@ -714,6 +758,24 @@ function applyPromotion(w, tables) {
   return moves;
 }
 C.applyPromotion = applyPromotion;
+// ---------- 더비·관중 ----------
+const DERBY = [['ENG_MUN', 'ENG_MCI', '맨체스터 더비'], ['ENG_LIV', 'ENG_EVE', '머지사이드 더비'], ['ENG_ARS', 'ENG_TOT', '북런던 더비'], ['ENG_LIV', 'ENG_MUN', '노스웨스트 더비'], ['ENG_NEW', 'ENG_SUN', '타인위어 더비'],
+  ['ESP_RMA', 'ESP_BAR', '엘 클라시코'], ['ESP_RMA', 'ESP_ATM', '마드리드 더비'], ['ESP_SEV', 'ESP_BET', '세비야 더비'], ['ESP_ATH', 'ESP_RSO', '바스크 더비'],
+  ['ITA_INT', 'ITA_MIL', '밀라노 더비'], ['ITA_ROM', 'ITA_LAZ', '로마 더비'], ['ITA_JUV', 'ITA_TOR', '토리노 더비'], ['ITA_JUV', 'ITA_INT', '이탈리아 더비'], ['ITA_GEN', 'ITA_SAM', '제노바 더비'],
+  ['GER_BVB', 'GER_S04', '레비어 더비'], ['GER_FCB', 'GER_BVB', '데어 클라시커'], ['GER_HSV', 'GER_SVW', '북부 더비'],
+  ['FRA_PSG', 'FRA_OM', '르 클라시크'], ['FRA_ASM', 'FRA_NIC', '코트다쥐르 더비'], ['POR_SLB', 'POR_SCP', '리스본 더비'], ['POR_FCP', 'POR_SLB', '오 클라시쿠'],
+  ['NED_AJA', 'NED_FEY', '더 클라시커'], ['SCO_CEL', 'SCO_RAN', '올드 펌 더비'], ['TUR_GS', 'TUR_FB', '인터콘티넨탈 더비'], ['ARG_BOC', 'ARG_RIV', '수페르클라시코']];
+const DMAP = new Map(); for (const [a, b, n] of DERBY) { DMAP.set(a + '|' + b, n); DMAP.set(b + '|' + a, n); }
+C.derbyOf = (a, b) => DMAP.get(a + '|' + b) || null;
+// 관중 (추정): 홈 구단 규모(수입·전력)로 경기장 크기를 어림하고, 상대·대회 비중에 따라 채운다
+C.attend = (w, home, away, key, big) => {
+  const c = w.clubs[home]; if (!c) return 0;
+  const rev = c.rev || 2e7, cap = Math.round(Math.max(2500, Math.min(81000, 3500 + Math.sqrt(rev / 1e6) * 5200)) / 100) * 100;
+  const r = seeded('att|' + key)(), o = w.clubs[away], pull = o ? clamp(((o.str || 60) - (c.str || 60)) * .01, -.08, .1) : 0;
+  const fill = C.derbyOf(home, away) || big ? .99 : clamp(.74 + (c.lg && w.lg[c.lg] && w.lg[c.lg].tier === 1 ? .14 : 0) + pull + r * .1, .35, .995);
+  return Math.round(cap * fill / 10) * 10;
+};
+
 
 // ---------- 대륙 대회 참가팀 ----------
 const UCL_SLOTS = { ENG: 4, ESP: 4, ITA: 4, GER: 4, FRA: 3, POR: 2, NED: 2, BEL: 1, TUR: 1, SCO: 1, AUT: 1, SUI: 1, DEN: 1, POL: 1, ROU: 1, SWE: 1, NOR: 1 };

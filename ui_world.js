@@ -121,6 +121,11 @@ function leagueView(s, root) {
   if (v.lsub === 'table') {
     if (data && data.slim) root.append(h('div', { class: 'sec' }, title, h('div', { class: 'sub' }, '오래된 시즌이라 요약만 보관합니다.'), h('div', { class: 'in' }, leagueTable(s, lg, rows, myId))));
     else root.append(h('div', { class: 'sec' }, title, h('div', { class: 'in' }, leagueTable(s, lg, rows, myId))));
+    // 승강 플레이오프 (이 시즌 결과)
+    { const yy = +String(v.season).slice(0, 4) || w.year; const P = (w.poHist || []).filter(r => (r.n === lg.name || r.ln === lg.name) && r.y === yy && r.f);
+      const nm = id => clubCell(w, id, 16), tieRow = (t, lbl) => h('div', { class: 'kvrow' }, h('span', { class: 'mute', style: { minWidth: '64px' } }, lbl), h('span', { class: 'cc' }, nm(t.a), h('b', null, ` ${t.s.map(x => x.join('-')).join(' / ')} `), nm(t.b)), h('span', { class: 'chip good' }, (w.clubs[t.w] || {}).short || ''));
+      for (const r of P) root.append(h('div', { class: 'sec' }, h('h3', null, r.kind === 'p4' ? `${r.ln === lg.name ? '승격' : ''} 플레이오프` : '승강 플레이오프', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, r.kind === 'p4' ? ` ${r.ln}의 마지막 승격 한 자리 · 준결승 홈·원정, 결승 단판` : ` ${r.n} 하위 팀 vs ${r.ln} 상위 팀 · 홈·원정`)),
+        h('div', { class: 'in', style: { display: 'grid', gap: '6px' } }, ...(r.sf || []).map((t, i) => tieRow(t, `준결승 ${i + 1}`)), tieRow(r.f, r.kind === 'p4' ? '결승' : '승강전')))); }
     if (rows.length > 3 && !(data && data.slim)) {
       const most = rows.slice().sort((a, b) => b[5] - a[5])[0], least = rows.slice().sort((a, b) => a[6] - b[6])[0];
       const chips = [['1위', clubCell(w, rows[0][0], 16)], ['최다 득점', h('span', null, clubCell(w, most[0], 16), ` ${most[5]}골`)], ['최소 실점', h('span', null, clubCell(w, least[0], 16), ` ${least[6]}실점`)]];
@@ -407,7 +412,7 @@ function cupView(s, root) {
   const head = h('h3', null, h('span', { class: 'cc' }, U.trophy ? U.trophy(cup.k === 'cup' ? 'cup' : 'lcup', 18, '#f2c14e') : null, `${cup.n} ${cup.sl || v.cseason}`), cup.live ? h('span', { class: 'chip good' }, cup.next ? `진행 중 · 다음 ${cup.next[0]} ${C.fmtDateY(cup.next[1])}` : '진행 중') : h('span', { class: 'chip gold' }, '우승 ', w.clubs[cup.w] ? w.clubs[cup.w].name : ''));
   const meta = `${cup.N ? cup.N + '팀 참가 · ' : ''}${cup.r.length}라운드 (${cup.r.map(r => r.n).join(' → ')})`;
   if (cup.live && w.cal) { const lst = Object.values(w.cal.cup).find(x => x.nat === v.cnat && x.kind === cup.k); const drs = lst ? (lst.draws || []).filter(dr => dr.d == null || dr.d <= w.cal.d).slice().reverse() : [];
-    if (drs.length) root.append(h('div', { class: 'drday' }, h('span', { class: 'lbl' }, '🎱 조추첨'), ...drs.slice(0, 6).map((dr, i) => h('button', { class: 'btn sm' + (i ? ' ghost' : ' gold'), onclick: () => U.openDraw({ k: 'C', key: lst.k, ri: dr.ri }) }, `${dr.n} 추첨`)))); }
+    if (drs.length) root.append(h('div', { class: 'drday' }, h('span', { class: 'lbl' }, '조추첨'), ...drs.slice(0, 6).map((dr, i) => h('button', { class: 'btn sm' + (i ? ' ghost' : ' gold'), onclick: () => U.openDraw({ k: 'C', key: lst.k, ri: dr.ri }) }, `${dr.n} 추첨`)))); }
   if (v.csub === 'br' && !cup.r.length) root.append(h('div', { class: 'sec' }, head, h('div', { class: 'empty' }, '아직 치른 라운드가 없습니다.')));
   else if (v.csub === 'br') {
     const br = cup.r.slice(-5);
@@ -446,7 +451,7 @@ function contView(s, root) {
   const K = archOf(w, v.ckseason).cont[v.ck];
   const myId = userClubOf(s, v.ckseason);
   if (K.live && w.cal) { const cs = Object.values(w.cal.cont).find(x => x.k === v.ck); if (cs) { const bs = []; if (cs.pots && cs.drawD <= w.cal.d) bs.push([-1, '리그 페이즈 추첨']); for (const ri in cs.tdraw || {}) if (cs.ties[ri]) bs.push([+ri, `${(cs.rounds[ri] || [])[2] || ''} 추첨`]);
-    if (bs.length) root.append(h('div', { class: 'drday' }, h('span', { class: 'lbl' }, '🎱 조추첨'), ...bs.reverse().map(([ri, l], i) => h('button', { class: 'btn sm' + (i ? ' ghost' : ' gold'), onclick: () => U.openDraw({ k: 'E', key: cs.key, ri }) }, l)))); } }
+    if (bs.length) root.append(h('div', { class: 'drday' }, h('span', { class: 'lbl' }, '조추첨'), ...bs.reverse().map(([ri, l], i) => h('button', { class: 'btn sm' + (i ? ' ghost' : ' gold'), onclick: () => U.openDraw({ k: 'E', key: cs.key, ri }) }, l)))); } }
   if (K.w) root.append(h('div', { class: 'wchamp', style: U.tintStyle ? U.tintStyle(w.clubs[K.w], .3) : null }, crest(w.clubs[K.w], 52), h('div', null, h('div', { class: 'lbl' }, `${K.n} ${v.ckseason} 우승`), h('h2', null, w.clubs[K.w] ? w.clubs[K.w].name : ''))));
   root.append(subTabs('ksub', [['br', '대진·순위'], ['rec', '개인 기록·팀 통계']]));
   if (v.ksub === 'rec') { compRecSec(s, root, v.ckseason, x => x.CONT[v.ck], false, 'cont|' + v.ckseason + '|' + v.ck, '모든 숫자는 이 대회 경기 기록(리그 페이즈·토너먼트 1·2차전)을 더한 값입니다.'); return; }
@@ -497,24 +502,31 @@ function unlSec(s, root) {
 }
 function intlView(s, root) {
   const w = s.w, v = wv();
-  if (U.followBtn) root.append(h('div', { class: 'chg', style: { padding: '0 2px' } }, h('span', { class: 'mute', style: { fontSize: '12px' } }, '팔로우:'), ...['WC', 'EURO', 'COPA', 'ASIA', 'AFCON', 'GOLD', 'UNL', 'AM'].map(k => h('span', { class: 'cc' }, h('span', { style: { fontSize: '12px' } }, k === 'AM' ? 'A매치 친선전' : C.TDEF[k].name), U.followBtn('comp', k, true)))));
-  unlSec(s, root);
+  // 대회 고르기: 메이저 대회 · 네이션스리그 · 일정을 하나씩 본다 (팔로우는 고른 대회 제목 옆)
+  const PICK = [['WC', 'FIFA 월드컵'], ['EURO', 'UEFA 유로'], ['COPA', '코파 아메리카'], ['ASIA', 'AFC 아시안컵'], ['AFCON', '아프리카 네이션스컵'], ['GOLD', 'CONCACAF 골드컵'], ['UNL', 'UEFA 네이션스리그'], ['sched', 'A매치 일정']];
+  if (!PICK.some(x => x[0] === v.ipick)) v.ipick = 'WC';
+  root.append(h('div', { class: 'cpick' }, ...PICK.map(([k, l]) => h('button', { class: 'cpk' + (v.ipick === k ? ' on' : ''), onclick: () => { v.ipick = k; v.ik = k; v.iy = null; rerender(); } }, U.trophy ? U.trophy(k === 'sched' ? 'ball' : 'nt', 16, v.ipick === k ? '#f2c14e' : '#8b94a3') : null, h('span', null, l)))));
+  const fhead = (t, k, sub) => h('div', { class: 'chead' }, h('div', null, h('h2', null, t), sub ? h('div', { class: 'mute', style: { fontSize: '12.5px' } }, sub) : null), U.followBtn ? U.followBtn('comp', k, true) : null);
+  if (v.ipick === 'sched') { root.append(fhead('A매치 일정', 'AM', 'FIFA A매치 기간 · 예선 · 친선전 · 메이저 대회 일정')); root.append(intlSchedule(s)); return; }
+  if (v.ipick === 'UNL') { root.append(fhead('UEFA 네이션스리그', 'UNL', '리그 A~D · 승강 · 파이널스')); unlSec(s, root); return; }
   // 진행 중인 국제 대회 (세계 달력)
   const liveT = {};
   for (const k in (w.cal && w.cal.intl) || {}) { const T = w.cal.intl[k]; if (T.dates[0] > w.cal.d + 30) continue;
     const g = T.g.map(gr => { const tb = C.newTable(gr.t); for (const m of gr.m) C.addResult(tb, m[0], m[1], m[2], m[3]); return { n: gr.n, m: gr.m.slice(), rows: C.sortTable(tb).map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) }; });
     (liveT[T.y] = liveT[T.y] || []).push({ k: T.k, n: T.n, y: T.y, g, ko: T.ko, w: null, ru: null, teams: T.teams, live: 1, start: T.dates[0] }); }
-  const years = [...new Set(Object.keys(w.intl || {}).filter(y => w.intl[y].length).concat(Object.keys(liveT)))].sort().reverse();
+  const has = y => ((w.intl || {})[y] || []).concat(liveT[y] || []).some(t => t.k === v.ipick);
+  const years = [...new Set(Object.keys(w.intl || {}).concat(Object.keys(liveT)))].filter(has).sort().reverse();
   const curY = C.ymd(w.cal ? w.cal.d : C.day(w.year, 8, 1))[0] + (w.cal && C.ymd(w.cal.d)[1] >= 8 ? 1 : 0);
   const nextWC = C.nextWorldCup(curY);
   const up = C.tournamentsOf(curY).map(k => C.TDEF[k].name);
-  root.append(h('div', { class: 'mute', style: { fontSize: '13px', padding: '0 2px' } }, up.length ? `올여름(${curY}) 대회: ${up.join(' · ')}` : `다음 월드컵: ${nextWC}년 여름`, up.includes('FIFA 월드컵') ? '' : ` · 다음 월드컵 ${nextWC}년`));
-  if (!years.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '아직 열린 국제 대회가 없습니다. 아래 일정에 맞춰 열립니다. (다음 월드컵: ' + C.nextWorldCup(w.cal ? C.ymd(w.cal.d)[0] : w.year) + '년 6~7월)')), intlSchedule(s)); return; }
+  const tname = (PICK.find(x => x[0] === v.ipick) || [0, ''])[1];
+  let nextY = null; for (let y = curY; y < curY + 6 && !nextY; y++) if (C.tournamentsOf(y).includes(v.ipick)) nextY = y;
+  root.append(fhead(tname, v.ipick, nextY ? `다음 대회: ${nextY}년 여름` : ''));
+  if (!years.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, `아직 열린 ${tname}가 없습니다.${nextY ? ` ${nextY}년 6~7월에 열립니다.` : ''}`))); return; }
   if (!v.iy || !years.includes(String(v.iy))) v.iy = years[0];
-  const list = ((w.intl || {})[v.iy] || []).concat(liveT[v.iy] || []);
-  if (!v.ik || !list.some(t => t.k === v.ik)) v.ik = (list.find(t => t.k === 'WC') || list[0]).k;
-  root.append(h('div', { class: 'wfilter' }, sel(v.iy, years.map(y => [y, `${y}년`]), x => { v.iy = x; v.ik = null; rerender(); }),
-    h('div', { class: 'seg', style: { flex: '1 1 260px' } }, ...list.map(t => h('button', { class: v.ik === t.k ? 'on' : '', onclick: () => { v.ik = t.k; rerender(); } }, t.n)))));
+  const list = ((w.intl || {})[v.iy] || []).concat(liveT[v.iy] || []).filter(t => t.k === v.ipick);
+  v.ik = v.ipick;
+  root.append(h('div', { class: 'wfilter' }, sel(v.iy, years.map(y => [y, `${y}년 대회`]), x => { v.iy = x; rerender(); })));
   const T = list.find(t => t.k === v.ik);
   const me = s.p.nat;
   const nm = c => h('span', { class: 'cc' + (c === me ? ' mine' : '') }, natCrest(c, 16), h('span', null, C.natName(c)));
@@ -536,7 +548,6 @@ function intlView(s, root) {
   }
   const hk = (w.hist.nt || {})[v.ik] || [];
   if (hk.length) root.append(h('div', { class: 'sec' }, h('h3', null, `${C.TDEF[v.ik].name} 역대 우승`), h('div', { class: 'in' }, h('table', { class: 'ltable lc' }, h('tbody', null, ...hk.slice().reverse().map(x => h('tr', null, h('td', null, x.y), h('td', null, nm(x.c)))))))));
-  root.append(intlSchedule(s));
 }
 
 // ---------- 이적시장 (전체) ----------
@@ -594,8 +605,16 @@ U.pages.table = function () {
   const root = h('div', { class: 'wrap prof screen' });
   const modes = [['league', '리그'], ['cup', '국내 컵'], ['cont', '대륙 대회'], ['intl', '국제 대회']];
   if (!modes.some(m => m[0] === v.mode)) v.mode = 'league';
-  root.append(U.pageHead('대회', '리그 순위·경기·기록, 국내 컵, 대륙 대회, 국제 대회(월드컵·유로·네이션스리그 등)'));
-  root.append(h('div', { class: 'seg wmodes' }, ...modes.map(([k, l]) => h('button', { class: v.mode === k ? 'on' : '', onclick: () => { v.mode = k; rerender(); } }, l))));
+  root.append(U.pageHead('대회', '리그 · 국내 컵 · 대륙 대회 · 국제 대회'));
+  // 바로 가기: 주요 리그·대회 (누르면 그 대회 화면으로)
+  const w = s.w, lg1 = n => Object.values(w.lg).find(l => l.nation === n && l.tier === 1);
+  const QK = [];
+  const myLg = C.leagueOf(s); if (myLg) QK.push({ t: '내 리그', ic: flag(myLg.nation, 14), on: v.mode === 'league' && v.lg === myLg.id, go: () => { v.mode = 'league'; v.nat = myLg.nation; v.lg = myLg.id; v.season = null; } });
+  for (const n of ['ENG', 'ESP', 'ITA', 'GER', 'FRA', 'KOR']) { const l = lg1(n); if (l && (!myLg || l.id !== myLg.id)) QK.push({ t: l.name, ic: flag(n, 14), on: v.mode === 'league' && v.lg === l.id, go: () => { v.mode = 'league'; v.nat = n; v.lg = l.id; v.season = null; } }); }
+  for (const k of ['UCL', 'UEL', 'UECL']) if (C.COMPS[k]) QK.push({ t: C.COMPS[k].name.replace('UEFA ', ''), ic: U.trophy ? U.trophy('cont', 14) : null, on: v.mode === 'cont' && v.ck === k, go: () => { v.mode = 'cont'; v.ck = k; v.ckseason = null; } });
+  QK.push({ t: '월드컵', ic: U.trophy ? U.trophy('nt', 14) : null, on: v.mode === 'intl' && v.ipick === 'WC', go: () => { v.mode = 'intl'; v.ipick = 'WC'; v.iy = null; } });
+  root.append(h('div', { class: 'cquick' }, ...QK.map(q => h('button', { class: 'cqk' + (q.on ? ' on' : ''), onclick: () => { q.go(); rerender(); } }, q.ic, h('span', null, q.t)))));
+  root.append(h('div', { class: 'ctabs' }, ...modes.map(([k, l]) => h('button', { class: v.mode === k ? 'on' : '', onclick: () => { v.mode = k; rerender(); } }, U.trophy ? U.trophy({ league: 'league', cup: 'cup', cont: 'cont', intl: 'nt' }[k], 18, v.mode === k ? '#f2c14e' : '#7d8796') : null, h('span', null, l)))));
   try {
     ({ league: leagueView, cup: cupView, cont: contView, intl: intlView })[v.mode](s, root);
   } catch (e) { console.error(e); root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '기록을 불러오지 못했습니다.'))); }

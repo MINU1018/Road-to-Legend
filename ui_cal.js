@@ -53,7 +53,7 @@ U.calGrid = calGrid;
 U.calTip = function (S, x) {
   const w = S.w, t = [];
   if (x.cer) t.push(`🏆 발롱도르 시상식`);
-  for (const z of (x.DR || []).filter(z => !U.isFollowDraw || U.isFollowDraw(z)).slice(0, 4)) t.push(`🎱 ${z.n}`);
+  for (const z of (x.DR || []).filter(z => !U.isFollowDraw || U.isFollowDraw(z)).slice(0, 4)) t.push(`추첨 · ${z.n}`);
   if (x.it) t.push('🏆 ' + x.it);
   for (const e of x.E) t.push(`${C.COMPS[e[0]] ? C.COMPS[e[0]].short : e[0]} ${e[2]}`);
   for (const [id, r, n, pred] of x.L) t.push(`${w.lg[id].name} ${r}/${n}라운드${pred ? ' (예정)' : ''}`);
@@ -109,7 +109,7 @@ U.txPanel = function (S, opt = {}) {
   const left = win.d1 - today;
   const head = h('div', { class: 'txhd' + (left === 0 ? ' dday' : '') },
     h('div', null, h('div', { class: 'lbl' }, `${kn} 이적시장 · ${C.fmtDate(win.d0)} ~ ${C.fmtDate(win.d1)}`),
-      h('div', { class: 'txcd' }, left === 0 ? '오늘 마감 — 데드라인 데이!' : `마감까지 D-${left}`)),
+      h('div', { class: 'txcd' }, left === 0 ? '오늘 이적시장 마감' : `마감까지 D-${left}`)),
     h('div', { class: 'txbar' }, h('i', { style: { width: Math.min(100, (today - win.d0 + 1) / (win.d1 - win.d0 + 1) * 100) + '%' } })));
   if (!T) return h('div', { class: 'sec txp' }, head, h('div', { class: 'in mute' }, '이적 기록을 불러오는 중…'));
   const M = byDay(T);

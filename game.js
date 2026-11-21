@@ -101,7 +101,7 @@ GM.decideWindow = function (S, d) {
     car.club = clubId; car.years = 0; car.joined = w.year;
     car.trust = { key: 62, starter: 56, rotation: 50, backup: 45, reserve: 42 }[o.role] || 50;
     S.clubsJoined.push({ club: clubId, y: w.year, type, fee: o.fee || 0 });
-    C.news(S, type === 'loan' ? `${S.p.name}, ${c.name}(으)로 임대 이적` : o.fee ? `${S.p.name}, 이적료 ${C.fmtEUR(o.fee)}에 ${c.name} 입단` : `${S.p.name}, 자유 계약으로 ${c.name} 입단`, 'transfer', true);
+    C.news(S, type === 'loan' ? `${S.p.name}, ${C.jo(c.name, '으로', '로')} 임대 이적` : o.fee ? `${S.p.name}, 이적료 ${C.fmtEUR(o.fee)}에 ${c.name} 입단` : `${S.p.name}, 자유 계약으로 ${c.name} 입단`, 'transfer', true);
   };
   if (d.kind === 'retire') { GM.retire(S); return; }
   if (d.kind === 'offer') {

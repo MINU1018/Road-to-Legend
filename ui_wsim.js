@@ -136,7 +136,7 @@ function dayMatchesSec(s, sv, today, home) {
       day !== today ? h('button', { class: 'btn ghost sm', onclick: () => { sv.day = today; U.stay(); } }, '오늘') : null,
       home ? h('button', { class: 'btn ghost sm', onclick: () => U.setTab('sched') }, '달력') : null,
       h('div', { class: 'seg', style: { marginLeft: 'auto' } }, segB('fol', '팔로우'), segB('major', '주요'), segB('all', '전체'))),
-    (() => { const dr = C.calDayDraws ? C.calDayDraws(s, day).filter(z => mode === 'all' || U.isFollowDraw(z) || (mode === 'major' && (z.k === 'E' || BIGLG.includes(z.nat)))) : []; return dr.length ? h('div', { class: 'in drday' }, h('span', { class: 'lbl' }, '🎱 조추첨'), ...dr.slice(0, 12).map(z => h('button', { class: 'btn sm' + (U.isFollowDraw(z) && day <= today ? ' gold' : ' ghost'), disabled: day > today ? true : null, onclick: () => U.openDraw(z) }, z.n + (day > today ? ' (예정)' : '')))) : null; })(),
+    (() => { const dr = C.calDayDraws ? C.calDayDraws(s, day).filter(z => mode === 'all' || U.isFollowDraw(z) || (mode === 'major' && (z.k === 'E' || BIGLG.includes(z.nat)))) : []; return dr.length ? h('div', { class: 'in drday' }, h('span', { class: 'lbl' }, '조추첨'), ...dr.slice(0, 12).map(z => h('button', { class: 'btn sm' + (U.isFollowDraw(z) && day <= today ? ' gold' : ' ghost'), disabled: day > today ? true : null, onclick: () => U.openDraw(z) }, z.n + (day > today ? ' (예정)' : '')))) : null; })(),
     order.length ? h('div', { class: 'in calgrid' }, ...order.slice(0, mode === 'all' ? 80 : 40).map(g => h('div', { class: 'wsitem' + (g.fol ? ' fol' : ''), style: { display: 'block' } }, h('div', { class: 'lbl', style: { marginBottom: '4px' } }, h('span', { class: 'cc' }, gflag(g), gname(g))),
       ...(g.fol || mode !== 'all' ? g.ms : g.ms.slice(0, 20)).map(x => U.matchLine(s, x))))) : h('div', { class: 'in empty' }, nAll ? (mode === 'fol' ? '팔로우한 경기가 없는 날입니다. [주요]·[전체]로 다른 경기를 볼 수 있습니다.' : '해당하는 경기가 없습니다.') : fut ? '이날은 정해진 경기가 없습니다.' : '이날은 경기가 없습니다.'));
 }
@@ -234,14 +234,55 @@ U.pages.sched = function () {
 function awardTable(s, k, b) {
   const w = s.w;
   const me = x => k !== 'gs' && x[3];
-  const cols = k === 'bd' ? ['#', '선수', '구단', '포지션', 'OVR', '경기', '골', '도움', '평점'] : k === 'gb' ? ['#', '선수', '구단', '나이', 'OVR', 'POT', '경기', '골', '도움', '평점'] : ['#', '선수', '구단', '리그', '골', '점수'];
+  const cols = k === 'bd' ? ['#', '선수', '구단', '포지션', 'OVR', '경기', '골', '도움', '평점'] : k === 'gb' ? ['#', '선수', '구단', '나이', 'OVR', '경기', '골', '도움', '평점'] : ['#', '선수', '구단', '리그', '골', '점수'];
   const cells = (x, i) => k === 'bd' ? [x[4] || '', x[8] != null ? x[8] : '-', x[6] != null ? x[6] : '-', x[7] != null ? x[7] : '-', x[9] ? (+x[9]).toFixed(2) : '-']
-    : k === 'gb' ? [x[6], x[4], x[7], x[8], x[9], x[10], x[11] ? (+x[11]).toFixed(2) : '-'] : [(w.lg[x[5]] || {}).name || '', x[3], x[4]];
+    : k === 'gb' ? [x[6], x[4], x[8], x[9], x[10], x[11] ? (+x[11]).toFixed(2) : '-'] : [(w.lg[x[5]] || {}).name || '', x[3], x[4]];
   return h('div', { class: 'tscroll' }, h('table', { class: 'ltable lc awt' }, h('thead', null, h('tr', null, ...cols.map(c => h('th', null, c)))),
     h('tbody', null, ...b.top.map((x, i) => h('tr', { class: (i < 3 ? 'p' + (i + 1) : '') + (me(x) ? ' me' : '') }, h('td', null, h('b', null, i + 1)),
       h('td', null, k !== 'gs' && x[10] && k === 'bd' ? flag(x[10], 14) : k === 'gb' && x[15] ? flag(x[15], 14) : null, ' ', me(x) ? h('span', { class: 'lnk', onclick: () => U.setTab('profile') }, `${x[0]} (나)`) : pLink(x[0], x[2])),
       h('td', null, clubChip(w, x[1], 14)), k === 'bd' ? h('td', null, h('span', { class: 'tpos' }, x[5] || '')) : null,
       ...cells(x, i).map(v => h('td', null, v)))))));
+}
+// ---------- 명예의 전당 ----------
+const TRK = { ucl: '챔피언스리그', wc: '월드컵', lg: '리그', cont: '대륙 대회', nt: '국가대항전', cup: '국내 컵' };
+function hofView(s) {
+  const w = s.w, L = (w.hof || []).slice(), sv = v();
+  const box = h('div');
+  const ord = sv.hofo || 'score';
+  box.append(h('div', { class: 'sec' }, h('h3', null, `명예의 전당 ${L.length}명`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 은퇴한 선수 가운데 출전·득점·수상·우승 기록이 뛰어난 선수 · 매년 8월 1일 헌액')),
+    !L.length ? h('div', { class: 'empty' }, '아직 헌액된 선수가 없습니다. 레전드급 선수가 은퇴하면 그해 8월 1일에 헌액됩니다.')
+      : h('div', { class: 'in' }, h('div', { class: 'seg', style: { maxWidth: '360px' } }, ...[['score', '헌액 점수'], ['ind', '최근 헌액'], ['g', '득점']].map(([k, l]) => h('button', { class: ord === k ? 'on' : '', onclick: () => { sv.hofo = k; U.stay(); } }, l))))));
+  if (!L.length) return box;
+  L.sort((a, b) => ord === 'ind' ? b.ind - a.ind || b.score - a.score : ord === 'g' ? b.g - a.g : b.score - a.score);
+  const grid = h('div', { class: 'hofg' });
+  for (const x of L) {
+    const top = x.clubs && x.clubs[0], tc = top && w.clubs[top.cid];
+    const trc = {}; for (const t of x.tr || []) trc[t[2]] = (trc[t[2]] || 0) + 1;
+    const chips = [];
+    if (x.aw.bd.length) chips.push(h('span', { class: 'chip gold' }, U.trophy ? U.trophy('ballon', 12, '#f2c14e') : '', ` 발롱도르 ${x.aw.bd.length}회`));
+    for (const k of ['ucl', 'wc', 'lg', 'cont', 'nt', 'cup']) if (trc[k]) chips.push(h('span', { class: 'chip' + (k === 'ucl' || k === 'wc' ? ' gold' : '') }, `${TRK[k]} 우승 ${trc[k]}회`));
+    if (x.aw.gs.length) chips.push(h('span', { class: 'chip' }, `골든슈 ${x.aw.gs.length}회`));
+    if (x.aw.gb.length) chips.push(h('span', { class: 'chip' }, `골든보이 ${x.aw.gb.length}회`));
+    if (x.aw.xi) chips.push(h('span', { class: 'chip' }, `월드 베스트 XI ${x.aw.xi}회`));
+    const pre = x.pre && (x.pre[0] || x.pre[1] || x.pre[2] || x.pre[3]) ? h('div', { class: 'hofpre mute' }, '게임 시작 전 경력: ' + [x.pre[0] ? `발롱도르 ${x.pre[0]}회` : '', x.pre[1] ? `챔피언스리그 ${x.pre[1]}회` : '', x.pre[2] ? `월드컵 ${x.pre[2]}회` : '', x.pre[3] ? `대륙 국가대항전 ${x.pre[3]}회` : ''].filter(Boolean).join(' · ')) : null;
+    const open = sv.hofx === x.pid;
+    grid.append(h('div', { class: 'hofc' + (open ? ' open' : ''), style: tc ? { '--hc': tc.c1 || '#3a4252' } : null },
+      h('div', { class: 'hofh', onclick: () => { sv.hofx = open ? null : x.pid; U.stay(); } },
+        h('div', { class: 'hofcr' }, tc ? crest(tc, 40) : null),
+        h('div', { class: 'hofn' }, h('div', null, h('b', null, x.n), ' ', h('span', { class: 'tpos' }, x.pos || '')), h('div', { class: 'mute', style: { fontSize: '12px' } }, flag(x.nat, 14), ` ${C.natName(x.nat)} · ${x.pre || !x.y0 ? `~${x.ret} 은퇴` : `${x.y0}–${x.ret}`} · ${x.ind}년 헌액`)),
+        h('div', { class: 'hofs' }, h('b', null, x.score), h('small', { class: 'mute' }, '점'))),
+      h('div', { class: 'hofk' }, ...(x.known || []).map(t => h('div', null, '“' + t + '”'))),
+      h('div', { class: 'hofst' }, ...[[x.apps, '경기'], [x.g, '골'], [x.a, '도움'], [x.rt ? x.rt.toFixed(2) : '-', '평점'], [x.peak || '-', '최고 OVR']].map(([a, b]) => h('div', null, h('b', null, a), h('small', { class: 'mute' }, b)))),
+      chips.length ? h('div', { class: 'chg' }, ...chips) : null, pre,
+      open ? h('div', { class: 'hofd' },
+        h('div', { class: 'lbl' }, '소속 구단'), ...(x.clubs || []).map(k => h('div', { class: 'kvrow' }, h('span', { class: 'cc' }, crest(w.clubs[k.cid] || null, 16), h('span', { class: 'lnk', onclick: () => U.openClub(k.cid) }, (w.clubs[k.cid] || {}).name || k.cid)), h('span', { class: 'mute' }, `${k.y0}–${k.y1 + 1} · ${k.apps}경기 ${k.g}골 ${k.a}도움`))),
+        (x.tr || []).length ? h('div', { class: 'lbl', style: { marginTop: '8px' } }, '우승') : null,
+        (x.tr || []).length ? h('div', { class: 'chg' }, ...x.tr.slice().sort((a, b) => a[0] - b[0]).map(t => h('span', { class: 'chip' + (t[2] === 'ucl' || t[2] === 'wc' ? ' gold' : '') }, `${C.wLabel ? C.wLabel(t[0]) : t[0]} ${t[1]}`))) : null,
+        x.aw.bd.length || x.aw.bd3.length ? h('div', { class: 'mute', style: { fontSize: '12px', marginTop: '6px' } }, [x.aw.bd.length ? `발롱도르 수상 ${x.aw.bd.join(', ')}` : '', x.aw.bd3.length ? `발롱도르 2·3위 ${x.aw.bd3.join(', ')}` : ''].filter(Boolean).join(' · ')) : null,
+        h('button', { class: 'btn ghost sm', style: { marginTop: '8px' }, onclick: () => U.openPlayer(x.pid) }, '선수 프로필 보기')) : null));
+  }
+  box.append(grid);
+  return box;
 }
 U.pages.hist = function () {
   const s = U.S(), w = s.w, sv = v();
@@ -249,10 +290,11 @@ U.pages.hist = function () {
   root.append(U.pageHead('시상·역사', '발롱도르 30인 · 골든보이 · 유러피언 골든슈 · 시즌별 우승 (한 해는 8월 1일에 마감, 시상식은 9월 넷째 주 월요일)'));
   { const cb = U.cerBanner(s); if (cb) root.append(cb); }
   const ws = s.ws || [];
-  if (!ws.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 해(8월 1일)가 지나면 시상과 우승 기록이 쌓입니다.'))); return root; }
-  const SUB = [['bd', '발롱도르'], ['gb', '골든보이'], ['gs', '골든슈'], ['xi', '월드 베스트 XI'], ['season', '시즌별 우승'], ['champ', '역대 우승']];
+  if (!ws.length && !(w.hof || []).length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 해(8월 1일)가 지나면 시상과 우승 기록이 쌓입니다.'))); return root; }
+  const SUB = [['bd', '발롱도르'], ['gb', '골든보이'], ['gs', '골든슈'], ['xi', '월드 베스트 XI'], ['season', '시즌별 우승'], ['champ', '역대 우승'], ['hof', '명예의 전당']];
   if (!sv.hs || !SUB.some(x => x[0] === sv.hs)) sv.hs = 'bd';
   root.append(h('div', { class: 'etabs' }, ...SUB.map(([k, l]) => h('button', { class: sv.hs === k ? 'on' : '', onclick: () => { sv.hs = k; U.stay(); } }, l))));
+  if (sv.hs === 'hof') { root.append(hofView(s)); return root; }
   if (sv.hs === 'xi') {
     const src = w.wxiHist || [];
     if (!src.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '이번 업데이트 이후 시상식부터 기록됩니다.'))); return root; }
@@ -319,7 +361,7 @@ U.pages.hist = function () {
 U.pages.rank = function () {
   const s = U.S(), w = s.w, sv = v();
   const root = h('div', { class: 'wrap prof screen' });
-  root.append(U.pageHead('세계 파워랭킹', 'OVR 기준 · 전 세계 구단 선수와 무소속 선수 · 잠재력은 공개하지 않습니다'));
+  root.append(U.pageHead('세계 파워랭킹', 'OVR 기준 · 전 세계 구단 선수와 무소속 선수'));
   const all = [];
   for (const id in w.clubs) { const c = w.clubs[id]; if (!c.sq) continue; for (const e of c.sq) if (e[2] >= 60) all.push([e, c]); }
   for (const e of w.fa || []) if (e[2] >= 60) all.push([e, null]);

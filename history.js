@@ -452,4 +452,114 @@ function archiveSeason(S, tables) {
   return A;
 }
 C.archiveSeason = archiveSeason;
+
+// ---------- 명예의 전당 ----------
+// 은퇴한 선수 가운데 기록·수상·트로피 점수가 높은 선수를 올린다 (매년 8월 1일 마감 때 그해 은퇴 선수를 심사)
+// 게임 시작(2026/27) 이전 실제 경력: 발롱도르·UEFA 챔피언스리그·월드컵·대륙 국가대항전 우승 횟수 (2026년 여름까지)
+// [발롱도르, UCL, 월드컵, 대륙 대회, 대표 문구]
+const PRE = {
+  'lionel messi': [8, 4, 1, 2, '발롱도르 최다 수상자, 바르셀로나 역대 최다 득점'],
+  'cristiano ronaldo': [5, 5, 0, 1, '챔피언스리그·A매치 역대 최다 득점'],
+  'luka modric': [1, 6, 0, 0, '레알 마드리드에서 챔피언스리그 6회 우승'],
+  'karim benzema': [1, 5, 0, 0, '레알 마드리드 통산 득점 2위'],
+  'robert lewandowski': [0, 1, 0, 0, '분데스리가 한 시즌 최다 득점(41골)'],
+  'manuel neuer': [0, 2, 1, 0, '스위퍼 키퍼의 대명사'],
+  'thomas muller': [0, 2, 1, 0, '바이에른 뮌헨 최다 출전'],
+  'mohamed salah': [0, 1, 0, 0, '리버풀 프리미어리그 시대 최다 득점'],
+  'kevin de bruyne': [0, 1, 0, 0, '맨체스터 시티 황금기의 플레이메이커'],
+  'virgil van dijk': [0, 1, 0, 0, '리버풀 수비의 중심'],
+  'sergio ramos': [0, 4, 1, 2, '레알 마드리드 주장, 수비수 최다 득점급 기록'],
+  'luis suarez': [0, 1, 0, 1, '바르셀로나 MSN 공격진'],
+  'angel di maria': [0, 1, 1, 2, '월드컵·코파 아메리카 결승 득점'],
+  'antoine griezmann': [0, 0, 1, 0, '아틀레티코 마드리드 역대 최다 득점'],
+  'neymar': [0, 1, 0, 0, '브라질 국가대표 역대 최다 득점'],
+  'neymar jr': [0, 1, 0, 0, '브라질 국가대표 역대 최다 득점'],
+  'dani carvajal': [0, 6, 0, 1, '레알 마드리드에서 챔피언스리그 6회 우승'],
+  'nacho fernandez': [0, 6, 0, 0, '레알 마드리드 유스 출신 챔피언스리그 6회 우승'],
+  'casemiro': [0, 5, 0, 0, '레알 마드리드 챔피언스리그 5회 우승의 수비형 미드필더'],
+  'lucas vazquez': [0, 5, 0, 0, '레알 마드리드 챔피언스리그 5회 우승'],
+  'isco': [0, 4, 0, 0, '레알 마드리드 챔피언스리그 4회 우승'],
+  'keylor navas': [0, 3, 0, 0, '챔피언스리그 3연패 골키퍼'],
+  'rodri': [1, 1, 0, 1, '2024 발롱도르'],
+  'ousmane dembele': [1, 1, 1, 0, '2025 발롱도르'],
+  'kylian mbappe': [0, 0, 1, 0, '월드컵 결승 해트트릭'],
+  'vinicius junior': [0, 2, 0, 0, '챔피언스리그 결승 득점'],
+  'olivier giroud': [0, 1, 1, 0, '프랑스 국가대표 역대 최다 득점'],
+  'ngolo kante': [0, 1, 1, 0, '월드컵·챔피언스리그 우승 미드필더'],
+  'hugo lloris': [0, 0, 1, 0, '월드컵 우승 주장'],
+  'jude bellingham': [0, 1, 0, 0, '레알 마드리드 첫 시즌 챔피언스리그 우승']
+};
+const foldN = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z ]/g, '').trim();
+C.HOFPRE = PRE;
+function hofEval(S, pid, P) {
+  const w = S.w, H = C.psHist(P); if (!H.length && !PRE[foldN(P.n)]) return null;
+  const sid = String(pid);
+  let apps = 0, g = 0, a = 0, rs = 0, peak = 0, y0 = 9999, y1 = 0; const clubs = new Map();
+  for (const x of H) {
+    const y = x[0] < 1000 ? x[0] + 2000 : x[0], cid = C.cidOf(w, x[1]), n = +x[2] || 0;
+    apps += n; g += +x[3] || 0; a += +x[4] || 0; rs += (+x[5] || 0) * n; peak = Math.max(peak, +x[6] || 0); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    if (cid) { const k = clubs.get(cid) || { cid, apps: 0, g: 0, a: 0, ys: new Set() }; k.apps += n; k.g += +x[3] || 0; k.a += +x[4] || 0; k.ys.add(y); clubs.set(cid, k); }
+  }
+  const F = G.FC27; if (/^\d+$/.test(sid) && F && F.P[+sid]) peak = Math.max(peak, F.P[+sid][11]);
+  const rt = apps ? rs / apps / 100 : 0;
+  // 수상 (게임 안)
+  const aw = { bd: [], bd3: [], gb: [], gs: [], xi: 0 };
+  for (const b of w.bdHist || []) { const i = (b.top || []).findIndex(x => String(x[2]) === sid); if (i === 0) aw.bd.push(b.y); else if (i > 0 && i < 3) aw.bd3.push(b.y); }
+  for (const b of w.gbHist || []) if (b.top && b.top[0] && String(b.top[0][2]) === sid) aw.gb.push(b.y);
+  for (const b of w.gsHist || []) if (b.top && b.top[0] && String(b.top[0][2]) === sid) aw.gs.push(b.y);
+  for (const b of w.wxiHist || []) if ((b.xi || []).some(x => String(x[4]) === sid)) aw.xi++;
+  // 트로피: 그 시즌 그 구단에서 뛴 대회 우승
+  const tr = []; const seen = new Set();
+  for (const x of H) {
+    if (!(+x[2] > 0)) continue;
+    const y = x[0] < 1000 ? x[0] + 2000 : x[0], cid = C.cidOf(w, x[1]), A = w.arch && w.arch[C.wLabel(y)]; if (!A || !cid) continue;
+    const put = (k, n, kind) => { const key = k + '|' + y; if (seen.has(key)) return; seen.add(key); tr.push({ y, n, kind, cid }); };
+    for (const lid in A.lg) { const L = A.lg[lid]; if (L.t && L.t[0] && L.t[0][0] === cid && w.lg[lid] && w.lg[lid].tier === 1) put('L' + lid, L.n || (w.lg[lid] || {}).name, 'lg'); }
+    for (const nat in A.cup || {}) if (A.cup[nat] && A.cup[nat].w === cid) put('C' + nat, A.cup[nat].n || C.CUPNAME[nat], 'cup');
+    for (const k in A.cont || {}) if (A.cont[k] && A.cont[k].w === cid) put('E' + k, A.cont[k].n || k, k === 'UCL' ? 'ucl' : 'cont');
+  }
+  for (const k in (w.hist.nt || {})) for (const x of w.hist.nt[k]) { const yv = parseInt(x.y, 10); if (x.c === P.nat && yv >= y0 && yv <= y1 + 1 && H.some(r => (r[0] < 1000 ? r[0] + 2000 : r[0]) >= yv - 1)) tr.push({ y: yv, n: (TDEF[k] && TDEF[k].name) || k, kind: k === 'WC' ? 'wc' : 'nt', nat: P.nat }); }
+  const pre = PRE[foldN(P.n)] || null;
+  const cnt = k => tr.filter(t => t.kind === k).length;
+  let score = apps / 25 + g / 10 + a / 18 + Math.max(0, rt - 6.7) * apps / 12 + Math.max(0, peak - 83) * 3.5
+    + aw.bd.length * 25 + aw.bd3.length * 7 + aw.gb.length * 4 + aw.gs.length * 5 + aw.xi * 3
+    + cnt('lg') * 3 + cnt('cup') * 1.2 + cnt('ucl') * 7 + cnt('cont') * 2.5 + cnt('wc') * 12 + cnt('nt') * 5;
+  if (pre) score += pre[0] * 25 + pre[1] * 7 + pre[2] * 12 + pre[3] * 5 + 30;
+  // 대표 구단 (가장 많이 뛴 구단)
+  const cl = [...clubs.values()].sort((p, q) => q.apps - p.apps).map(k => ({ cid: k.cid, apps: k.apps, g: k.g, a: k.a, y0: Math.min(...k.ys), y1: Math.max(...k.ys), n: k.ys.size }));
+  return { score, apps, g, a, rt, peak, y0: y0 === 9999 ? null : y0, y1: y1 || null, clubs: cl, aw, tr, pre };
+}
+// 대표 문구: 무엇으로 유명했는지
+function hofKnown(w, r, P) {
+  const out = [];
+  if (r.pre) out.push(r.pre[4]);
+  if (r.aw.bd.length) out.push(`발롱도르 ${r.aw.bd.length}회 (${r.aw.bd.join(', ')})`);
+  const top = r.clubs[0];
+  if (top && top.n >= 8 && r.clubs.length === 1) out.push(`${(w.clubs[top.cid] || {}).name || ''} 원클럽맨 (${top.n}시즌)`);
+  else if (top && top.apps >= 200) out.push(`${(w.clubs[top.cid] || {}).name || ''}의 레전드 (${top.apps}경기 ${top.g}골)`);
+  const ucl = r.tr.filter(t => t.kind === 'ucl').length; if (ucl >= 2) out.push(`챔피언스리그 ${ucl}회 우승`);
+  if (r.tr.some(t => t.kind === 'wc')) out.push('월드컵 우승');
+  const lg = r.tr.filter(t => t.kind === 'lg').length; if (lg >= 5) out.push(`리그 우승 ${lg}회`);
+  if (r.g >= 250) out.push(`통산 ${r.g}골`); else if (r.a >= 150) out.push(`통산 ${r.a}도움`);
+  if (P.pos === 'GK' && r.apps >= 400) out.push(`골키퍼로 ${r.apps}경기`);
+  if (r.aw.gs.length >= 2) out.push(`유러피언 골든슈 ${r.aw.gs.length}회`);
+  if (!out.length) out.push(r.rt >= 7.2 ? `평균 평점 ${r.rt.toFixed(2)}의 꾸준함` : `${r.apps}경기 ${r.g}골`);
+  return out.slice(0, 3);
+}
+C.hofScan = function (S, force) {
+  const w = S.w; if (!w.ps) return 0;
+  w.hof = w.hof || []; let n = 0;
+  const have = new Set(w.hof.map(x => x.pid));
+  for (const pid in w.ps) {
+    const P = w.ps[pid]; if (!P || !P.ret || (P.hk && !force) || have.has(pid)) continue;
+    P.hk = 1;
+    const r = hofEval(S, pid, P); if (!r || r.score < 70) continue;
+    w.hof.push({ pid, n: P.n, nat: P.nat, pos: P.pos, ret: P.ret, ind: w.year + 1, score: Math.round(r.score), apps: r.apps, g: r.g, a: r.a, rt: Math.round(r.rt * 100) / 100, peak: r.peak, y0: r.y0, y1: r.y1,
+      clubs: r.clubs.slice(0, 6), aw: { bd: r.aw.bd, bd3: r.aw.bd3, gb: r.aw.gb, gs: r.aw.gs, xi: r.aw.xi }, tr: r.tr.map(t => [t.y, t.n, t.kind]), pre: r.pre ? r.pre.slice(0, 4) : null, known: hofKnown(w, r, P) });
+    n++;
+    if (C.wn && C.wn.push) try { C.wn.push(S, { c: 'record', imp: r.score >= 140 ? 3 : 2, h: `${P.n}, 명예의 전당 헌액`, s: hofKnown(w, r, P).join(' · '), p: [pid] }); } catch (e) { }
+  }
+  w.hof.sort((p, q) => q.score - p.score);
+  return n;
+};
 })(typeof window !== 'undefined' ? window : globalThis);

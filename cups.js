@@ -56,7 +56,9 @@ function cupEntry(st, id) { return st.rounds.findIndex(r => r.ent.includes(id));
 // 이번 라운드 추첨
 // 잉글랜드식 오픈 추첨: 한 포트에서 공을 뽑아 먼저 뽑힌 구단이 홈.
 // 독일·스페인·프랑스 등: 상·하부 리그가 섞인 라운드는 두 포트(상위 리그 / 하위 리그)로 나눠 한 포트에서 하나씩, 하위 리그 구단이 홈
-const TWOPOT = new Set(['GER', 'ESP', 'FRA', 'POR', 'NED', 'BEL', 'AUT', 'SUI', 'TUR', 'GRE', 'DEN', 'SWE', 'NOR', 'POL', 'CZE', 'CRO', 'SRB', 'UKR', 'RUS', 'ROU', 'HUN', 'SCO']);
+const TWOPOT = new Set(['GER', 'ESP', 'FRA', 'POR', 'NED', 'BEL', 'AUT', 'SUI', 'TUR', 'GRE', 'DEN', 'SWE', 'NOR', 'POL', 'CZE', 'CRO', 'SRB', 'UKR', 'RUS', 'ROU', 'HUN']);
+// 코파 이탈리아: 추첨 없이 시드 대진표 (상위 시드가 하위 시드와, 상위 시드 홈). 스코틀랜드·잉글랜드·한국 등은 오픈 추첨
+const SEEDED = new Set(['ITA']);
 function cupDraw(st, d) {
   if (st.cur) return st.cur;
   const rd = st.rounds[st.ri]; if (!rd) return null;
@@ -66,6 +68,14 @@ function cupDraw(st, d) {
   // 포트 분리는 1부 리그 구단이 처음 들어오는 라운드 (DFB 포칼 1라운드처럼). 그 뒤는 오픈 추첨 + 하위 리그 홈
   const two = TWOPOT.has(st.nat) && tiers.size >= 2 && rd.n !== '결승' && rd.ent.some(id => T(id) === 1);
   const pairs = [], seq = []; let odd = null, pots;
+  if (SEEDED.has(st.nat) && st.kind === 'cup') {
+    const sc = id => T(id) * 100 - ((w => w && w.clubs[id] ? w.clubs[id].str || 60 : 60)(C._w));
+    const srt = field.slice().sort((a, b) => sc(a) - sc(b)), n2 = Math.floor(srt.length / 2);
+    if (srt.length % 2) odd = srt.shift();
+    for (let i = 0; i < Math.floor(srt.length / 2); i++) { const a = srt[i], b = srt[srt.length - 1 - i]; seq.push([a, b]); pairs.push([a, b]); }
+    st.cur = { pairs, odd, mode: 'seed', pots: [srt.slice()], seq, ri: st.ri, n: rd.n, d: d != null ? d : null };
+    return st.cur;
+  }
   if (two) {
     const srt = field.slice().sort((a, b) => T(a) - T(b));
     const half = Math.floor(srt.length / 2);

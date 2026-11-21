@@ -23,12 +23,12 @@ U.pfInfoCard = function (s, pid, e, c, P) {
   const w = s.w, F = fcRow(pid);
   const nat = e ? e[5] : P && P.nat, pos = e ? e[1] : P && P.pos;
   const cells = [];
-  if (e) cells.push([`${e[3]}세`, F ? (() => { const d = C.toDate(D2000() + F[9]); return `${d.getUTCFullYear()}. ${d.getUTCMonth() + 1}. ${d.getUTCDate()}.`; })() : '나이']);
+  if (e) cells.push([`${U.ageNow(w, pid, e[3])}세`, F ? (() => { const d = C.toDate(D2000() + F[9]); return `${d.getUTCFullYear()}. ${d.getUTCMonth() + 1}. ${d.getUTCDate()}.`; })() : '나이']);
   if (F) cells.push([F[6] === 'L' ? '왼발' : '오른발', `주로 사용하는 발 · 약발 ${'★'.repeat(F[7] || 1)}`]);
   if (nat) cells.push([h('span', { class: 'pfnat' }, flag(nat, 18), ' ', C.natName(nat)), '국가']);
-  if (e) { const loan = e[7] && w.clubs[e[7]], L = c && w.lg[(loan || c).lg]; const val = C.aiFee(e[2], e[3], (L || {}).nation || (c || {}).nat || 'ENG', Math.max(0, e[6]), .5); cells.push([C.fmtEUR(val), '이적 가치']); }
+  if (e) { const val = U.valueNow(s, pid, e, c); cells.push([C.fmtEUR(val), '이적 가치']); }
   if (e && c) cells.push([e[7] && w.clubs[e[7]] ? '임대 중' : `${w.year + Math.max(1, e[6])}. 6. 30.`, e[7] && w.clubs[e[7]] ? `원소속 ${w.clubs[e[7]].name}` : '계약 종료']);
-  if (e) cells.push([String(e[2]), `OVR · 잠재력 ${Math.max(e[4] || e[2], e[2])}`]);
+  if (e) cells.push([String(e[2]), 'OVR']);
   // 포지션: FC27 대표 포지션 + 소화 가능한 포지션
   const main = F ? F[2] : pos ? (pos === 'CDM' ? 'DM' : pos === 'CAM' ? 'AM' : pos) : null;
   const others = F ? FAMK.filter((k, i) => (F[3] >> i) & 1 && k !== main) : [];
@@ -38,37 +38,108 @@ U.pfInfoCard = function (s, pid, e, c, P) {
     h('div', { class: 'pfpos' }, h('div', null, h('div', { class: 'lbl' }, '포지션'), main ? h('div', null, h('small', { class: 'mute' }, '기본'), h('b', null, POSKO[main] || main)) : null, others.length ? h('div', null, h('small', { class: 'mute' }, '기타'), h('div', null, others.map(k => POSKO[k] || k).join(' · '))) : null), pitch));
 };
 
-// ---------- 이적 가치 그래프 ----------
+// ---------- 이적 가치 ----------
+// 이번 시즌 활약(평점·출전)을 반영한 현재 가치. 실제 서비스처럼 한 달에 한 번 갱신되는 값으로 본다 (매월 1일까지의 기록)
+const livePerf = (s, pid) => { let apps = 0, rs = 0; for (const x of C.livePlayer ? C.livePlayer(s, String(pid)) : []) { if (String(x.key).startsWith('nt:')) continue; apps += x.a[1]; rs += x.a[8]; } return apps ? { rt: rs / 10 / apps, apps, of: 38 } : null; };
+const natOfClubW = (w, cid) => { const k = w.clubs[cid]; return k ? ((w.lg[k.lg] || {}).nation || k.nat) : 'ENG'; };
+U.valueNow = function (s, pid, e, c) {
+  const w = s.w; if (!e) return 0; const loan = e[7] && w.clubs[e[7]];
+  const lp = livePerf(s, pid), prev = e[11] ? { rt: (e[12] || 660) / 100, apps: e[11], of: 38 } : null;
+  // 시즌 초반에는 지난 시즌 활약 비중이 크고, 경기가 쌓일수록 이번 시즌 활약으로 옮겨 간다
+  const perf = lp && prev ? { rt: (lp.rt * lp.apps + prev.rt * Math.max(0, 12 - lp.apps)) / (lp.apps + Math.max(0, 12 - lp.apps)), apps: Math.max(lp.apps * 38 / Math.max(1, monthsIn(w) * 4), prev.apps * .6), of: 38 } : lp || prev;
+  return C.aiFee(e[2], e[3] + monthsIn(w) / 12, natOfClubW(w, (loan || c || {}).id), Math.max(0, e[6]), .5, perf);
+};
+// 시즌 시작(8월)부터 지난 달 수
+function monthsIn(w) { if (!w.cal) return 0; const [y, m] = C.ymd(w.cal.d); return Math.max(0, Math.min(10, (y - w.year) * 12 + m - 8)); }
+// 구단 색 (어두운 배경에서 보이게 밝기 보정)
+function clubCol(c) {
+  if (!c) return '#5fa8ff';
+  const L = U.lum || (() => .5), cand = [c.c1, c.c2].filter(x => typeof x === 'string' && /^#?[0-9a-f]{3,6}$/i.test(x.replace('#', '')));
+  let col = cand.find(x => L(x) > .28 && L(x) < .93) || cand[0] || '#5fa8ff';
+  if (L(col) <= .28) { const hx = col.replace('#', ''), v = (hx.length === 3 ? hx.split('').map(x => x + x) : hx.match(/../g)).map(x => parseInt(x, 16)); col = '#' + v.map(x => Math.round(x + (255 - x) * .45).toString(16).padStart(2, '0')).join(''); }
+  if (L(col) >= .93) col = '#cfd6e0';
+  return col.startsWith('#') ? col : '#' + col;
+}
+// ---------- 이적 가치 그래프 (월 단위) ----------
+// 시즌 기록(시즌 끝 OVR·나이·평점·출전)을 바탕으로 매달 1일 값을 계산한다: 능력치는 시즌 동안 서서히, 활약은 경기가 쌓일수록 반영
+// 구간마다 소속 구단 색으로 칠하고, 그래프를 누르거나 마우스를 올리면 그 달의 값이 보인다
 U.pfValueChart = function (s, pid, e, c, P) {
   const w = s.w, F = fcRow(pid), hist = C.psHist(P);
-  const natOfClub = cid => { const k = w.clubs[cid]; return k ? ((w.lg[k.lg] || {}).nation || k.nat) : 'ENG'; };
+  const seed = C.seeded ? (k => C.seeded('vh|' + pid + '|' + k)()) : (() => .5);
+  const birth = F ? D2000() + F[9] : null;
+  const ageAt = (t, fb) => birth != null ? (C.dayOf(Math.floor(t), 1, 1) + (t % 1) * 365.25 - birth) / 365.25 : fb;
+  const rows = {}; for (const x of hist) { if (x[6] === '' || x[6] == null) continue; const y = x[0] < 1000 ? x[0] + 2000 : x[0]; (rows[y] = rows[y] || []).push(x); }
+  const yrs = Object.keys(rows).map(Number).sort((a, b) => a - b);
   const pts = [];
-  if (F && e) { const age0 = Math.floor((C.dayOf(2026, 8, 1) - D2000() - F[9]) / 365.25); const c0 = hist.length ? C.cidOf(w, hist[0][1]) : c && c.id; pts.push({ x: 2026.6, v: C.aiFee(F[11], age0, natOfClub(c0), 3, .5), cid: c0 }); }
-  for (const x of hist) { if (x[6] === '' || x[6] == null || x[7] === '' || x[7] == null) continue; const y = x[0] < 1000 ? x[0] + 2000 : x[0], cid = C.cidOf(w, x[1]); pts.push({ x: y + 1.4, v: C.aiFee(+x[6], +x[7], natOfClub(cid), 3, .5), cid }); }
-  if (e) { const [yy, mm] = w.cal ? C.ymd(w.cal.d) : [w.year + 1, 1]; const cid = e[7] && w.clubs[e[7]] ? c.id : c ? c.id : null; pts.push({ x: yy + (mm - 1) / 12, v: C.aiFee(e[2], e[3], cid ? natOfClub(cid) : 'ENG', Math.max(1, e[6] || 1), .5), cid, now: 1 }); }
-  // 같은 시점 정리
-  pts.sort((a, b) => a.x - b.x); for (let i = pts.length - 1; i > 0; i--) if (pts[i].x - pts[i - 1].x < .15) pts.splice(pts[i].now ? i - 1 : i, 1);
+  const push = (t, ovr, age, cid, perf, ct) => { const n = .975 + seed(Math.round(t * 12)) * .05; pts.push({ x: t, v: Math.max(10000, Math.round(C.aiFee(ovr, age, natOfClubW(w, cid), ct, .5, perf) * n / 10000) * 10000), cid }); };
+  let o0 = F ? F[11] : null, a0 = null;
+  const y0 = yrs.length ? yrs[0] : w.year;
+  if (o0 == null && yrs.length) o0 = rows[yrs[0]][0][6];
+  for (const y of yrs) {
+    const R = rows[y], o1 = +R[R.length - 1][6], ageEnd = +R[R.length - 1][7];
+    const apps = R.reduce((t, x) => t + (+x[2] || 0), 0), rs = R.reduce((t, x) => t + (+x[5] || 0) * (+x[2] || 0), 0), rt = apps ? rs / apps / 100 : 0;
+    for (let k = 0; k <= 10; k++) {
+      const t = y + (7 + k) / 12, f = k / 10, cid = C.cidOf(w, (R.length > 1 && k >= 5 ? R[R.length - 1] : R[0])[1]);
+      const ovr = (o0 != null ? o0 : o1) + (o1 - (o0 != null ? o0 : o1)) * f;
+      push(t, ovr, ageAt(t, ageEnd - 1 + f), cid, apps ? { rt, apps: apps * f, of: 38 } : null, 3);
+    }
+    o0 = o1; a0 = ageEnd;
+  }
+  // 이번 시즌 (8월 ~ 이번 달)
+  if (e) {
+    const mi = monthsIn(w), cid = c ? c.id : null, lp = livePerf(s, pid);
+    for (let k = 0; k <= mi; k++) {
+      const t = w.year + (7 + k) / 12, f = mi ? k / mi : 1;
+      const ovr = (o0 != null && k < 1 ? o0 : e[2]);
+      const perf = lp ? { rt: lp.rt, apps: lp.apps * f, of: 38 } : (e[11] && k === 0 ? { rt: (e[12] || 660) / 100, apps: e[11], of: 38 } : null);
+      push(t, ovr, ageAt(t, e[3] + k / 12), cid, perf, Math.max(0, e[6]));
+    }
+    pts[pts.length - 1].v = U.valueNow(s, pid, e, c); pts[pts.length - 1].now = 1;
+  }
   if (pts.length < 2) return null;
-  const sm = typeof innerWidth !== 'undefined' && innerWidth < 600, W = sm ? 360 : 620, H = sm ? 190 : 200, pl = 52, pr = 14, pt = 18, pb = 26;
-  const x0 = Math.floor(pts[0].x), x1 = Math.ceil(pts[pts.length - 1].x + .01), vmax = Math.max(...pts.map(p => p.v)) * 1.12 || 1;
-  const X = x => pl + (x - x0) / Math.max(.5, x1 - x0) * (W - pl - pr), Y = v => pt + (1 - v / vmax) * (H - pt - pb);
-  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.x).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' ');
-  const area = line + ` L${X(pts[pts.length - 1].x).toFixed(1)},${H - pb} L${X(pts[0].x).toFixed(1)},${H - pb} Z`;
+  const sm = typeof innerWidth !== 'undefined' && innerWidth < 600, W = sm ? 360 : 620, H = sm ? 200 : 210, pl = 52, pr = 14, pt = 18, pb = 26;
+  const x0 = pts[0].x, x1 = Math.max(pts[pts.length - 1].x, x0 + .5), vmax = Math.max(...pts.map(p => p.v)) * 1.12 || 1;
+  const X = x => pl + (x - x0) / (x1 - x0) * (W - pl - pr), Y = v => pt + (1 - v / vmax) * (H - pt - pb);
   const ticks = []; for (let k = 0; k <= 4; k++) ticks.push(vmax / 1.12 * k / 4);
-  const yrs = []; for (let y = x0; y <= x1; y++) yrs.push(y);
-  const mx = pts.reduce((a, p) => p.v > a.v ? p : a, pts[0]);
+  const yl = []; for (let y = Math.ceil(x0); y <= x1; y++) yl.push(y);
+  const step = Math.max(1, Math.ceil(yl.length / (sm ? 5 : 9)));
+  // 구단 구간
+  const segs = []; for (const p of pts) { const L = segs[segs.length - 1]; if (L && L.cid === p.cid) L.p.push(p); else segs.push({ cid: p.cid, p: [p] }); }
   const NSs = 'http://www.w3.org/2000/svg', sv = document.createElementNS(NSs, 'svg'); sv.setAttribute('viewBox', `0 0 ${W} ${H}`); sv.setAttribute('class', 'pfvc');
-  sv.innerHTML = `<defs><linearGradient id="pfvg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5fa8ff" stop-opacity=".35"/><stop offset="1" stop-color="#5fa8ff" stop-opacity="0"/></linearGradient></defs>`
+  let defs = '', body = '';
+  segs.forEach((g, i) => {
+    const col = clubCol(w.clubs[g.cid]), id = 'pfg' + String(pid).replace(/\W/g, '') + i;
+    const P2 = (segs[i + 1] ? g.p.concat([segs[i + 1].p[0]]) : g.p);
+    const line = P2.map((p, j) => `${j ? 'L' : 'M'}${X(p.x).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' ');
+    defs += `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".32"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient>`;
+    body += `<path d="${line} L${X(P2[P2.length - 1].x).toFixed(1)},${H - pb} L${X(P2[0].x).toFixed(1)},${H - pb} Z" fill="url(#${id})"/><path d="${line}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  });
+  sv.innerHTML = `<defs>${defs}</defs>`
     + ticks.map(v => `<line x1="${pl}" x2="${W - pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="rgba(255,255,255,.08)" stroke-dasharray="3 4"/><text x="${pl - 6}" y="${Y(v) + 4}" text-anchor="end" font-size="10" fill="#8b94a3">${v ? C.fmtEUR(v).replace('€', '') : '0'}</text>`).join('')
-    + yrs.map(y => `<text x="${X(y + .5)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#8b94a3">${y}</text>`).filter((_, i) => X(yrs[i] + .5) < W - pr).join('')
-    + `<path d="${area}" fill="url(#pfvg)"/><path d="${line}" fill="none" stroke="#5fa8ff" stroke-width="2.2" stroke-linejoin="round"/>`;
-  const wrap = h('div', { class: 'pfvw' }, sv);
-  // 구단이 바뀐 지점에 엠블럼
-  let last = null;
-  pts.forEach((p, i) => { if (p.cid && p.cid !== last) { const el = h('span', { class: 'pfvm', style: { left: (X(p.x) / W * 100) + '%', top: (Y(p.v) / H * 100) + '%' }, title: (w.clubs[p.cid] || {}).name || '' }, crest(w.clubs[p.cid] || null, 18)); wrap.append(el); } last = p.cid; });
-  const now = pts[pts.length - 1];
-  return h('div', { class: 'sec' }, h('div', { class: 'pfvh' }, h('b', null, `이적 가치: ${C.fmtEUR(now.v)}`), h('span', { class: 'mute' }, ` 최고: ${C.fmtEUR(mx.v)} (${Math.floor(mx.x)})`)), wrap,
-    h('div', { class: 'mute', style: { fontSize: '11px' } }, '시즌이 끝날 때의 능력치·나이·소속 리그와 지금 계약으로 계산한 추정 시장 가치입니다.'));
+    + yl.filter((_, i) => i % step === 0).map(y => `<line x1="${X(y)}" x2="${X(y)}" y1="${pt}" y2="${H - pb}" stroke="rgba(255,255,255,.05)"/><text x="${X(y)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#8b94a3">${y}</text>`).join('')
+    + body + `<line class="pfvx" x1="0" x2="0" y1="${pt}" y2="${H - pb}" stroke="rgba(255,255,255,.35)" stroke-dasharray="2 3" style="display:none"/><circle class="pfvd" r="4.5" fill="#fff" stroke="#0b0f14" stroke-width="2" style="display:none"/>`;
+  const tip = h('div', { class: 'pfvtip' });
+  const wrap = h('div', { class: 'pfvw' }, sv, tip);
+  // 이적한 지점에 엠블럼
+  segs.forEach(g => { const p = g.p[0]; if (!g.cid) return; wrap.append(h('span', { class: 'pfvm', style: { left: (X(p.x) / W * 100) + '%', top: (Y(p.v) / H * 100) + '%' }, title: (w.clubs[g.cid] || {}).name || '' }, crest(w.clubs[g.cid] || null, 18))); });
+  // 호버·터치: 가장 가까운 달
+  const vx = sv.querySelector('.pfvx'), vd = sv.querySelector('.pfvd');
+  const show = ev => {
+    const r = sv.getBoundingClientRect(), cx = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) / r.width * W;
+    let best = pts[0]; for (const p of pts) if (Math.abs(X(p.x) - cx) < Math.abs(X(best.x) - cx)) best = p;
+    const bx = X(best.x), by = Y(best.v); vx.setAttribute('x1', bx); vx.setAttribute('x2', bx); vx.style.display = ''; vd.setAttribute('cx', bx); vd.setAttribute('cy', by); vd.style.display = '';
+    const yy = Math.floor(best.x + 1e-6), mm = Math.round((best.x - yy) * 12) + 1, club = w.clubs[best.cid];
+    vd.setAttribute('fill', clubCol(club));
+    tip.replaceChildren(h('b', null, C.fmtEUR(best.v)), h('span', null, `${yy}. ${mm}.${best.now ? ' (현재)' : ''}`), club ? h('span', { class: 'pfvtc' }, crest(club, 14), club.name) : null);
+    tip.style.display = 'grid'; const lx = bx / W * 100; tip.style.left = lx + '%'; tip.style.transform = `translate(${lx > 70 ? '-100%' : lx < 25 ? '0' : '-50%'}, 0)`; tip.style.top = Math.max(0, by / H * 100 - 34) + '%';
+  };
+  const hide = () => { vx.style.display = 'none'; vd.style.display = 'none'; tip.style.display = 'none'; };
+  wrap.addEventListener('pointermove', show); wrap.addEventListener('pointerdown', show); wrap.addEventListener('pointerleave', hide);
+  wrap.addEventListener('touchmove', ev => { show(ev); }, { passive: true });
+  const now = pts[pts.length - 1], mx = pts.reduce((a, p) => p.v > a.v ? p : a, pts[0]);
+  const mxY = Math.floor(mx.x + 1e-6), mxM = Math.round((mx.x - mxY) * 12) + 1;
+  return h('div', { class: 'sec' }, h('div', { class: 'pfvh' }, h('b', null, `이적 가치: ${C.fmtEUR(now.v)}`), h('span', { class: 'mute' }, ` 최고: ${C.fmtEUR(mx.v)} (${mxY}. ${mxM}.)`)), wrap,
+    h('div', { class: 'mute', style: { fontSize: '11px' } }, '매달 1일 기준 추정 시장 가치 · 능력치·나이·출전과 평점·소속 리그·계약을 반영 · 색은 그 시기 소속 구단'));
 };
 
 // ---------- 시즌 경기 목록 (경기 기록 저장소에서) ----------
@@ -111,9 +182,9 @@ function aggOf(s, pid, list) {
     A.top = Math.max(A.top, p.st.top || 0);
     for (const x of M.shots) if (x.p === pid) { A.shots.push(Object.assign({ mt: m }, x)); if (x.type === '헤더') A.hdr++; }
     // 뛰는 동안 실점·상대 xG
-    const conc = m.d.ev.filter(e => e.s !== p.s && 'gpo'.includes(e.k) && e.m >= p.on && e.m <= p.off).length;
+    const conc = m.d.ev.filter(e => e.s !== p.s && 'gpo'.includes(e.k) && e.m >= p.on && (e.m <= p.off || p.off >= 90)).length;
     A.concOn += conc; if (!conc && p.min >= 60) A.cs++;
-    A.xgaOn += M.shots.filter(x => x.s !== p.s && x.m >= p.on && x.m <= p.off).reduce((t, x) => t + x.xg, 0);
+    A.xgaOn += M.shots.filter(x => x.s !== p.s && x.m >= p.on && (x.m <= p.off || p.off >= 90)).reduce((t, x) => t + x.xg, 0);
     if (A.heat.length < 2400) A.heat.push(...U.heatPts(p, M));
   }
   A.role = Object.keys(A.roles).sort((a, b) => A.roles[b] - A.roles[a])[0] || 'CM';
@@ -142,8 +213,8 @@ function peerPool(s, label, comp, st) {
     for (const p of M.P.values()) { if (p.id === 'ME' || String(p.id)[0] === '~') continue; let A = by.get(p.id); if (!A) { A = { min: 0, apps: 0, top: 0, hdr: 0, cs: 0, concOn: 0, xgaOn: 0, roles: {} }; for (const k of SUMK) A[k] = 0; by.set(p.id, A); }
       A.apps++; A.min += p.min; A.roles[p.role] = (A.roles[p.role] || 0) + p.min; for (const k of SUMK) A[k] += p.st[k] || 0; A.top = Math.max(A.top, p.st.top || 0);
       for (const x of M.shots) if (x.p === p.id && x.type === '헤더') A.hdr++;
-      const conc = d.ev.filter(e => e.s !== p.s && 'gpo'.includes(e.k) && e.m >= p.on && e.m <= p.off).length; A.concOn += conc; if (!conc && p.min >= 60) A.cs++;
-      A.xgaOn += M.shots.filter(x => x.s !== p.s && x.m >= p.on && x.m <= p.off).reduce((t, x) => t + x.xg, 0); }
+      const conc = d.ev.filter(e => e.s !== p.s && 'gpo'.includes(e.k) && e.m >= p.on && (e.m <= p.off || p.off >= 90)).length; A.concOn += conc; if (!conc && p.min >= 60) A.cs++;
+      A.xgaOn += M.shots.filter(x => x.s !== p.s && x.m >= p.on && (x.m <= p.off || p.off >= 90)).reduce((t, x) => t + x.xg, 0); }
   };
   if (comp.startsWith('L:')) { const lid = comp.slice(2), L = st.L[lid]; if (L) for (const r of MD.leagueRows(w, L)) addM(r.a, r.b, r.ga, r.gb, MD.leagueMatch(st, L, r.i), 'x'); }
   else { const [kind, k] = comp.split(':'); const grp = kind === 'cont' ? 'CONT' : kind === 'nt' ? 'INTL' : 'CUP', key = grp === 'CUP' ? `${k}:${kind}` : k; for (const r of (st[grp] || {})[key] || []) if (r[6]) addM(grp === 'INTL' ? r[1] : C.cidOf(w, r[1]), grp === 'INTL' ? r[2] : C.cidOf(w, r[2]), r[3], r[4], MD.decode(st, r), 'x'); }
@@ -214,7 +285,7 @@ U.pfSeason = function (s, pid, e, c, P, seasons) {
   sv.innerHTML = `<rect x="0" y="0" width="68" height="44" ${Ls}/><rect x="13.84" y="0" width="40.32" height="16.5" ${Ls}/><rect x="24.84" y="0" width="18.32" height="5.5" ${Ls}/><rect x="30.34" y="-1" width="7.32" height="1" ${Ls}/><circle cx="34" cy="11" r=".4" fill="rgba(255,255,255,.3)"/><path d="M26.7 16.5 A9.15 9.15 0 0 0 41.3 16.5" ${Ls}/>`;
   shown.forEach((x, i) => { const cE = document.createElementNS(NSs, 'circle'); const gl = x.res === '골', on = x.res === '선방'; cE.setAttribute('cx', 34 + x.dy); cE.setAttribute('cy', Math.min(43, x.dx)); cE.setAttribute('r', 1 + Math.sqrt(x.xg) * 2.6); cE.setAttribute('fill', gl ? '#2fbf71' : on ? 'rgba(95,168,255,.45)' : 'transparent'); cE.setAttribute('stroke', gl ? '#fff' : x === cur ? '#fff' : '#5fa8ff'); cE.setAttribute('stroke-width', x === cur ? '.7' : '.35'); cE.setAttribute('class', 'shd'); cE.addEventListener('click', () => { v.shot = i; U.stay(); }); sv.append(cE); });
   const det = cur ? (() => { const mt = cur.mt, opp = mt.side ? mt.a : mt.b, gf = mt.side ? mt.gb : mt.ga, ga = mt.side ? mt.ga : mt.gb, dt = mt.dt != null ? (() => { const [, mm, dd] = C.ymd(mt.dt); return `${mm}월 ${dd}일`; })() : '';
-    return h('div', { class: 'shdet' }, h('div', { class: 'shh' }, h('span', { class: 'mm' }, `${cur.m}'`), mt.nat ? U.natCrest(opp, 16) : crest(w.clubs[opp] || null, 16), h('span', null, `${mt.nat ? C.natName(opp) : (w.clubs[opp] || {}).name || opp}전 ${gf}-${ga}`), h('small', { class: 'mute' }, `${dt} · ${mt.comp}`)),
+    return h('div', { class: 'shdet' }, h('div', { class: 'shh' }, h('span', { class: 'mm' }, U.fmtMin(cur.m)), mt.nat ? U.natCrest(opp, 16) : crest(w.clubs[opp] || null, 16), h('span', null, `${mt.nat ? C.natName(opp) : (w.clubs[opp] || {}).name || opp}전 ${gf}-${ga}`), h('small', { class: 'mute' }, `${dt} · ${mt.comp}`)),
       h('div', { class: 'shg' }, ...[['슛 유형', cur.type], ['상황', cur.sit], ['결과', cur.res === '선방' ? '유효 슈팅' : cur.res], ['xG', f2(cur.xg)], ['xGOT', cur.xgot != null && (cur.res === '골' || cur.res === '선방') ? f2(cur.xgot) : '-']].map(([k, x]) => h('div', null, h('small', { class: 'mute' }, k), h('b', null, x))))); })() : null;
   const xgS = shown.reduce((t, x) => t + x.xg, 0);
   main.push(h('div', { class: 'sec' }, h('div', { class: 'pfmh' }, h('h3', null, `${compName} 히트맵${SH.length ? ' · 슈팅 맵' : ''}`)),
@@ -298,7 +369,7 @@ U.pfAbout = function (s, pid, e, c, P, blk) {
   const w = s.w, F = fcRow(pid), name = e ? C.pName(w, e) : P ? P.n : '';
   const pos = e ? e[1] : P && P.pos, nat = e ? e[5] : P && P.nat;
   const lines = [];
-  lines.push(`${name}은(는) ${e ? e[3] + '세의 ' : ''}${C.natName(nat)} 국적 ${POSKO[pos] || pos || '선수'}${c ? `로, ${c.name}에서 뛰고 있다` : P && P.ret ? `였고 ${P.ret}년에 은퇴했다` : '이며 현재 무소속이다'}.${F ? ` 주로 ${F[6] === 'L' ? '왼발' : '오른발'}을 쓴다.` : ''}`);
+  lines.push(`${C.jo(name, '은', '는')} ${e ? e[3] + '세의 ' : ''}${C.natName(nat)} 국적 ${POSKO[pos] || pos || '선수'}${c ? `로, ${c.name}에서 뛰고 있다` : P && P.ret ? `였고 ${P.ret}년에 은퇴했다` : '이며 현재 무소속이다'}.${F ? ` 주로 ${F[6] === 'L' ? '왼발' : '오른발'}을 쓴다.` : ''}`);
   if (blk && blk.A && blk.A.apps) { const A = blk.A; lines.push(`${blk.sn.live ? '이번' : blk.sn.label} 시즌 ${blk.compName}에서 ${A.apps}경기 ${A.min.toLocaleString()}분 동안 ${A.g}골 ${A.a}도움, 평균 평점 ${(A.rts / A.apps).toFixed(2)}${A.y ? `, 경고 ${A.y}회` : ''}를 기록했다.`); }
   return h('div', { class: 'sec pfab' }, h('h3', null, '소개'), h('div', { class: 'in' }, ...lines.map(t => h('p', null, t))));
 };

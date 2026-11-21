@@ -301,8 +301,7 @@ function marketValue(p, ctx) {
   const o = ovrOf(p) + modSum(p) * .5;
   let v = interp(VT, o) * 1e6;
   const a = p.age;
-  const af = a <= 18 ? 1.35 : a <= 21 ? 1.55 : a <= 24 ? 1.3 : a <= 27 ? 1.1 : a <= 29 ? .9 : a <= 30 ? .7 : a <= 31 ? .55 : a <= 32 ? .42 : a <= 33 ? .3 : a <= 34 ? .2 : .12;
-  v *= af;
+  v *= ageF(a);
   if (a <= 23) { const pe = (ctx && ctx.potEst) || o; v *= 1 + clamp(pe - o, 0, 25) * .045; }
   if (ctx) {
     v *= LGMULT[ctx.nation] || .55;
@@ -314,11 +313,20 @@ function marketValue(p, ctx) {
 }
 C.marketValue = marketValue;
 // AI 선수 이적료 (유로): 같은 가치 곡선 × 나이 × 리그 × 남은 계약 × 협상 운
-C.aiFee = (ovr, age, nation, ct, noise) => {
+// 나이 계수: 20대 중반까지 거의 유지, 28세부터 완만하게, 31세 이후 빠르게 (소수 나이도 받는다)
+const AGEF = [[16, 1.3], [18, 1.4], [20, 1.5], [22, 1.45], [24, 1.33], [25, 1.27], [26, 1.2], [27, 1.13], [28, 1.05], [29, .97], [30, .87], [31, .76], [32, .64], [33, .52], [34, .41], [35, .31], [37, .2], [40, .12]];
+const ageF = a => { if (a <= AGEF[0][0]) return AGEF[0][1]; for (let i = 1; i < AGEF.length; i++) if (a <= AGEF[i][0]) { const [x0, y0] = AGEF[i - 1], [x1, y1] = AGEF[i]; return y0 + (y1 - y0) * (a - x0) / (x1 - x0); } return AGEF[AGEF.length - 1][1]; };
+C.ageF = ageF;
+// 활약 계수: 평점·출전 비중 (활약하는 30대는 값이 잘 안 떨어진다). perf = { rt: 평균 평점, apps: 경기 수, of: 시즌 경기 수 기준 }
+const perfF = (perf, age) => { if (!perf || !perf.rt || !perf.apps) return 1; const sh = clamp(perf.apps / (perf.of || 30), 0, 1.1), w = clamp(perf.apps / 8, 0, 1); return 1 + w * (clamp((perf.rt - 6.85) * .42, -.22, .4) * (age >= 28 ? 1.15 : 1) + (sh - .5) * .16); };
+C.perfF = perfF;
+// 조사: 받침 여부로 고른다 (한글이 아닌 이름은 받침 없는 쪽). C.jo('메시', '은', '는') → '메시는'
+C.jo = (t, withB, noB) => { const ch = String(t).trim().slice(-1), c = ch.charCodeAt(0); if (c >= 0xAC00 && c <= 0xD7A3) { const b = (c - 0xAC00) % 28; if (withB === '으로') return t + (b && b !== 8 ? '으로' : '로'); return t + (b ? withB : noB); } return t + (withB === '으로' ? '로' : noB); };
+C.aiFee = (ovr, age, nation, ct, noise, perf) => {
   let v = interp(VT, ovr) * 1e6;
-  v *= age <= 18 ? 1.35 : age <= 21 ? 1.55 : age <= 24 ? 1.3 : age <= 27 ? 1.1 : age <= 29 ? .9 : age <= 30 ? .7 : age <= 31 ? .55 : age <= 32 ? .42 : age <= 33 ? .3 : .18;
+  v *= ageF(age) * perfF(perf, age);
   v *= LGMULT[nation] || .55;
-  v *= ct >= 3 ? 1.15 : ct === 2 ? 1 : ct === 1 ? .75 : .5;
+  v *= ct >= 3 ? 1.1 : ct === 2 ? 1 : ct === 1 ? .85 : .62;
   v *= .82 + (noise != null ? noise : R()) * .36;
   v = v > 1.2e8 ? 1.2e8 + (v - 1.2e8) * .45 : v; // 초고액은 완만하게 (역대 최고 수준 약 2억 유로)
   return Math.max(10000, Math.round(v / 10000) * 10000);

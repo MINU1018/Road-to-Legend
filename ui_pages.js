@@ -334,7 +334,7 @@ function trophySec() {
 function aboutSec(r) {
   const s = S(), p = s.p, t = r.total;
   const c = s.w.clubs[s.car.club];
-  const tx = `${p.name}은(는) ${p.age}세 ${C.POSKO[p.pos]}${c ? `로 ${c.name} 소속입니다` : '이며 현재 무소속입니다'}. ${s.p.born}년생 ${C.natName(p.nat)} 국적이며 ${p.foot === 'R' ? '오른발' : '왼발'}을 주로 씁니다. ${r.label} 시즌 ${r.lgName || '모든 대회'}에서 ${t.apps}경기 ${t.goals}골 ${t.assists}도움${t.rated ? `, 평균 평점 ${C.avgRating(t).toFixed(2)}` : ''}을 기록했습니다.`;
+  const tx = `${C.jo(p.name, '은', '는')} ${p.age}세 ${C.POSKO[p.pos]}${c ? `로 ${c.name} 소속입니다` : '이며 현재 무소속입니다'}. ${s.p.born}년생 ${C.natName(p.nat)} 국적이며 ${p.foot === 'R' ? '오른발' : '왼발'}을 주로 씁니다. ${r.label} 시즌 ${r.lgName || '모든 대회'}에서 ${t.apps}경기 ${t.goals}골 ${t.assists}도움${t.rated ? `, 평균 평점 ${C.avgRating(t).toFixed(2)}` : ''}을 기록했습니다.`;
   return h('div', { class: 'sec' }, h('h3', { style: { justifyContent: 'center' } }, 'About'), h('div', { class: 'in', style: { fontSize: '13px' } }, tx));
 }
 

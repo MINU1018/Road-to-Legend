@@ -159,6 +159,7 @@ async function lgRound(S, LS, d, hooks) {
       ga = home ? rec.gf : rec.ga; gb = home ? rec.ga : rec.gf; u = uArg(S, home ? 0 : 1, rec);
     } else [ga, gb] = C.quickMatch(C.mstr(w, a), C.mstr(w, b), 1);
     addRes(LS.tb, a, b, ga, gb);
+    C.MD.ctx = { w, d, kind: 'lg' };
     const res = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
     addAgg(h.agg, ai, res.P[0]); addAgg(h.agg, bi, res.P[1]);
     h.s.push(`${C.MD.b62(ai)}.${C.MD.b62(bi)}.${ga}.${gb}`); h.e.push(res.ev); h.l.push(keepLn ? res.ln : ''); h.d.push(d); h.r.push(LS.ri);
@@ -260,8 +261,12 @@ function lgFinalize(S, LS) {
 function nationEnd(S, nat, sy) {
   const w = S.w, lgs = Object.values(w.lg).filter(l => l.nation === nat), tables = {};
   for (const l of lgs) tables[l.id] = w.cal.lg[l.id].fin;
+  const n0 = (w.poHist || []).length;
   const moves = C.applyPromotion(w, tables);
   for (const id in moves) resAdd(w, id, moves[id]);
+  // 승강 플레이오프 뉴스
+  if (C.wn) for (const r of (w.poHist || []).slice(n0)) { const f = r.f; if (!f) continue; const nm = id => (w.clubs[id] || {}).name || id, sc = f.s.map(x => x.join('-')).join(' / ');
+    C.wn.push(S, { c: 'champ', imp: DRAWNAT.has(nat) ? 2 : 1, h: r.kind === 'p4' ? `${nm(f.w)}, 플레이오프 끝에 ${r.n} 승격` : f.w === f.a ? `${nm(f.a)}, 승강 플레이오프 승리… ${r.n} 승격` : `${nm(f.b)}, 승강 플레이오프에서 ${r.n} 잔류`, s: `${r.kind === 'p4' ? '플레이오프 결승' : '승강 플레이오프'} ${nm(f.a)} vs ${nm(f.b)} · ${sc}`, cl: [f.a, f.b] }); }
   if (S.ss && S.ss.on && moves[S.ss.club] != null) S.ss.promo = moves[S.ss.club] > 0 ? 1 : -1;
   for (const l of lgs) lgCreate(w, l, sy + 1);
   cupCreate(w, nat, 'cup', sy + 1); cupCreate(w, nat, 'lcup', sy + 1);
@@ -302,6 +307,7 @@ async function cupDay(S, st, d, hooks) {
     const res = st.res[st.res.length - 1];
     for (const m of res.m) {
       const [a, b, ga, gb, pw] = m, isU = u && a === u.a && b === u.b;
+      C.MD.ctx = { w, d, kind: 'cup' };
       const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, isU ? uArg(S, a === me ? 0 : 1, urec) : null, { cup: true });
       h.rows.push([rd.n, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
       addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -343,7 +349,7 @@ C.CONT_CY = CONT_CY;
 const DRAWNAT = new Set(['ENG', 'ESP', 'GER', 'ITA', 'FRA', 'POR', 'NED', 'BEL', 'TUR', 'SCO', 'BRA', 'ARG', 'USA', 'KOR', 'JPN', 'SAU', 'MEX']);
 // 추첨 뉴스 (팔로우한 대회면 뉴스 탭에 나온다). 누르면 추첨 연출
 function drawNews(S, st, cur, d) {
-  if (!cur || cur.nw) return; cur.nw = 1;
+  if (!cur || cur.nw || cur.mode === 'seed') return; cur.nw = 1;
   const w = S.w; if (!C.wn || !cur.pairs.length) return;
   // 뉴스는 본선(○○강) 추첨만, 주요 리그 나라와 팔로우한 리그의 나라만 (추첨 기록·달력 표시는 모든 컵)
   const fl = ((S.follow && S.follow.lg) || []).map(id => (w.lg[id] || {}).nation);
@@ -352,7 +358,7 @@ function drawNews(S, st, cur, d) {
   const sc = p => C.mstr(w, p[0]) + C.mstr(w, p[1]) - Math.abs(C.mstr(w, p[0]) - C.mstr(w, p[1])) * .6;
   const big = cur.pairs.slice().sort((a, b) => sc(b) - sc(a))[0];
   const nm = id => (w.clubs[id] || {}).name || id;
-  C.wn.push(S, { c: 'draw', d, h: `${st.n} ${cur.n} 대진 추첨`, s: `${cur.pairs.length}경기${cur.mode === 'two' ? ' · 상·하위 리그 포트 분리, 하위 리그 팀 홈' : ' · 오픈 추첨'} · 빅매치 ${nm(big[0])} vs ${nm(big[1])}`, comp: st.nat + ':' + st.kind, cl: big.slice(), imp: cur.pairs.length <= 4 ? 2 : 1, drw: { k: 'C', key: st.k, ri: cur.ri } });
+  C.wn.push(S, { c: 'draw', d, h: `${st.n} ${cur.n} 대진 추첨`, s: `${cur.pairs.length}경기${cur.mode === 'two' ? ' · 1포트 상위 리그·2포트 하위 리그, 하위 리그 팀 홈' : ''} · 빅매치 ${nm(big[0])} vs ${nm(big[1])}`, comp: st.nat + ':' + st.kind, cl: big.slice(), imp: cur.pairs.length <= 4 ? 2 : 1, drw: { k: 'C', key: st.k, ri: cur.ri } });
 }
 // UEFA 리그 페이즈 추첨 (실제 방식): 36팀을 전력순 4포트(9팀). 각 팀은 포트마다 2팀(홈 1·원정 1)씩 8경기.
 // 같은 나라끼리는 만나지 않고, 한 나라 팀은 최대 2팀까지만 상대한다. 그다음 8경기일에 나눠 배치 (경기일마다 모든 팀이 한 경기)
@@ -476,6 +482,7 @@ async function contUser(S, cs, oid, home, stage, imp, d, hooks) {
 }
 function contRow(S, cs, h, stage, a, b, ga, gb, u, pw, d) {
   const w = S.w;
+  C.MD.ctx = { w, d, kind: 'cont' };
   const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
   h.rows.push([stage, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
   addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -490,9 +497,37 @@ function contPhaseEnd(S, cs) {
   const me = meClub(S);
   if (me && cs.teams.includes(me) && !sorted.slice(0, def.playoff ? 24 : def.ko).includes(me)) { cs.userOut = true; S.ss.contOut = '리그 페이즈'; }
 }
+// 토너먼트 추첨. UEFA 리그 페이즈 대회는 실제 방식 그대로:
+//  - 녹아웃 플레이오프: 9~16위(시드) vs 17~24위. 9·10위는 23·24위, 11·12위는 21·22위, 13·14위는 19·20위, 15·16위는 17·18위 가운데 하나와 (추첨). 시드 팀이 2차전 홈
+//  - 16강: 1·2위는 15~18위 쪽 플레이오프 승자, 3·4위는 13·14/19·20위 쪽, 5·6위는 11·12/21·22위 쪽, 7·8위는 9·10/23·24위 쪽 승자와 (추첨). 상위 팀이 2차전 홈
+//  - 8강부터는 16강 추첨 때 정해진 대진표를 따른다 (1·2위가 서로 다른 쪽, 결승에서야 만난다)
+// 그 밖의 대회(리그 페이즈 없는 대회)는 라운드마다 공개 추첨
 function contDraw(cs, ri) {
   if (cs.ties[ri]) return;
   const def = C.COMPS[cs.k];
+  const r = C.seeded('kd|' + cs.key + '|' + ri), coin = () => r() < .5;
+  if (def.phase && def.playoff && cs.phaseRank) {
+    const rk = cs.phaseRank;
+    if (ri === 0) { // 플레이오프: 시드 쌍 (9,10)↔(23,24) …
+      const T = [];
+      for (let k = 0; k < 4; k++) { const sd = [rk[8 + 2 * k], rk[9 + 2 * k]], un = [rk[22 - 2 * k], rk[23 - 2 * k]]; if (coin()) un.reverse(); T.push([un[0], sd[0]], [un[1], sd[1]]); }
+      cs.ties[0] = T.filter(t => t[0] && t[1]); cs.bk = 1; return;
+    }
+    if (ri === 1) { // 16강: 상위 쌍마다 플레이오프 쌍 승자
+      const po = cs.ties[0] || [], winOf = i => po[i] && po[i].win;
+      // 플레이오프 묶음: k=0 → 9·10 vs 23·24 (ties 0,1), k=3 → 15·16 vs 17·18 (ties 6,7)
+      const grp = k => [winOf(2 * k), winOf(2 * k + 1)];
+      const T = [];
+      for (let k = 0; k < 4; k++) { const top = [rk[2 * k], rk[2 * k + 1]], g = grp(3 - k); if (coin()) g.reverse(); T.push([g[0], top[0]], [g[1], top[1]]); }
+      // 대진표: 위쪽 = 1(또는 2)위 쪽, 7·8위 쪽, 3·4위 쪽, 5·6위 쪽 — 1·2위, 3·4위… 는 서로 다른 쪽
+      const side = [coin(), coin(), coin(), coin()];
+      const pick = (k, top) => T[2 * k + (side[k] === top ? 0 : 1)];
+      cs.ties[1] = [pick(0, true), pick(3, true), pick(1, true), pick(2, true), pick(0, false), pick(3, false), pick(1, false), pick(2, false)].filter(t => t && t[0] && t[1]);
+      cs.bk = 1; return;
+    }
+    if (cs.bk && cs.ties[ri - 1]) { const P = cs.ties[ri - 1]; cs.ties[ri] = []; for (let i = 0; i + 1 < P.length; i += 2) cs.ties[ri].push([P[i].win, P[i + 1].win]); return; }
+  }
+  if (def.phase && !def.playoff && cs.phaseRank && ri > 0 && cs.bk) { const P = cs.ties[ri - 1]; cs.ties[ri] = []; for (let i = 0; i + 1 < P.length; i += 2) cs.ties[ri].push([P[i].win, P[i + 1].win]); return; }
   let pool;
   if (def.phase === 0 && ri === 0) pool = cs.teams.slice(0, def.ko);
   else if (ri === 0 && def.playoff) pool = cs.po.slice();
@@ -503,7 +538,7 @@ function contDraw(cs, ri) {
 }
 async function contDay(S, cs, d, hooks) {
   const w = S.w, h = H(w, cs.key); if (!h.rows) Object.assign(h, { rows: [], agg: {} });
-  if (cs.pots && !cs.drawNw && d >= cs.drawD) { cs.drawNw = 1; if (C.wn) { const top = cs.pots[0].slice(0, 2).map(id => (w.clubs[id] || {}).name).join('·'); C.wn.push(S, { c: 'draw', d, h: `${cs.name} 리그 페이즈 추첨`, s: `36팀 · ${cs.pots.length}포트 · 포트마다 ${cs.pots.length === 4 ? '2팀(홈·원정 1경기씩)' : '1팀'} · 1포트 ${top} 등`, comp: cs.k, cl: cs.pots[0].slice(0, 2), imp: C.COMPS[cs.k].tier === 1 ? 2 : 1, drw: { k: 'E', key: cs.key, ri: -1 } }); } }
+  if (cs.pots && !cs.drawNw && d >= cs.drawD) { cs.drawNw = 1; if (C.wn) { const top = cs.pots[0].slice(0, 2).map(id => (w.clubs[id] || {}).name).join('·'); C.wn.push(S, { c: 'draw', d, h: `${cs.name} 리그 페이즈 추첨`, s: `36개 팀 · 1~${cs.pots.length}포트 · 포트마다 ${cs.pots.length === 4 ? '두 팀(홈·원정 한 경기씩)' : '한 팀'}과 대결 · 1포트 ${top} 등`, comp: cs.k, cl: cs.pots[0].slice(0, 2), imp: C.COMPS[cs.k].tier === 1 ? 2 : 1, drw: { k: 'E', key: cs.key, ri: -1 } }); } }
   const ss = S.ss, me = ss && ss.noCont ? null : meClub(S);
   while (cs.di < cs.dates.length && cs.dates[cs.di] <= d) {
     const i = cs.di++;
@@ -560,8 +595,8 @@ async function contDay(S, cs, d, hooks) {
     const prevDone = ri > 0 && !!(cs.ties[ri - 1] && cs.ties[ri - 1].length && cs.ties[ri - 1].every(t => t.win));
     const ready = def.phase === 0 ? (ri === 0 || prevDone) : ri === 0 ? !!cs.phaseDone : !!cs.phaseDone && prevDone;
     if (!ready) break;
-    contDraw(cs, ri); (cs.tdraw = cs.tdraw || {})[ri] = d;
-    if (C.wn && cs.ties[ri].length) { const rd = cs.rounds[ri]; C.wn.push(S, { c: 'draw', d, h: `${cs.name} ${rd[2]} 대진 추첨`, s: cs.ties[ri].slice(0, 3).map(t => `${(w.clubs[t[0]] || {}).short || ''} vs ${(w.clubs[t[1]] || {}).short || ''}`).join(' · ') + (cs.ties[ri].length > 3 ? ' 외' : ''), comp: cs.k, cl: cs.ties[ri][0].slice(), imp: C.COMPS[cs.k].tier === 1 ? 2 : 1, drw: { k: 'E', key: cs.key, ri } }); }
+    contDraw(cs, ri); if (!(cs.bk && ri >= 2)) (cs.tdraw = cs.tdraw || {})[ri] = d;
+    if (C.wn && cs.ties[ri].length) { const rd = cs.rounds[ri]; if (cs.bk && ri >= 2) break; C.wn.push(S, { c: 'draw', d, h: `${cs.name} ${rd[2]} 대진 추첨`, s: cs.ties[ri].slice(0, 3).map(t => `${(w.clubs[t[0]] || {}).short || ''} vs ${(w.clubs[t[1]] || {}).short || ''}`).join(' · ') + (cs.ties[ri].length > 3 ? ' 외' : ''), comp: cs.k, cl: cs.ties[ri][0].slice(), imp: C.COMPS[cs.k].tier === 1 ? 2 : 1, drw: { k: 'E', key: cs.key, ri } }); }
     break;
   }
   if (cs.di >= cs.dates.length && !cs.finalized) contFinalize(S, cs);
@@ -603,7 +638,18 @@ function intlCreate(S, key, y) {
   field = field.slice(0, size);
   const ng = size / 4, sorted = field.slice().sort((a, b) => strengths[b] - strengths[a]);
   const groups = Array.from({ length: ng }, (_, i) => ({ n: String.fromCharCode(65 + i), t: [], m: [] }));
-  for (let pot = 0; pot < 4; pot++) { const p = shuffle(sorted.slice(pot * ng, pot * ng + ng)); p.forEach((n, i) => groups[i].t.push(n)); }
+  // 실제 추첨 방식: 전력(랭킹) 순 1~4포트, 포트마다 한 팀씩. 월드컵은 같은 대륙 연맹 팀이 한 조에 둘 이상 못 들어간다 (UEFA만 최대 2팀)
+  const okIn = (g, n) => key !== 'WC' || g.t.filter(x => conf(x) === conf(n)).length < (conf(n) === 'UEFA' ? 2 : 1);
+  for (let pot = 0; pot < 4; pot++) {
+    const base = sorted.slice(pot * ng, pot * ng + ng);
+    let done = false;
+    for (let tr = 0; tr < 60 && !done; tr++) {
+      const p = shuffle(base.slice()), free = groups.map((g, i) => i); const put = [];
+      done = true;
+      for (const n of p) { const cand = free.filter(i => okIn(groups[i], n)); if (!cand.length) { done = false; break; } const gi = cand[Math.floor(R() * cand.length)]; free.splice(free.indexOf(gi), 1); put.push([gi, n]); }
+      if (done || tr === 59) { if (!done) { const p2 = shuffle(base.slice()); p2.forEach((n, i) => groups[i].t.push(n)); } else put.forEach(([gi, n]) => groups[gi].t.push(n)); done = true; }
+    }
+  }
   const d0 = day(y, TDATES[key][0], TDATES[key][1]);
   const PAIRS = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
   const fx = [];
@@ -968,6 +1014,7 @@ function noLeagueClubs(S) {
 }
 function rollover(S) {
   const w = S.w, lb = C.wLabel(w.year);
+  w.ycnt = {}; // 리그 경고 누적은 시즌마다 새로
   noLeagueClubs(S);
   // 발롱도르 (지난 1년: 리그·컵·대륙 대회·여름 국제 대회)
   let bd = null; try { bd = C.ballonDor(S); } catch (e) { console.error('ballon', e); }
@@ -976,6 +1023,8 @@ function rollover(S) {
   // 시상식: 9월 넷째 주 월요일. 그때까지 순위는 비공개 (후보 30인만 공개)
   if (bd) w.cer = { y: w.year + 1, d: C.cerDay(w.year + 1), rev: 0, seen: 0, me: S.mode !== 'world' ? { rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank, gs0: bd.gs[0] || null, gk: !!bd.isGK, xi: bd.wxiMe ? 1 : 0, label: S.ss && S.ss.label } : null };
   if (C.wn) try { C.wn.yearEnd(S, bd); } catch (e) { console.error(e); }
+  // 명예의 전당: 이번 해에 은퇴한 선수 심사
+  try { if (C.hofScan) C.hofScan(S); } catch (e) { console.error('hof', e); }
   // 관전 모드 시즌 요약
   const A = w.arch && w.arch[lb];
   if (A) {
@@ -1027,6 +1076,7 @@ function newYear(S, y) {
 const INJW = .02;
 function injTick(S, d) {
   const w = S.w, mon1 = ymd(d)[2] <= 7;
+  if (w.lastPl && ymd(d)[2] === 1) for (const k in w.lastPl) if (d - w.lastPl[k] > 8) delete w.lastPl[k]; // 피로 기록은 최근 것만
   for (const id in w.clubs) {
     const c = w.clubs[id]; if (c.lite || !c.sq || !c.sq.length) continue;
     if (mon1) c.fm = clamp((c.fm || 0) * .85 + N(0, .38), -2.6, 2.6);
@@ -1036,7 +1086,9 @@ function injTick(S, d) {
       if (e[14]) { any = 1; continue; }
       if (R() < INJW) { const u = R(), days = u < .6 ? 5 + Math.floor(R() * 16) : u < .91 ? 21 + Math.floor(R() * 40) : 61 + Math.floor(R() * 200); e[14] = d + days; e[17] = days; if (days >= 90) e[15] = 1; ch = 1; any = 1; if (C.wn && e[2] >= 82) C.wn.injury(S, e, c, days, d); }
     }
-    if (ch || any) c.injd = any ? Math.min(0, C.xiStrength(c.sq.filter(e => !e[14])) - c.str) : 0;
+    // 부상자·출전 정지 선수가 빠진 전력 (징계는 대회 범위와 상관없이 다음 경기 전력에 반영)
+    const SU = w.susp || {}, sus = c.sq.some(e => SU[String(e[0])]);
+    if (ch || any || sus || c.injd) c.injd = any || sus ? Math.min(0, C.xiStrength(c.sq.filter(e => !e[14] && !SU[String(e[0])])) - c.str) : 0;
     if (ch) sidesReset([id]);
   }
 }
