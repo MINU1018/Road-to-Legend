@@ -67,7 +67,9 @@ function cupDates(nat, kind, sy, T) {
 // ---------- 상태 ----------
 // w.cal = { d(오늘), lg{리그 id: 시즌}, cup{키: 컵}, cont{키: 대회}, intl{키: 대회}, ix{날짜: [키]}, tq[이적 대기], limbo{선수 id: 명단 항목}, resAdj{} }
 // w.cal.h = 무거운 진행 데이터(경기 기록·선수 집계). 저장은 따로 ('calh')
-const H = (w, k) => w.cal.h[k] || (w.cal.h[k] = {});
+// 진행 중 경기 기록: 대회마다 따로 저장하므로, 손댄 대회 키를 C._hd에 모은다 (저장할 때 그 대회만 쓴다)
+C._hd = C._hd || new Set();
+const H = (w, k) => { C._hd.add(k); return w.cal.h[k] || (w.cal.h[k] = {}); };
 const dictOf = w => { const h = w.cal.h; if (!h.D) h.D = { P: [] }; return h.D; };
 C.calDict = w => dictOf(w);
 // 경기용 명단 캐시: 명단이 바뀔 때(이적·나이 듦)만 다시 만든다
@@ -100,7 +102,8 @@ const curStore = w => {
   st._dirty = 1;
   return st;
 };
-const curArch = w => { w.arch = w.arch || {}; const lb = C.wLabel(w.year); return w.arch[lb] || (w.arch[lb] = { y: w.year, lg: {}, cup: {}, lcup: {}, cont: {} }); };
+C._ad = C._ad || new Set(); // 바뀐 시즌 보관 기록 (시즌별로 따로 저장)
+const curArch = w => { w.arch = w.arch || {}; const lb = C.wLabel(w.year); C._ad.add(lb); return w.arch[lb] || (w.arch[lb] = { y: w.year, lg: {}, cup: {}, lcup: {}, cont: {} }); };
 C.calStore = curStore; C.calArch = curArch;
 const resAdd = (w, id, v) => { const r = w.cal.resAdj || (w.cal.resAdj = {}); r[id] = (r[id] || 0) + v; };
 // 내 선수가 뛰는 중인가 (커리어 모드, 시즌 진행 단계)
@@ -113,10 +116,10 @@ function writeC(w, key, agg) {
     if (pid === 'ME' || pid[0] === '~') continue;
     w.ps = w.ps || {};
     let P = w.ps[pid];
-    if (!P) { const f = findE(w, pid); if (!f) continue; const e = f[0]; P = w.ps[pid] = { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' }; }
+    if (!P) { const f = findE(w, pid); if (!f) continue; const e = f[0]; P = w.ps[pid] = { n: C.pName(w, e), nat: e[5], pos: e[1], h: '', c0: [f[1].id, e[7] || ''] }; }
     const a = agg[pid];
     P.c = (P.c || '') + `${yOff}|${key}|${a[1]}|${a[4]}|${a[5]}|${Math.round(a[8] / a[1] * 10)}|${a[3]}|${a[9]}|${a[10] || 0};`;
-    C.psDirty = true;
+    C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   }
 }
 
@@ -192,8 +195,9 @@ function lgLeaders(S, LS, agg) {
 C.calLeaders = lgLeaders;
 // ---------- 베스트 XI (4-3-3) ----------
 // cands: [{ pid, n, club, pos, rt, apps, g, a }]. 점수 = 평균 평점 + 경기당 공격 포인트 보정. 자리마다 맞는 포지션 먼저, 없으면 비슷한 포지션
-const XI = [['GK', ['GK'], []], ['LB', ['LB'], ['CB', 'RB']], ['CB', ['CB'], ['CDM']], ['CB', ['CB'], ['CDM']], ['RB', ['RB'], ['CB', 'LB']],
-  ['CM', ['CM', 'CDM'], ['CAM']], ['CM', ['CM', 'CAM', 'CDM'], []], ['CM', ['CAM', 'CM'], ['CDM']], ['LW', ['LW', 'LM'], ['RW', 'ST', 'CAM']], ['ST', ['ST'], ['LW', 'RW', 'CAM']], ['RW', ['RW', 'RM'], ['LW', 'ST', 'CAM']]];
+// FC27 포지션 이름(DM·AM·LWB·RWB)과 옛 이름(CDM·CAM) 둘 다 받는다
+const XI = [['GK', ['GK'], []], ['LB', ['LB', 'LWB'], ['CB', 'RB', 'RWB']], ['CB', ['CB'], ['DM', 'CDM']], ['CB', ['CB'], ['DM', 'CDM']], ['RB', ['RB', 'RWB'], ['CB', 'LB', 'LWB']],
+  ['CM', ['CM', 'DM', 'CDM'], ['AM', 'CAM']], ['CM', ['CM', 'AM', 'CAM', 'DM', 'CDM'], []], ['CM', ['AM', 'CAM', 'CM'], ['DM', 'CDM']], ['LW', ['LW', 'LM'], ['RW', 'ST', 'AM', 'CAM']], ['ST', ['ST', 'CF'], ['LW', 'RW', 'AM', 'CAM']], ['RW', ['RW', 'RM'], ['LW', 'ST', 'AM', 'CAM']]];
 C.pickXI = (cands, scf, maxClub) => {
   const sc = scf || (x => x.rt + Math.min(.6, (x.g + x.a * .7) / Math.max(1, x.apps) * .45) + (x.pos === 'GK' ? .15 : 0));
   const pool = cands.slice().sort((a, b) => sc(b) - sc(a)), used = new Set(), out = XI.map(() => null);
@@ -223,8 +227,8 @@ function lgFinalize(S, LS) {
       const apps = x ? x[1] : 0;
       addApps(e, yOff, apps, x ? x[8] : 0);
       if (!apps && ((lg.tier || 1) >= 3 || (e[2] < 50 && !w.ps[pid]))) continue;
-      C.psDirty = true;
-      const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
+      C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
+      const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '', c0: [c.id, e[7] || ''] };
       if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
       Pp.pos = e[1];
       Pp.h += [yOff, cx(w, id), apps, x ? x[4] : 0, x ? x[5] : 0, apps ? Math.round(x[8] / apps * 10) : 0, e[2], e[3], e[7] ? 1 : 0, x ? x[3] : 0, x ? x[9] : 0, x ? x[10] || 0 : 0].join(',') + ';';
@@ -235,11 +239,11 @@ function lgFinalize(S, LS) {
     if (written.has(pid) || pid === 'ME' || pid[0] === '~') continue;
     const x = agg[pid], f = findE(w, pid), e = f && f[0];
     if (!e && !w.ps[pid]) continue;
-    const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
+    const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '', c0: [f[1].id, e[7] || ''] };
     if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
     Pp.h += [yOff, x[0], x[1], x[4], x[5], x[1] ? Math.round(x[8] / x[1] * 10) : 0, e ? e[2] : '', e ? e[3] : '', 0, x[3], x[9], x[10] || 0].join(',') + ';';
     if (e && f[1].lg !== LS.id) addApps(e, yOff, x[1], x[8]);
-    C.psDirty = true;
+    C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   }
   (w.hist.lg[LS.id] = w.hist.lg[LS.id] || []).push({ y: LS.label, c: rows[0] && rows[0].id });
   if (C.wn) C.wn.lgEnd(S, LS, rows, agg);
@@ -253,7 +257,7 @@ function lgFinalize(S, LS) {
     if (C.news) C.news(S, `${lg.name} ${LS.label} 시즌 종료: ${w.clubs[me].name} ${ss.lgDone.pos}위`, 'league', ss.lgDone.pos === 1);
   }
   LS.done = 1; LS.fin = rows.map(r => ({ id: r.id, p: r.p, pts: r.pts }));
-  delete w.cal.h[LS.k]; w.cal.dirty = 1;
+  delete w.cal.h[LS.k]; C._hd.add(LS.k); w.cal.dirty = 1;
   // 그 나라 리그가 모두 끝나면 승강 → 다음 시즌 일정
   const lgs = Object.values(w.lg).filter(l => l.nation === LS.nat);
   if (lgs.every(l => w.cal.lg[l.id] && w.cal.lg[l.id].done && w.cal.lg[l.id].sy === LS.sy)) nationEnd(S, LS.nat, LS.sy);
@@ -330,7 +334,7 @@ function cupFinalize(S, st) {
     if (st.kind === 'cup') (w.hist.cup[st.nat] = w.hist.cup[st.nat] || []).push({ y: st.label, c: sum.w });
     writeC(w, st.kind + ':' + st.nat, h.agg || {});
   }
-  delete w.cal.cup[st.k]; delete w.cal.h[st.k]; w.cal.dirty = 1;
+  delete w.cal.cup[st.k]; delete w.cal.h[st.k]; C._hd.add(st.k); w.cal.dirty = 1;
 }
 
 // ================= 대륙 대회 =================
@@ -609,7 +613,7 @@ function contFinalize(S, cs) {
   if (C.wn) C.wn.contEnd(S, cs, h);
   if (cs.winner) { (w.hist.cont[cs.k] = w.hist.cont[cs.k] || []).push({ y: cs.label, c: cs.winner }); resAdd(w, cs.winner, C.COMPS[cs.k].tier === 1 ? 1 : .4); }
   writeC(w, 'cont:' + cs.k, h.agg || {});
-  delete w.cal.cont[cs.key]; delete w.cal.h[cs.key]; w.cal.dirty = 1;
+  delete w.cal.cont[cs.key]; delete w.cal.h[cs.key]; C._hd.add(cs.key); w.cal.dirty = 1;
 }
 
 // ================= 국제 대회 =================
@@ -755,7 +759,7 @@ function intlFinalize(S, T) {
     }
   }
   for (const yy in w.intl) if (+yy < T.y - 12) w.intl[yy] = w.intl[yy].map(t => ({ k: t.k, n: t.n, y: t.y, w: t.w, ru: t.ru, ko: t.ko.slice(-1), g: [], slim: 1 }));
-  delete w.cal.intl[T.key]; delete w.cal.h[T.key]; w.cal.dirty = 1;
+  delete w.cal.intl[T.key]; delete w.cal.h[T.key]; C._hd.add(T.key); w.cal.dirty = 1;
 }
 
 // ================= A매치: UEFA 네이션스리그 + 친선전 =================
@@ -931,6 +935,7 @@ function findE(w, pid) {
   return null;
 }
 // 거래는 이적시장이 열릴 때 모두 정하고, 날짜가 오기 전까지는 선수를 원래 자리에 둔다
+const MVK = new Set(['buy', 'free', 'loan', 'lret', 'bu', 'bt', 'rel', 'ret']);
 function applyWindow(S, kind, d0, d1, opt) {
   const w = S.w;
   // opt.late: 게임 시작 때 이미 열려 있는 여름 이적시장 (나이·은퇴 처리 없이 남은 기간 거래만)
@@ -938,6 +943,11 @@ function applyWindow(S, kind, d0, d1, opt) {
   if (kind === 'summer') w.cal.resAdj = {};
   const lbl = opt && opt.lbl ? opt.lbl : kind === 'summer' ? C.wLabel(w.year + 1) : C.wLabel(w.year) + 'w';
   if (C.wn) { C.wn.windowOpen(S, rows); if (kind === "summer" && C.wn.summerStories) try { C.wn.summerStories(S); } catch (e) { console.error(e); } }
+  // 선수별 이동 기록 (경력 화면용): P.mv = '날짜,종류,출발,도착;' — 처음 기록되는 선수는 출발 구단을 시작점(c0)으로
+  { w.ps = w.ps || {};
+    for (const r of rows) { if (!MVK.has(r[3]) || r[0][0] === '~') continue; let P = w.ps[r[0]];
+      if (!P) { const f = findE(w, r[0]); if (!f) continue; const e = f[0]; P = w.ps[r[0]] = { n: C.pName(w, e), nat: e[5], pos: e[1], h: '', c0: [r[1] || '', r[3] === 'lret' ? r[2] : ''] }; }
+      P.mv = (P.mv || '') + `${r[10]},${r[3]},${r[1] || ''},${r[2] || ''},${r[4] || 0};`; C.psDirty = true; C.psGen = (C.psGen || 0) + 1; } }
   w.txPending = w.txPending || {}; w.txPending[lbl] = rows; w.txKeys = (w.txKeys || []).filter(x => x !== lbl).concat(lbl);
   while (w.txKeys.length > 40) (w.txDrop = w.txDrop || []).push(w.txKeys.shift());
   // 선수 위치 지도 (거래 후)
@@ -1004,8 +1014,8 @@ function noLeagueClubs(S) {
     for (const e of c.sq) {
       const pid = String(e[0]), x = agg[pid]; if (e[2] < 50 && !w.ps[pid] && !x) continue;
       const apps = x ? x[1] : 0; e[11] = apps; e[12] = apps ? Math.round(x[8] / apps * 10) : 0;
-      C.psDirty = true;
-      const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '' };
+      C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
+      const Pp = w.ps[pid] = w.ps[pid] || { n: C.pName(w, e), nat: e[5], pos: e[1], h: '', c0: [c.id, e[7] || ''] };
       if (Array.isArray(Pp.h)) Pp.h = Pp.h.map(z => z.join(',')).join(';') + (Pp.h.length ? ';' : '');
       Pp.pos = e[1];
       Pp.h += [yOff, cx(w, id), apps, x ? x[4] : 0, x ? x[5] : 0, apps ? Math.round(x[8] / apps * 10) : 0, e[2], e[3], e[7] ? 1 : 0, x ? x[3] : 0, x ? x[9] : 0, x ? x[10] || 0 : 0].join(',') + ';';

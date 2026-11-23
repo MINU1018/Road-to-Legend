@@ -18,7 +18,7 @@ function attrOf(id, role) {
   if (/^\d+$/.test(String(id)) && F && F.P[+id]) {
     const p = F.P[+id], s = p[13] || '';
     const v = k => { const c = s.charCodeAt(SI[k]); return c ? c - 32 : 60; };
-    a = { pace: v('pace'), accel: v('accel'), stam: v('stam'), fin: v('fin'), head: v('head'), cross: v('cross'), pass: (v('shortPass') + v('vision')) / 2, longPass: v('longPass'), drib: v('drib'), tack: (v('stand') + v('slide')) / 2, intc: v('intc'), str: v('str'), jump: v('jump'), aggr: v('aggr'), gk: (v('gkDiv') + v('gkRef') + v('gkPos')) / 3, foot: p[6] === 'L' ? 'L' : 'R', weak: p[7] || 3 };
+    a = { pace: v('pace'), accel: v('accel'), stam: v('stam'), fin: v('fin'), head: v('head'), cross: v('cross'), pass: (v('shortPass') + v('vision')) / 2, longPass: v('longPass'), drib: v('drib'), tack: (v('stand') + v('slide')) / 2, intc: v('intc'), str: v('str'), jump: v('jump'), aggr: v('aggr'), gk: (v('gkDiv') + v('gkRef') + v('gkPos')) / 3, lsh: (v('longSh') + v('shotPow')) / 2, foot: p[6] === 'L' ? 'L' : 'R', weak: p[7] || 3 };
   } else {
     const r = C.seeded('pa|' + id), d = DEF_ATTR[role] || [70, 72], n = () => (r() + r() + r() - 1.5) * 8;
     a = { pace: clamp(d[0] + n(), 40, 95), accel: clamp(d[0] + n(), 40, 95), stam: clamp(d[1] + n(), 45, 95), fin: 60 + n(), head: 60 + n(), cross: 60 + n(), pass: 65 + n(), longPass: 62 + n(), drib: 62 + n(), tack: 60 + n(), intc: 60 + n(), str: 66 + n(), jump: 66 + n(), aggr: 62 + n(), gk: role === 'GK' ? 70 + n() : 15, foot: r() < .22 ? 'L' : 'R', weak: 2 + ((r() * 3) | 0) };
@@ -90,7 +90,11 @@ function build(o) {
     const hdrP = setP ? ({ CB: .7, ST: .4, DM: .36 }[role] || .24) : ({ ST: .14, CB: .45, FB: .08 }[role] || .06);
     const head = r() < hdrP * (A.head > 75 ? 1.2 : 1);
     sh.type = head ? '헤더' : (r() < .8 - (A.weak - 3) * .04 ? (A.foot === 'L' ? '왼발' : '오른발') : (A.foot === 'L' ? '오른발' : '왼발'));
-    const inP = head ? 1 : ({ ST: .8, W: .58, AM: .48, CM: .42, DM: .3, FB: .45, CB: .86 }[role] || .5) + (goal ? .25 : 0);
+    // 박스 밖 비율 (실제 리그 수준): 골은 전체의 12~15% — 스트라이커 8~10%, 윙어·공격형 미드 18~22%, 중앙 미드 25% 안팎. 중거리 능력이 좋을수록 더
+    const lsh = A.lsh || 65, lb = clamp((lsh - 70) * .006, -.06, .1);
+    const outP = head ? 0 : goal ? clamp(({ ST: .08, W: .16, AM: .2, CM: .22, DM: .24, FB: .13, CB: .05 }[role] || .12) + lb, .02, .38)
+      : clamp(({ ST: .3, W: .48, AM: .55, CM: .6, DM: .66, FB: .55, CB: .22 }[role] || .45) + lb * 1.5, .1, .8);
+    const inP = 1 - outP;
     sh.inBox = r() < inP ? 1 : 0;
     let xg;
     const one = () => sh.inBox ? (head ? lnXg(.075, .75, .02, .55) : lnXg(.095, .95, .02, .82)) : lnXg(.032, .5, .01, .11);

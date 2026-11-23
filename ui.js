@@ -74,7 +74,9 @@ U.getTx = async function (label) {
 };
 U.txCached = label => { const v = (S && S.w && S.w.txPending && S.w.txPending[label]) || txCache[label] || null; return v ? withAdd(label, v) : null; };
 U.withTx = function (label, onReady) { const v = U.txCached(label); if (v) return v; U._txL = U._txL || {}; if (!U._txL[label]) { U._txL[label] = 1; U.getTx(label).then(x => { delete U._txL[label]; if (x && onReady) onReady(); }); } return null; };
-async function purgeMx(o) { const keys = (o && o.w && o.w.mxKeys) || []; for (const lb of keys) { delete mxCache[lb]; await kvDel('mx:' + lb); } for (const lb of (o && o.w && o.w.txKeys) || []) { delete txCache[lb]; await kvDel('tx:' + lb); } await kvDel('calh'); }
+async function purgeMx(o) { const keys = (o && o.w && o.w.mxKeys) || []; for (const lb of keys) { delete mxCache[lb]; await kvDel('mx:' + lb); } for (const lb of (o && o.w && o.w.txKeys) || []) { delete txCache[lb]; await kvDel('tx:' + lb); } await kvDel('calh');
+  const ck = await kvGet('chk'); if (ck) for (const k of ck.split('|')) await kvDel('ch:' + k); await kvDel('chk'); chKeys = null; chCache.clear();
+  const ak = await kvGet('ark'); if (ak) for (const k of ak.split('|')) await kvDel('ar:' + k); await kvDel('ark'); }
 U.getMx = async function (label) {
   if (!S || !S.w || !(S.w.mxKeys || []).includes(label)) return null;
   if (S.w.mxPending && S.w.mxPending[label]) return S.w.mxPending[label];
@@ -84,9 +86,35 @@ U.getMx = async function (label) {
 };
 U.mxCached = label => (S && S.w && S.w.mxPending && S.w.mxPending[label]) || mxCache[label] || null;
 // 세계 달력의 진행 중 경기 기록(무거운 부분)은 'calh'에 따로
-async function flushCal(o) { const w = o && o.w; if (!w || !w.cal || !w.cal.h || !w.cal.dirty) return; w.cal.dirty = 0; try { await kvSet('calh', JSON.stringify(w.cal.h)); } catch (e) { console.error('calh save', e); } }
-U.save = function () { if (!S || S.viewOnly) return; clearTimeout(saveT); saveT = setTimeout(async () => { await flushMx(S); const t = GM.serialize(S); if (!t) return; await flushCal(S); const ok = await kvSet('save', t); hasSave = ok; if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } }, 300); };
-U.saveNow = async function () { if (!S || S.viewOnly) return; clearTimeout(saveT); await flushMx(S); const t = GM.serialize(S); if (!t) return; await flushCal(S); hasSave = await kvSet('save', t); if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } };
+// 진행 중 경기 기록: 대회별 키('ch:<대회>')로 나눠 바뀐 대회만 쓴다 (매일 전체 12MB를 쓰던 것을 수백 KB로)
+let chKeys = null; const chCache = new Map();
+// 대회마다 문자열로 만들어 지난번 저장과 비교하고, 달라진 대회만 쓴다 (어느 코드가 바꿨는지 따로 추적하지 않아도 안전)
+async function flushCal(o, all) { const w = o && o.w; if (!w || !w.cal || !w.cal.h) return;
+  if (all) chCache.clear();
+  const snap = [];
+  for (const k in w.cal.h) { const t = JSON.stringify(w.cal.h[k]); if (chCache.get(k) !== t) snap.push([k, t]); }
+  const gone = [...chCache.keys()].filter(k => !(k in w.cal.h));
+  if (!snap.length && !gone.length && !all) return;
+  w.cal.dirty = 0; if (C._hd) C._hd.clear();
+  try { for (const [k, t] of snap) { await kvSet('ch:' + k, t); chCache.set(k, t); }
+    for (const k of gone) { await kvDel('ch:' + k); chCache.delete(k); }
+    const ks = Object.keys(w.cal.h).join('|'); if (ks !== chKeys) { chKeys = ks; await kvSet('chk', ks); }
+    await kvDel('calh'); } catch (e) { console.error('calh save', e); } }
+// 시즌 보관 기록: 시즌별 키('ar:<시즌>'), 바뀐 시즌만
+async function flushArch(o, all) { const w = o && o.w; if (!w || !w.arch) return; const ad = C._ad || new Set();
+  if (all) for (const k in w.arch) ad.add(k);
+  if (!ad.size) return;
+  const keys = [...ad]; ad.clear(); const snap = keys.filter(k => w.arch[k]).map(k => [k, JSON.stringify(w.arch[k])]);
+  try { for (const [k, t] of snap) await kvSet('ar:' + k, t); await kvSet('ark', Object.keys(w.arch).join('|')); } catch (e) { for (const k of keys) ad.add(k); console.error('arch save', e); } }
+// 저장에서 따로 떼어 둔 부분 다시 붙이기 (진행 중 경기 기록 · 선수 기록 · 시즌 보관 기록)
+async function loadSide(S) {
+  if (S.w.cal && !S.w.cal.h) { const ks = await kvGet('chk'); if (ks != null) { S.w.cal.h = {}; chKeys = ks; chCache.clear(); for (const k of ks.split('|').filter(Boolean)) { const t = await kvGet('ch:' + k); if (t) { S.w.cal.h[k] = GM.parse(t) || {}; chCache.set(k, t); } } } else { const ht = await kvGet('calh'); S.w.cal.h = ht ? (GM.parse(ht) || {}) : {}; if (C._hd) for (const k in S.w.cal.h) C._hd.add(k); } }
+  if (!S.w.ps) { const pt = await kvGet('ps'); S.w.ps = pt ? (GM.parse(pt) || {}) : {}; }
+  if (S.w.arch && C._ad && (await kvGet('ark')) == null) for (const k in S.w.arch) C._ad.add(k); // 예전 저장(보관 기록이 저장 안에 있던 형식): 다음 저장 때 시즌별로 옮긴다
+  if (!S.w.arch) { const ks = await kvGet('ark'); if (ks != null) { S.w.arch = {}; for (const k of ks.split('|').filter(Boolean)) { const t = await kvGet('ar:' + k); if (t) S.w.arch[k] = GM.parse(t); } } }
+}
+U.save = function () { if (!S || S.viewOnly) return; clearTimeout(saveT); saveT = setTimeout(async () => { await flushMx(S); const t = GM.serialize(S); if (!t) return; await flushCal(S); await flushArch(S); const ok = await kvSet('save', t); hasSave = ok; if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } }, 300); };
+U.saveNow = async function () { if (!S || S.viewOnly) return; clearTimeout(saveT); await flushMx(S); const t = GM.serialize(S); if (!t) return; await flushCal(S); await flushArch(S); hasSave = await kvSet('save', t); if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } };
 
 // ---------- 이펙트 ----------
 function countUp(el, a, b, dur = 900, fmt = v => Math.round(v)) {
@@ -326,7 +354,7 @@ U.stay = function () {
 };
 U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; U._keepY = null; render(); scrollTo(0, 0); };
 U.back = () => U.go(prevScr === 'settings' ? 'home' : prevScr);
-U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; o.w.txKeys = []; } repairSave(o); S = o; S.w.ps = S.w.ps || {}; if (S.w.cal) S.w.cal.dirty = 1; await flushCal(S); await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
+U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; o.w.txKeys = []; } repairSave(o); S = o; S.w.ps = S.w.ps || {}; if (S.w.cal) S.w.cal.dirty = 1; chKeys = null; await flushCal(S, true); await flushArch(S, true); await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
 U.clearSave = async () => { await purgeMx(S); S = null; await kvDel('save'); await kvDel('ps'); hasSave = false; U.go('home'); };
 U.setTab = t => { tab = t; U._keepY = null; render(); scrollTo(0, 0); };
 U.curTab = () => tab;
@@ -360,7 +388,7 @@ U.boot = async function () {
   await U.loadSettings();
   if (C.logos && C.logos.probe) C.logos.probe(() => render());
   const t = await kvGet('save');
-  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; if (S.w.cal && !S.w.cal.h) { const ht = await kvGet('calh'); S.w.cal.h = ht ? (GM.parse(ht) || {}) : {}; } if (!S.w.ps) { const pt = await kvGet('ps'); S.w.ps = pt ? (GM.parse(pt) || {}) : {}; } repairSave(S); } }
+  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; await loadSide(S); repairSave(S); } }
   U.hof = GM.parse(await kvGet('hof') || '[]') || [];
   // 이전 버전에서 은퇴한 현재 커리어는 상세 기록 보관을 채워 둔다
   if (S && S.phase === 'retired' && U.hof[0] && !U.hof[0].id && U.hof[0].name === S.p.name) { const id = 'c' + Date.now(); await archiveCareer(id); U.hof[0].id = id; await kvSet('hof', JSON.stringify(U.hof)); }
@@ -412,7 +440,7 @@ U.openArchive = async function (id) {
   repairSave(o); o.viewOnly = true; S = o; st.viewIdx = null; U.go('game', 'records');
 };
 U.exportArchive = async function (id) { const o = await loadArchive(id); if (!o) { toast('이 선수의 상세 기록은 보관되어 있지 않습니다.'); return; } U.exportSave(o); };
-U.closeArchive = async function () { const t = await kvGet('save'); const o = t ? GM.parse(t) : null; S = o && o.w && o.p ? o : null; if (S) { if (S.w.cal && !S.w.cal.h) { const ht = await kvGet('calh'); S.w.cal.h = ht ? (GM.parse(ht) || {}) : {}; } if (!S.w.ps) { const pt = await kvGet('ps'); S.w.ps = pt ? (GM.parse(pt) || {}) : {}; } repairSave(S); } U.go('home'); };
+U.closeArchive = async function () { const t = await kvGet('save'); const o = t ? GM.parse(t) : null; S = o && o.w && o.p ? o : null; if (S) { await loadSide(S); repairSave(S); } U.go('home'); };
 function hofBlock() {
   const list = U.hof || [];
   if (!list.length) return null;

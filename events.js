@@ -1000,6 +1000,9 @@ function ballonDor(S) {
     const order = all.map(x => x.me ? 'ME' : x.pid);
     let xi = null;
     for (const n of [45, 70, 110, 1e9]) { const ok = new Set(order.slice(0, n)); xi = C.pickXI(cxi.filter(x => ok.has(x.pid)), sc, 3); if (xi) break; }
+    // 그래도 못 채우면(한 구단에 좋은 선수가 몰린 해 등) 구단당 제한을 풀고, 출전 기준도 낮춘다 — 해마다 빠짐없이 뽑는다
+    if (!xi) xi = C.pickXI(cxi, sc, 4) || C.pickXI(cxi, sc, 0);
+    if (!xi) { const lo = rows.filter(r => r.st.apps >= 10).map(r => ({ pid: r.pid, n: C.pName(w, r.e), club: r.c.id, pos: r.e[1], rt: r.st.rs / r.st.apps, apps: r.st.apps + r.st.napps, g: r.st.g + r.st.ng, a: r.st.a + r.st.na, ovr: r.e[2], lf: lgFOf(r.c), tp: 0 })); xi = C.pickXI(lo, sc, 0); }
     function sc(x) { return x.rt + Math.min(.6, (x.g + x.a * .7) / Math.max(1, x.apps) * .45) + (x.ovr - 82) * .07 + x.tp * .12 - (1 - (x.lf || 1)) * .6 + (x.pos === 'GK' ? .15 : 0); }
     if (xi) { wxi = xi.map(x => [x.n, x.club, +x.rt.toFixed(2), x.pos, x.pid === 'ME' ? '' : x.pid, x.apps, x.g, x.a, x.pid === 'ME' ? 1 : 0]); wxiMe = wxi.some(x => x[8]) ? 1 : 0; (w.wxiHist = w.wxiHist || []).push({ y: w.year + 1, xi: wxi }); }
   }

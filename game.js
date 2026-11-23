@@ -7,7 +7,7 @@ const GM = G.TCG = {};
 
 const evCount = () => { const f = C.cfg.events; return f === 'off' ? 0 : f === 'low' ? (R() < .5 ? 1 : 0) : f === 'high' ? (R() < .5 ? 3 : 2) : (R() < .55 ? 2 : 1); };
 GM.newGame = function (opt) {
-  C.psDirty = true;
+  C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   const dk = C.diffKey(opt.difficulty || 'normal'); C.curDiff = dk;
   const w = C.buildWorld();
   const p = C.newPlayer(Object.assign({ year: w.year }, opt, { difficulty: dk }));
@@ -29,7 +29,7 @@ GM.realList = function () {
 const FCMAP = { pace: 'sprint', positioning: 'attPos', freeKick: 'fkAcc', marking: 'defAware', gkPositioning: 'gkPos' };
 GM.newGameReal = function (idx, diff) {
   const F = G.FC27, P = F.P[idx]; if (!P) return null;
-  C.psDirty = true;
+  C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   const dk = C.diffKey(diff || 'normal'); C.curDiff = dk;
   const w = C.buildWorld();
   const fc = F.clubs[P[4]]; const c = fc && w.clubs[fc[0]];
@@ -345,6 +345,8 @@ GM.serialize = function (S, full) {
   if (o.phase === 'review') o.phase = 'reviewDone';
   // 세계 달력의 진행 중 경기 기록은 따로 저장 ('calh')
   if (o.w && o.w.cal && !full) { o.w = Object.assign({}, o.w); o.w.cal = Object.assign({}, o.w.cal); delete o.w.cal.h; }
+  // 시즌 보관 기록(w.arch)은 시즌별 키('ar:<시즌>')로 따로, 피로 기록(w.lastPl)은 저장하지 않는다
+  if (o.w && !full && (o.w.arch || o.w.lastPl)) { o.w = Object.assign({}, o.w); delete o.w.arch; delete o.w.lastPl; }
   // 선수 기록(용량이 큰 부분)은 따로 저장한다: full=true면 포함 (파일 내보내기용)
   if (o.w && ((o.w.ps && !full) || o.w.mxPending || o.w.mxDrop || o.w.txPending || o.w.txDrop)) { o.w = Object.assign({}, o.w); if (!full) delete o.w.ps; delete o.w.mxPending; delete o.w.mxDrop; delete o.w.txPending; delete o.w.txDrop; delete o.w._tx; } // 경기 상세 기록도 따로 (시즌별 'mx:시즌')
   return JSON.stringify(o);
@@ -361,7 +363,7 @@ GM.saveHof = function (S, sum) {
 };
 // ---------- 관전(시뮬레이션) 모드: 내 선수 없이 세계만 진행 ----------
 GM.newWorld = function (startLg) {
-  C.psDirty = true;
+  C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   const w = C.buildWorld();
   const S = { v: 1, mode: 'world', w, p: { name: '', nat: 'ENG', pos: 'ST', age: 0, a: {}, mods: [], hid: { inj: 1, lon: 1, pot: 0, peak: 27 }, traits: [], money: 0, rep: 0, morale: 60, weak: 1, skill: 1, num: 0 },
     car: { club: null, status: 'none', trust: 50 }, hist: [], flags: {}, phase: 'world', vh: [], trophies: [], awards: [], evLog: [], ws: [], created: Date.now() };

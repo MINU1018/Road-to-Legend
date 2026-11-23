@@ -38,7 +38,7 @@ function locate(w, pid) {
   const lm = w.cal && w.cal.limbo && w.cal.limbo[pid]; if (lm) { const q = (w.cal.tq || []).find(x => x[1] === pid); return { e: lm, c: null, fa: 2, to: q ? q[3] : null, d: q ? q[0] : null }; }
   return null;
 }
-U.locate = locate; U.playerSeasons = (w, P, live) => playerSeasons(w, P, live);
+U.stintPath = (w, P, c, e) => stintPath(w, P, c, e); U.locate = locate; U.playerSeasons = (w, P, live) => playerSeasons(w, P, live);
 function nameLink(n, pid, cls) { return pid ? h('span', { class: 'lnk ' + (cls || ''), onclick: ev => { ev.stopPropagation(); U.openPlayer(pid); } }, n) : h('span', { class: cls || '' }, n); }
 function clubLink(w, id, size = 18) { const c = w.clubs[id]; return h('span', { class: 'cc lnk', onclick: ev => { ev.stopPropagation(); if (c) U.openClub(id); } }, crest(c || null, size), h('span', null, c ? c.name : '해체된 구단')); }
 
@@ -220,6 +220,8 @@ function playerView(s, root, pid) {
     if (c && !c.lite) { const L = path[path.length - 1], ln = !!(e && e[7]); const [yy, mm] = w.cal ? C.ymd(w.cal.d) : [0, 0], y0 = yy === w.year + 1 && mm >= 6 ? curY + 1 : curY;
       if (!L || L.cid !== c.id || !!L.loan !== ln) path.push({ cid: c.id, y0, y1: null, loan: ln ? 1 : 0 }); else L.y1 = null; }
   }
+  // 이동 기록(P.mv)이 있으면 그걸로 경력을 정확히 만든다: 날짜 순 이동 → 구단별 한 칸 (임대 복귀·임대 후 완전 이적 표시)
+  if (P && P.c0) { const pm = stintPath(w, P, c, e); if (pm) path = pm; }
   // 시즌별 전체 기록 (리그 + 국내 컵 + 대륙 대회 + 국가대표 대회). 시즌을 누르면 대회별, 대회를 누르면 경기 목록
   const seasons = playerSeasons(w, P, C.livePlayer ? C.livePlayer(s, pid) : null);
   let blk = null;
@@ -283,6 +285,31 @@ function playerView(s, root, pid) {
   if (U.pfAbout) main.append(U.pfAbout(s, pid, e, c, P, blk));
 }
 
+// ---------- 경력 경로 (이동 기록 기반) ----------
+// 날짜 → 시즌 시작 연도(2000 기준 오프셋)와 겨울 여부
+const seasonOfD = d => { const [y, m] = C.ymd(d); return { y: (m >= 6 ? y : y - 1) - 2000, wi: m <= 3 || m === 12 }; };
+function stintPath(w, P, c, e) {
+  const mv = String(P.mv || '').split(';').filter(Boolean).map(x => { const [d, k, f, t] = x.split(','); return { d: +d, k, f, t }; }).sort((a, b) => a.d - b.d);
+  const H = C.psHist(P), y00 = H.length ? Math.min(...H.map(x => x[0] < 1000 ? x[0] : x[0] - 2000)) : w.year - 2000;
+  const out = []; let cur = P.c0[0] ? { cid: P.c0[0], loan: P.c0[1] ? 1 : 0, y0: y00, w0: false, tag: null } : null; if (cur) out.push(cur);
+  // 여름 이적시장(6~8월)에 끝나면 그 전 시즌까지, 겨울이면 그 시즌 겨울까지
+  const close = d => { if (!cur) return; const so = seasonOfD(d), m = C.ymd(d)[1]; cur.y1 = m >= 6 && m <= 8 ? so.y - 1 : so.y; cur.w1 = so.wi; if (cur.y1 < cur.y0) cur.y1 = cur.y0; };
+  for (const m of mv) {
+    if (m.k === 'ret') { close(m.d); cur.ret = 1; cur = null; continue; }
+    if (m.k === 'rel') { close(m.d); cur = null; continue; }
+    if (cur && m.t === cur.cid) { if (m.k === 'buy' && cur.loan) { cur.loan = 0; cur.tag = '임대 → 완전 이적'; } continue; }
+    close(m.d);
+    const so = seasonOfD(m.d);
+    cur = { cid: m.t, loan: m.k === 'loan' ? 1 : 0, y0: so.y, w0: so.wi, tag: m.k === 'lret' ? '임대 복귀' : m.k === 'bu' ? '1군 승격' : m.k === 'bt' ? '2군' : null };
+    if (cur.cid) out.push(cur); else cur = null;
+  }
+  if (cur) { cur.y1 = null; cur.w1 = false; }
+  // 지금 소속과 다르면(예전 저장 등) 믿지 않는다
+  const last = out[out.length - 1];
+  if (c && !c.lite && (!last || last.cid !== c.id || last.y1 != null)) return null;
+  for (const x of out) { if (x.y1 === undefined) x.y1 = x.y0; x.mv = 1; }
+  return out.length ? out : null;
+}
 // ---------- 구단: 이적 기록 ----------
 const TXK = { bt: ['2군으로 이동', '1군에서 이동'], bu: ['1군 승격', '2군에서 승격'], buy: ['이적', '영입'], free: ['자유계약', '자유계약 영입'], loan: ['임대 보냄', '임대 영입'], lret: ['임대 종료', '임대 복귀'], rel: ['방출', ''], ret: ['은퇴', ''], yth: ['', '유스 승격'], new: ['', '외부 영입'], ext: ['재계약', '재계약'] };
 const txLabels = w => [...new Set((w.txKeys || []).concat(Object.keys(w.arch || {})))].sort().reverse();
@@ -346,6 +373,17 @@ function clubTx(s, root, id) {
   root.append(windowSec(s, id, d.ctx));
 }
 // ---------- 구단: 시즌별 기록 ----------
+// ---------- 시즌 기록 색인 ----------
+const csCache = new Map(); let psIdx = null;
+function psIndex(w) {
+  const gen = C.psGen || 0; if (psIdx && psIdx.w === w && psIdx.gen === gen) return psIdx.by;
+  const by = {};
+  for (const pid in (w.ps || {})) { const h0 = w.ps[pid].h; if (!h0) continue;
+    for (const row of (Array.isArray(h0) ? h0.map(r => r.join(',')) : String(h0).split(';'))) { if (!row) continue; const a = row.indexOf(','), b = row.indexOf(',', a + 1); if (a < 0) continue;
+      let y = +row.slice(0, a); if (y >= 1000) y -= 2000; const cid = C.cidOf(w, isNaN(+row.slice(a + 1, b)) ? row.slice(a + 1, b) : +row.slice(a + 1, b));
+      const Y = by[y] || (by[y] = {}); (Y[cid] || (Y[cid] = [])).push(pid); } }
+  psIdx = { w, gen, by }; return by;
+}
 function clubSeason(s, root, id) {
   const w = s.w, d = db(), labels = Object.keys(w.arch || {}).sort().reverse();
   if (!labels.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 시즌이 끝나면 기록이 쌓입니다.'))); return; }
@@ -358,15 +396,20 @@ function clubSeason(s, root, id) {
   for (const k in A.cont || {}) { const K = A.cont[k]; const inR = (K.r || []).filter(rd => rd.t.some(t => t[0] === id || t[1] === id)); const inPh = (K.ph || []).findIndex(r => r[0] === id); if (!inR.length && inPh < 0) continue; res.push([K.n, K.w === id ? '우승' : inR.length ? `${inR[inR.length - 1].n}${K.w === id ? '' : ' 탈락'}` : `리그 페이즈 ${inPh + 1}위`, '', K.w === id]); }
   root.append(h('div', { class: 'sec' }, h('h3', null, `${d.cs} 성적`), res.length ? h('div', { class: 'in', style: { display: 'grid', gap: '6px' } }, ...res.map(([n, v, sub, gold]) => h('div', { class: 'csrow' }, h('b', null, n), h('span', { style: { color: gold ? 'var(--gold)' : null, fontWeight: 700 } }, v), h('span', { class: 'mute', style: { fontSize: '12px' } }, sub)))) : h('div', { class: 'empty' }, '기록 없음')));
   // 선수 기록 (이 시즌 이 구단에서 뛴 선수 전원, 전 대회 합계)
-  const rows = [];
-  for (const pid in (w.ps || {})) {
-    const P = w.ps[pid]; if (!P.h || P.h.indexOf(yOff + ',') < 0) continue;
+  // 전체 선수 기록(15만 명)을 매번 훑지 않도록: 시즌·구단 → 선수 색인을 한 번 만들고, 결과 행도 기억해 둔다 (정렬은 행만 다시 정렬)
+  const ck = `${d.cs}|${id}|${C.psGen || 0}`;
+  let rows = csCache.get(ck);
+  if (!rows) { rows = []; const pids = ((psIndex(w)[yOff] || {})[id]) || [];
+  for (const pid of pids) {
+    const P = w.ps[pid]; if (!P || !P.h) continue;
     const sn = playerSeasons(w, P).find(x => x.y === yOff); if (!sn) continue;
     const its = sn.items.filter(it => it.club === id || (it.cat !== 'league' && it.cat !== 'nt' && sn.items.some(z => z.cat === 'league' && z.club === id)));
     const lgI = its.find(it => it.cat === 'league'); if (!lgI) continue;
     const t = its.reduce((a, it) => (a.apps += it.apps, a.g += it.g, a.a += it.a, a.rs += it.rt * it.apps, a.mom += it.mom || 0, a), { apps: 0, g: 0, a: 0, rs: 0, mom: 0 });
     rows.push({ pid, n: P.n, pos: P.pos, age: sn.age, apps: t.apps, g: t.g, a: t.a, rt: t.apps ? t.rs / t.apps : 0, lgApps: lgI.apps, loan: lgI.loan, mom: t.mom });
   }
+  if (csCache.size > 40) csCache.clear(); csCache.set(ck, rows); }
+  rows = rows.slice();
   const me = (s.hist || []).find(r => r.label === d.cs && r.club === id);
   if (me) rows.push({ pid: 'ME', n: s.p.name + ' (나)', pos: me.pos, age: me.age, apps: me.total.apps, g: me.total.goals, a: me.total.assists, rt: me.rating || 0, lgApps: (me.agg && me.agg.league ? me.agg.league.st.apps : 0) });
   if (!d.csSort) d.csSort = 'apps';

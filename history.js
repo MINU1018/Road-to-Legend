@@ -432,7 +432,7 @@ function archiveSeason(S, tables) {
     // 경기 상세 기록은 모든 시즌 보관 (시즌당 약 10MB, IndexedDB)
     ss.mx = null;
   }
-  w.arch[ss.label] = A;
+  w.arch[ss.label] = A; if (C._ad) C._ad.add(ss.label);
   // 용량 관리: 3시즌 지난 기록은 1부 리그만 전체 순위, 나머지는 우승팀만
   const labels = Object.keys(w.arch).sort();
   [].forEach(lb => {
@@ -546,6 +546,7 @@ function hofKnown(w, r, P) {
   if (!out.length) out.push(r.rt >= 7.2 ? `평균 평점 ${r.rt.toFixed(2)}의 꾸준함` : `${r.apps}경기 ${r.g}골`);
   return out.slice(0, 3);
 }
+C.hofEval = hofEval;
 C.hofScan = function (S, force) {
   const w = S.w; if (!w.ps) return 0;
   w.hof = w.hof || []; let n = 0;

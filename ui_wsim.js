@@ -33,7 +33,8 @@ async function runTo(toDay, label) {
   } catch (e) { console.error(e); U.toast('시뮬레이션 중 오류가 났습니다.'); }
   if (mo) mo.close();
   running = false; v().day = null; v().calM = null;
-  await U.saveNow(); U.render();
+  // 화면을 먼저 그리고 저장은 뒤에서 (하루씩 넘길 때 기다림을 줄인다). 오래 진행했으면 바로 저장
+  U.render(); if (span > 10) await U.saveNow(); else U.save();
 }
 // 다음 경기일: 팔로우한 리그·대회·구단·선수·대표팀 경기가 있는 다음 날 (없으면 경기가 있는 다음 날)
 function nextMatchDay(s) {
