@@ -327,16 +327,23 @@ function worldTransfers(w, winter) {
   // 여름 이적시장(6월)은 아직 지난 시즌(w.year)이 끝나기 전이라 다음 시즌 몫으로 센다
   const stamp = winter ? w.year * 2 + 1 : (w.year + 1) * 2;
   w._lret = new Map();
+  const MK = C.mkt; if (MK) MK.begin(w, winter);
+  const lastRow = () => w._tx && w._tx[w._tx.length - 1];
+  const tag = m => { const r = lastRow(); if (r && m) r[11] = m; };
   if (!winter) for (const c of clubs) for (const e of c.sq.slice()) {
     ensureE(e, c);
     e[13] = 0;
     if (e[7]) { const p = w.clubs[e[7]]; e[7] = 0; if (p && p.sq && p !== c) {
       // 완전 이적 옵션: 임대에서 크게 활약했고 임대 구단이 감당할 수 있으면 가끔 그대로 사들인다
-      const fee = Math.round(feeOf(w, e, p) * .85), good = (e[11] || 0) >= 22 && (e[12] || 0) >= 695;
-      if (good && !c.parent && c.lg && (c.cash || 0) >= fee && e[2] <= c.str + 4 && e[2] < p.str - 2 && R() < .3) {
-        c.cash -= fee; p.cash = (p.cash || 0) + fee; e[6] = ctFor(e[3]); e[21] = stamp; e[22] = p.id; w._moved.add(e);
-        txLog(w, e, p, c, 'buy', fee); big(e, p, c, 'sale', fee); stat.sale++; continue;
+      // 임대 계약 조항: e[27] = ['o' 옵션 | 'b' 의무, 금액(만 유로)]. 조항이 없으면 가끔 따로 협상
+      const lo = e[27], good = (e[11] || 0) >= 22 && (e[12] || 0) >= 695, oblig = lo && lo[0] === 'b';
+      const fee = lo ? lo[1] * 1e4 : Math.round(feeOf(w, e, p) * .85);
+      if (!c.parent && c.lg && (oblig ? (c.cash || 0) >= fee * .3 : good && (c.cash || 0) >= fee && e[2] <= c.str + 4 && e[2] < p.str - 2 && R() < (lo ? .75 : .3))) {
+        e[27] = 0; e[6] = ctFor(e[3]); e[21] = stamp; e[22] = p.id; w._moved.add(e);
+        txLog(w, e, p, c, 'buy', fee); const mm = MK ? MK.deal(w, e, p, c, 'buy', fee, { stamp }) : ''; if (!MK) { c.cash -= fee; p.cash = (p.cash || 0) + fee; }
+        tag([lo ? (oblig ? 'oy' : 'ox') : '', mm].filter(Boolean).join('|')); big(e, p, c, 'sale', fee); stat.sale++; continue;
       }
+      e[27] = 0;
       w._lret.set(e, c.id);
       c.sq.splice(c.sq.indexOf(e), 1); p.sq.push(e); txLog(w, e, c, p, 'lret', 0);
       // 임대에서 잘하고 온 선수: 이번 시즌은 원소속팀에서 기회를 받는다 (임대 뺑뺑이 방지)
@@ -344,6 +351,14 @@ function worldTransfers(w, winter) {
   }
   // 2) 재정: 이번 시즌 수입과 이적 예산 (지난 예산 일부 이월)
   for (const c of clubs) { if (!winter || c.rev == null) { c.rev = clubRev(w, c); c.cash = Math.max(0, Math.round((c.cash || 0) * .55 + c.rev * .16)); } c.wb = c.sq.reduce((a, e) => a + (e[8] || 0), 0); }
+  if (!winter && MK) for (const c of clubs) MK.payDues(w, c);
+  // 바이백 행사: 원소속 구단이 정해 둔 금액으로 되사 온다 (선수가 그 구단 수준까지 컸을 때)
+  if (!winter && MK) for (const c of clubs) for (const e of c.sq.slice()) {
+    const bb = e[26]; if (!bb || e[7]) continue; if (stamp > bb[2]) { e[26] = 0; continue; }
+    const o = w.clubs[bb[0]], fee = bb[1] * 1e4; if (!o || !o.sq || o === c || (o.cash || 0) < fee * .5 || e[2] < o.str - 4 || R() > .55) continue;
+    c.sq.splice(c.sq.indexOf(e), 1); c.wb -= e[8] || 0; e[6] = ctFor(e[3]); e[8] = Math.round(aiWage(o, e[2], e[3]) / 50) * 50; o.sq.push(e); o.wb += e[8]; e[21] = stamp; e[22] = c.id; w._moved.add(e);
+    txLog(w, e, c, o, 'buy', fee); tag(['bx', MK.deal(w, e, c, o, 'buy', fee, { stamp })].join('|')); big(e, c, o, 'sale', fee); stat.sale++;
+  }
   const wageRoom = (d, wk) => d.wb + wk <= d.rev * .62 / 52;
   // 2) 1군·2군 사이 이동 (여름): 2군에서 1군 수준이 된 어린 선수는 승격, 1군에서 뛰지 못하는 어린 선수는 2군으로
   if (!winter) for (const b of clubs) { if (!b.parent) continue; const p = w.clubs[b.parent]; if (!p || !p.sq || p.lite) continue;
@@ -367,7 +382,7 @@ function worldTransfers(w, winter) {
       // 선수의 이적 욕구: 팀보다 크게 성장했거나 출전 기회가 없을 때
       const top = c.str >= topS - 2;
       const ambition = !top && gap >= 3 && age <= 30 ? clamp(.25 + (gap - 3) * .1 + Math.max(0, f) * .08, .2, .85) : rr === 2 && age >= 22 && age <= 30 ? .45 : .05;
-      const wantsOut = R() < ambition;
+      const wantsOut = R() < (MK ? MK.ambition(e, ambition) : ambition);
       let kind = null;
       // 2군: 23세가 넘으면 내보낸다 (계약 만료면 자유계약, 아니면 판매)
       if (!winter && c.parent && age >= 23) { market.push([e, c, ct <= 0 ? 'free' : 'sale']); continue; }
@@ -377,7 +392,7 @@ function worldTransfers(w, winter) {
         else if (!e[13] && age >= 18 && age <= 21 && rr === 2 && (e[11] == null || e[11] < 8) && R() < (prospect ? .38 : .22)) kind = 'loan';
         else if (f < -1.4 && age >= 24 && R() < .06) kind = 'sale';
         if (kind && fresh(e) && !(f < -1.6 && R() < .2)) kind = null;
-        if (kind) market.push([e, c, kind]);
+        if (kind) market.push([e, c, kind, kind === 'sale' && wantsOut && o >= 78 ? { req: 1 } : null]);
         continue;
       }
       const renew = (mult) => { const nw = Math.round(aiWage(c, o, age) * mult / 50) * 50, ow = e[8] || 0; c.wb += nw - ow; e[8] = nw; e[6] = ctFor(age); txLog(w, e, c, c, 'ext', 0, ow); };
@@ -404,7 +419,11 @@ function worldTransfers(w, winter) {
         else if (R() < .02) kind = 'sale';
       }
       if (kind && kind !== 'free' && fresh(e) && !(f < -1.4 && R() < .25)) kind = null; // 막 데려온 선수는 반 시즌 만에 내보내지 않는다 (아주 부진하면 예외)
-      if (kind) market.push([e, c, kind]);
+      // 바이아웃: 팔 생각이 없어도, 선수가 원하고 더 큰 구단이 금액을 내면 떠난다
+      let flag = null;
+      if (MK && !kind && wantsOut && !c.parent && ct >= 1 && !fresh(e)) { const bo = MK.buyout(w, e, c); if (bo && gap >= 2 && R() < .4) { kind = 'sale'; flag = { bo: bo * 1e4 }; } }
+      if (kind === 'sale' && wantsOut && o >= 78 && !flag) flag = { req: 1 };
+      if (kind) market.push([e, c, kind, flag]);
     }
   }
   for (const [e, c] of market) { const i = c.sq.indexOf(e); if (i >= 0) { c.sq.splice(i, 1); c.wb -= e[8] || 0; } }
@@ -418,15 +437,15 @@ function worldTransfers(w, winter) {
     let range = byStr.slice(i0, i1);
     if (range.length > 48) { const pickd = []; for (let k = 0; k < 48; k++) pickd.push(range[(R() * range.length) | 0]); range = [...new Set(pickd)]; }
     const back = e[22] != null && e[21] != null && stamp - e[21] <= 3 ? e[22] : null, lr = w._lret.get(e);
-    const cand = range.filter(c => c !== from && c.id !== back && c.id !== lr && (!c.parent || e[3] <= 21) && C.sqN(c) < 31 && (!fee || c.cash >= fee) && (kind === 'loan' || wageRoom(c, wk(c))));
+    const cand = range.filter(c => c !== from && c.id !== back && c.id !== lr && (!c.parent || e[3] <= 21) && C.sqN(c) < 31 && (!fee || c.cash >= fee * (fee >= 2e7 ? .55 : 1)) && (kind === 'loan' || wageRoom(c, wk(c))) && (!MK || MK.canJoin(w, e, from, c, kind)));
     if (!cand.length) return null;
     const nat = e[5], age = e[3], o = e[2];
     return wpick(cand, c => Math.exp((c.str - lo) * (kind === 'loan' ? .05 : .22)) * (c.str >= topS - .6 ? .4 : c.str >= topS - 1.6 ? .7 : 1) * (c.nat === nat ? 2 : 1) * (from && c.nat === from.nat ? 1.5 : 1) * need(c, e[1]) * (c.sq.length < 25 ? 1.4 : c.sq.length > 28 ? .5 : 1)
       * (age >= 30 && o >= 72 ? (RETIRE_LG[c.nat] || 1) : 1) * (kind === 'loan' && from && c.nat === from.nat ? 1.6 : 1)
-      * (kind !== 'loan' && o >= 76 && age <= 30 && from ? Math.exp(clamp(lvOf(c) - lvOf(from), -12, 4) * .25) : 1));
+      * (kind !== 'loan' && o >= 76 && age <= 30 && from ? Math.exp(clamp(lvOf(c) - lvOf(from), -12, 4) * .25) : 1) * (MK ? MK.weight(w, e, c) : 1));
   };
   market.sort((a, b) => b[0][2] - a[0][2]);
-  for (const [e, c, kind] of market) {
+  for (const [e, c, kind, flag] of market) {
     const o = e[2], age = e[3], f = e[9] || 0, gap = o - c.str;
     let lo, hi; const L = lvl(o);
     if (kind === 'loan') { lo = L - 4; hi = L + 1; }
@@ -434,10 +453,11 @@ function worldTransfers(w, winter) {
     else if (kind === 'free' && o >= 78 && age <= 32) { lo = L - 3; hi = L + 3; }
     else if (f < -.9 || age >= 31) { lo = L - 8; hi = L + 1; }
     else { lo = L - 4; hi = L + 3; }
-    const fee = kind === 'sale' ? Math.round(feeOf(w, e, c)) : kind === 'loan' && o >= 70 ? Math.round(C.aiFee(o, age, natOf(w, c), 3) * .06) : 0;
+    const fee = kind === 'sale' ? (flag && flag.bo ? flag.bo : Math.round(feeOf(w, e, c))) : kind === 'loan' && o >= 70 ? Math.round(C.aiFee(o, age, natOf(w, c), 3) * .06) : 0;
+    if (flag && flag.bo) { lo = Math.max(lo, c.str + 1); hi = Math.max(hi, lo + 3); }
     const wk = d => Math.round(aiWage(d, o, age) * (kind === 'free' ? rnd(1.05, 1.25) : kind === 'sale' ? rnd(1, 1.2) : 1) / 50) * 50;
     let d = pickClub(lo, hi, e, c, kind, fee, wk);
-    if (!d && kind === 'sale') d = pickClub(L - 7, L + 2, e, c, kind, fee * .8, wk);
+    if (!d && kind === 'sale' && !(flag && flag.bo)) d = pickClub(L - 7, L + 2, e, c, kind, fee * .8, wk);
     if (!d && kind === 'loan') d = pickClub(L - 8, L + 3, e, c, kind, 0, wk);
     if (!d && kind === 'free') d = pickClub(L - 10, L + 2, e, c, kind, 0, wk) || (age < 33 || o >= 65 ? pickClub(L - 25, L, e, c, kind, 0, wk) : null);
     // 실력 있는 선수는 연봉을 깎아서라도 새 팀을 찾는다 (아직 뛸 수 있는데 갈 곳이 없어 은퇴하는 일 방지)
@@ -452,10 +472,11 @@ function worldTransfers(w, winter) {
       }
       continue;
     }
-    const paid = kind === 'sale' && d.cash < fee ? Math.round(fee * .8) : fee;
+    const paid = kind === 'sale' && d.cash < fee && !(flag && flag.bo) && fee < 2e7 ? Math.round(fee * .8) : fee;
     big(e, c, d, kind, paid); w._moved.add(e);
-    if (kind === 'loan') { e[7] = c.id; stat.loan++; d.cash -= paid; c.cash += paid; txLog(w, e, c, d, 'loan', paid); }
-    else { d.cash -= paid; c.cash += paid; e[6] = cut < 1 ? Math.min(2, ctFor(age)) : ctFor(age); e[8] = cut < 1 ? Math.max(50, Math.round(wk(d) * cut / 50) * 50) : wk(d); d.wb += e[8]; txLog(w, e, c, d, kind === 'sale' ? 'buy' : 'free', paid); stat[kind]++; e[21] = stamp; e[22] = c.id; }
+    const pay = (k) => { if (MK) tag(MK.deal(w, e, c, d, k, paid, Object.assign({ stamp }, flag || {}))); else { d.cash -= paid; c.cash += paid; } };
+    if (kind === 'loan') { e[7] = c.id; stat.loan++; txLog(w, e, c, d, 'loan', paid); pay('loan'); }
+    else { e[6] = cut < 1 ? Math.min(2, ctFor(age)) : ctFor(age); e[8] = cut < 1 ? Math.max(50, Math.round(wk(d) * cut / 50) * 50) : wk(d); d.wb += e[8]; txLog(w, e, c, d, kind === 'sale' ? 'buy' : 'free', paid); pay(kind === 'sale' ? 'buy' : 'free'); stat[kind]++; e[21] = stamp; e[22] = c.id; }
     d.sq.push(e);
   }
   w.lastTx = stat.free + stat.sale + stat.loan; w.txStat = stat;
@@ -470,23 +491,23 @@ function refillSquad(c, w, pool, winter) {
     const par = c.parent && w.clubs[c.parent];
     const o = par ? clamp(Math.round(N(c.str - 5, 3)), 45, 75) : clamp(Math.round(N(c.pres - 17, 4)), 35, 80);
     const pot = clamp(Math.round(N(par ? par.pres - 4 : c.pres - 1, 6.5)), o + 3, 95);
-    add([uid(genName(nat)), pos, o, age, pot, nat, rint(2, 4), 0, 0, 0, Math.round(N(0, 1.5) * 10) / 10, 0], 'yth');
+    const ye = [uid(genName(nat)), pos, o, age, pot, nat, rint(2, 4), 0, 0, 0, Math.round(N(0, 1.5) * 10) / 10, 0]; ye[29] = c.lg && w.lg[c.lg] ? w.lg[c.lg].nation : c.nat; add(ye, 'yth');
   };
   const poach = (pos, lv) => {
     const L = pool[pos]; if (!L) return false;
     const cand = [];
     const stamp = winter ? w.year * 2 + 1 : (w.year + 1) * 2;
-    for (let k = 0; k < 40; k++) { const x = L[(R() * L.length) | 0]; if (!x || x.c === c || x.c.str >= c.str - .5 || !x.c.sq.includes(x.e) || x.e[7] || (w._moved && w._moved.has(x.e))) continue;
+    for (let k = 0; k < 40; k++) { const x = L[(R() * L.length) | 0]; if (!x || x.c === c || x.c.str >= c.str - .5 || !x.c.sq.includes(x.e) || x.e[7] || (w._moved && w._moved.has(x.e)) || (C.mkt && !C.mkt.canJoin(w, x.e, x.c, c, 'buy'))) continue;
       if (x.e[21] != null && (stamp - x.e[21] <= 1 || (x.e[22] === c.id && stamp - x.e[21] <= 3))) continue; /* 막 이적한 선수·직전 구단으로 되돌아가는 경우 제외 */ if (Math.abs(x.e[2] - lv) <= 3 && x.e[3] <= 31) cand.push(x); }
     if (!cand.length) return false;
     const x = cand.sort((a, b) => b.e[2] - a.e[2])[0];
     const fee = Math.round(feeOf(w, x.e, x.c));
-    if ((c.cash || 0) < fee) return false;
+    if ((c.cash || 0) < fee * (fee >= 2e7 ? .55 : 1)) return false;
     if (x.e[2] >= 79 && w.bigTx) w.bigTx.push([pName(w, x.e), String(x.e[0]), x.c.id, c.id, 'sale', x.e[2], x.e[3], fee]);
-    c.cash -= fee; x.c.cash = (x.c.cash || 0) + fee;
+    if (!C.mkt) { c.cash -= fee; x.c.cash = (x.c.cash || 0) + fee; }
     x.c.sq.splice(x.c.sq.indexOf(x.e), 1); x.c.wb = (x.c.wb || 0) - (x.e[8] || 0);
     x.e[6] = ctFor(x.e[3]); x.e[8] = Math.round(aiWage(c, x.e[2], x.e[3]) * rnd(1, 1.2) / 50) * 50; c.sq.push(x.e); c.wb = (c.wb || 0) + x.e[8];
-    txLog(w, x.e, x.c, c, 'buy', fee); x.e[21] = winter ? w.year * 2 + 1 : (w.year + 1) * 2; x.e[22] = x.c.id;
+    txLog(w, x.e, x.c, c, 'buy', fee); if (C.mkt && w._tx) { const m = C.mkt.deal(w, x.e, x.c, c, 'buy', fee, { stamp }); if (m) w._tx[w._tx.length - 1][11] = m; } x.e[21] = winter ? w.year * 2 + 1 : (w.year + 1) * 2; x.e[22] = x.c.id;
     x.c = c; w.lastTx++; if (w._moved) w._moved.add(x.e);
     return true;
   };
@@ -649,7 +670,7 @@ function quickMatch(sA, sB, home) { const [a, b] = lambdas(sA, sB, home); return
 function koWinner(sA, sB, ga, gb) { if (ga !== gb) return ga > gb ? 0 : 1; return R() < 1 / (1 + Math.exp(-(sA - sB) * .05)) ? 0 : 1; }
 C.quickMatch = quickMatch; C.koWinner = koWinner;
 // 경기 당일 전력: 스쿼드 전력 + 시즌 폼(감독·분위기, 달마다 조금씩 변함) + 부상자 공백
-C.mstr = (w, id) => { const c = typeof id === 'object' ? id : w.clubs[id]; return c ? (c.str || 60) + (c.fm || 0) + (c.injd || 0) : 60; };
+C.mstr = (w, id) => { const c = typeof id === 'object' ? id : w.clubs[id]; return c ? (c.str || 60) + (c.fm || 0) + (c.injd || 0) + (c.tac || 0) : 60; };
 
 // 리그 일정 (더블 라운드 로빈, 홈/원정)
 function roundRobin(ids) {

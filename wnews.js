@@ -302,6 +302,8 @@ function ceremony(S, c) {
   const w = S.w, b = (w.bdHist || []).find(x => x.y === c.y), g = (w.gbHist || []).find(x => x.y === c.y), gs = (w.gsHist || []).find(x => x.y === c.y), d = c.d;
   if (gs && gs.top[0]) { const x = gs.top[0]; push(S, { d, gl: 1, c: 'award', imp: 2, h: `${x[0]}, 유러피언 골든슈 수상`, s: `${x[3]}골 · ${x[4]}점 · ${(w.lg[x[5]] || {}).name || ''}`, p: x[2] ? [x[2]] : [], cl: [x[1]] }); }
   if (g && g.top[0]) { const x = g.top[0]; push(S, { d, gl: 1, c: 'award', imp: 2, h: `${x[0]}, ${c.y} 골든보이 수상`, s: `${x[6]}세 · ${(w.clubs[x[1]] || {}).name || ''}`, p: x[2] ? [x[2]] : [], cl: [x[1]] }); }
+  const pk = (w.pkHist || []).find(x => x.y === c.y);
+  if (pk && pk.top[0]) { const x = pk.top[0]; push(S, { d, gl: 1, c: 'award', imp: 2, h: `${C.pkName(S, x)}, ${c.y} 푸스카스상 수상`, s: `${C.PKT[x[7]].n} · ${x[9]}m · ${(w.clubs[x[4]] || {}).name || ''}전 (${C.fmtDateY(x[5])})`, p: x[1] !== 'ME' && x[1][0] !== '~' ? [x[1]] : [], cl: [x[3]] }); }
   const xi = (w.wxiHist || []).find(x => x.y === c.y);
   if (xi && xi.xi) push(S, { d, gl: 1, c: 'award', imp: 2, h: `${c.y} 월드 베스트 XI 발표`, s: xi.xi.map(x => `${x[3]} ${x[0]}`).join(' · '), p: xi.xi.map(x => x[4]).filter(Boolean) });
   if (b && b.top[0]) { const x = b.top[0]; push(S, { d, gl: 1, c: 'award', imp: 3, h: `${x[0]}, ${c.y} 발롱도르 수상!`, s: `2위 ${b.top[1] ? b.top[1][0] : ''} · 3위 ${b.top[2] ? b.top[2][0] : ''}`, p: x[2] ? [x[2]] : [], cl: [x[1]] });
@@ -313,7 +315,10 @@ function windowOpen(S, rows) {
   // 은퇴: 이름 있는 선수는 기사로
   const rets = rows.filter(r => r[3] === 'ret');
   if (rets.length) { const d0 = Math.min(...rets.map(r => r[10] != null ? r[10] : 1e9)); m.rq = { d: d0, n: rets.length, l: rets.filter(r => r[5] >= 74 || (r[5] >= 70 && r[6] >= 36)).sort((a, b) => b[5] - a[5]).slice(0, 10).map(r => [r[0], r[1], r[5], r[6]]) }; }
-  m.tq = rows.filter(r => (r[3] === 'buy' || r[3] === 'loan' || r[3] === 'free') && (r[4] >= 3000 || r[5] >= 83) && r[10] != null).map(r => [r[10], r[0], r[1], r[2], r[3], r[4], r[5], r[6]]).sort((a, b) => a[0] - b[0]);
+  m.tq = rows.filter(r => (r[3] === 'buy' || r[3] === 'loan' || r[3] === 'free') && (r[4] >= 3000 || r[5] >= 83 || (r[11] && /bx|ox|oy|bo/.test(r[11]) && r[5] >= 74)) && r[10] != null).map(r => [r[10], r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[11] || '']).sort((a, b) => a[0] - b[0]);
+  // 마감일: 그날 몰린 거래 수
+  const mv = rows.filter(r => (r[3] === 'buy' || r[3] === 'loan' || r[3] === 'free') && r[10] != null);
+  if (mv.length) { const d1 = Math.max(...mv.map(r => r[10])), dl = mv.filter(r => r[10] === d1); m.dl = { d: d1, n: dl.length, fee: dl.reduce((a, r) => a + (r[4] || 0), 0), top: dl.filter(r => r[0][0] !== '~').sort((a, b) => (b[4] || 0) - (a[4] || 0) || b[5] - a[5]).slice(0, 5).map(r => [r[0], r[1], r[2], r[3], r[4]]) }; }
 }
 // ---------- 하루 ----------
 let STARS = null, STARD = -99;
@@ -326,8 +331,17 @@ function day(S, d) {
     const today = m.tq.filter(t => t[0] === d).sort((a, b) => b[5] - a[5]).slice(0, 5);
     for (const t of today) {
       const [, pid, from, to, kind, fee, ovr, age] = t;
-      push(S, { d, c: 'transfer', imp: fee >= 8000 ? 3 : fee >= 4000 || ovr >= 86 ? 2 : 1, h: `[오피셜] ${pn(pid)}, ${cn(w, to)} ${kind === 'loan' ? '임대' : '이적'}${fee ? ` (${C.fmtEUR(fee * 1e4)})` : kind === 'free' ? ' (자유계약)' : ''}`, s: `${cn(w, from) || '자유계약'} → ${cn(w, to)} · ${age}세 OVR ${ovr}`, p: [pid], cl: [from, to].filter(Boolean) });
+      push(S, { d, c: 'transfer', imp: fee >= 8000 ? 3 : fee >= 4000 || ovr >= 86 ? 2 : 1, h: `[오피셜] ${pn(pid)}, ${cn(w, to)} ${kind === 'loan' ? '임대' : '이적'}${fee ? ` (${C.fmtEUR(fee * 1e4)})` : kind === 'free' ? ' (자유계약)' : ''}`, s: `${cn(w, from) || '자유계약'} → ${cn(w, to)} · ${age}세 OVR ${ovr}${t[8] && C.mkt ? ' · ' + C.mkt.metaText(t[8], w).filter(x => !/^취업 허가 \d/.test(x)).join(' · ') : ''}`.replace(/ · $/, ''), p: [pid], cl: [from, to].filter(Boolean) });
     }
+    // 1단계 관심 (2~3주 전) → 2단계 협상·합의 임박 (3~7일 전) → 3단계 'Here we go' (1~2일 전) → 오피셜
+    m.rum = m.rum || {};
+    const early = m.tq.filter(t => t[0] >= d + 12 && t[0] <= d + 20 && !m.rum['i' + t[1]] && (t[5] >= 5000 || t[6] >= 84) && t[4] !== 'free').sort((a, b) => b[5] - a[5]).slice(0, 1);
+    for (const t of early) { m.rum['i' + t[1]] = 1; const [, pid, from, to, , fee, ovr] = t; const rivals = Object.values(w.clubs).filter(c => c.str >= ((w.clubs[to] || {}).str || 99) - 2 && c.id !== to && c.id !== from && c.lg && !c.parent); const r2 = rivals.length && R() < .6 ? pick(rivals) : null;
+      push(S, { d, c: 'rumor', imp: 1, h: `[루머] ${cn(w, to)}${r2 ? `·${r2.name}` : ''}, ${pn(pid)}에 관심`, s: `${cn(w, from) || '자유계약'} 소속 · OVR ${ovr}${fee ? ` · 몸값 ${C.fmtEUR(Math.round(fee / 500) * 500 * 1e4)} 안팎` : ''}. 아직 공식 제안 전 단계라는 보도.`, p: [pid], cl: [from, to].filter(Boolean) }); }
+    const req = m.tq.filter(t => t[0] > d + 4 && t[0] <= d + 12 && /rq/.test(t[8]) && !m.rum['q' + t[1]]).slice(0, 1);
+    for (const t of req) { m.rum['q' + t[1]] = 1; const [, pid, from] = t; push(S, { d, c: 'rumor', imp: 2, h: `${pn(pid)}, ${cn(w, from)}에 이적 요청서 제출`, s: '더 큰 무대에서 뛰고 싶다는 뜻을 구단에 전했다는 보도.', p: [pid], cl: [from].filter(Boolean) }); }
+    const hwg = m.tq.filter(t => t[0] > d && t[0] <= d + 2 && !m.rum['h' + t[1]] && (t[5] >= 4000 || t[6] >= 83)).sort((a, b) => b[5] - a[5]).slice(0, 2);
+    for (const t of hwg) { m.rum['h' + t[1]] = 1; const [, pid, from, to, kind, fee] = t; push(S, { d, c: 'rumor', imp: fee >= 7000 ? 2 : 1, h: `${pn(pid)}, ${cn(w, to)}행 Here we go!`, s: `${kind === 'loan' ? '임대' : '이적'}${fee ? ` · ${C.fmtEUR(Math.round(fee / 100) * 100 * 1e4)}` : ''} 합의 완료. 메디컬 테스트 뒤 공식 발표 예정.`, p: [pid], cl: [from, to].filter(Boolean) }); }
     const soon = m.tq.filter(t => t[0] > d + 2 && t[0] <= d + 7 && !m.rum[t[1]] && t[5] >= 4000).sort((a, b) => b[5] - a[5]).slice(0, R() < .5 ? 1 : 2);
     for (const t of soon) {
       m.rum[t[1]] = 1; const [dd, pid, from, to, kind, fee, ovr] = t;
@@ -336,6 +350,8 @@ function day(S, d) {
     }
     m.tq = m.tq.filter(t => t[0] >= d);
   }
+  // 마감일 정리
+  if (m.dl && m.dl.d === d) { const q = m.dl; m.dl = null; if (q.n >= 5) push(S, { d, c: 'transfer', imp: 2, h: `이적시장 마감일, 하루에만 ${q.n.toLocaleString()}건 거래`, s: (q.fee ? `오늘 이적료 합계 ${C.fmtEUR(q.fee * 1e4)}. ` : '') + (q.top.length ? '주요 거래: ' + q.top.map(r => `${pn(r[0])} → ${cn(w, r[2]) || '-'}`).join(', ') : ''), p: q.top.map(r => r[0]), cl: [] }); }
   // 은퇴 발표
   if (m.rq && m.rq.d <= d) {
     const q = m.rq; m.rq = null;

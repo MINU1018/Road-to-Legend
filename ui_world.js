@@ -596,7 +596,7 @@ function txView(s, root) {
     h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc', style: { minWidth: '860px' } }, h('thead', null, h('tr', null, ...['날짜', '선수', '나이', 'OVR', '보낸 구단', '', '받은 구단', '형태', '이적료', '계약', C.wageUnit()].map(x => h('th', null, x)))),
       h('tbody', null, ...list.slice(0, 150).map(r => h('tr', null, h('td', { class: 'mute', style: { fontSize: '12px' } }, r[10] != null ? C.fmtDate(r[10]) : ''), h('td', null, h('span', { class: 'lnk', onclick: () => U.openPlayer(r[0]) }, C.MD.nameOf(r[0]))), h('td', null, r[6]), h('td', null, r[5]),
         h('td', null, r[1] ? clubCell(w, r[1], 16) : h('span', { class: 'mute' }, r[3] === 'yth' ? '유스' : '외부')), h('td', { class: 'mute' }, '→'), h('td', null, r[3] === 'ext' ? h('span', { class: 'mute' }, '잔류') : r[2] ? clubCell(w, r[2], 16) : h('span', { class: 'mute' }, r[3] === 'ret' ? '은퇴' : '무소속')),
-        h('td', null, TXN[r[3]] || r[3]), h('td', null, r[4] ? h('b', null, C.fmtEUR(r[4] * 1e4)) : h('span', { class: 'mute' }, '-')),
+        h('td', null, TXN[r[3]] || r[3]), h('td', null, r[4] ? h('b', null, C.fmtEUR(r[4] * 1e4)) : h('span', { class: 'mute' }, '-'), U.txTags(r)),
         h('td', { class: 'mute', style: { fontSize: '12px' } }, r[3] === 'loan' ? '임대' : r[2] && r[8] && !['lret', 'ret', 'rel'].includes(r[3]) ? `${r[8]}년` : ''), h('td', null, r[2] && r[7] && !['ret', 'rel'].includes(r[3]) ? C.fmtWage(r[7], true) : '', wch(r)))))))));
 }
 U.fxRow = fxRow; U.ppgStr = ppgStr;

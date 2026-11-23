@@ -24,7 +24,7 @@ MD.nameOf = (id, S) => {
 };
 
 // ---------- 명단 ----------
-const GRP = { GK: 'G', CB: 'D', LB: 'D', RB: 'D', CDM: 'M', CM: 'M', CAM: 'M', LM: 'A', RM: 'A', LW: 'A', RW: 'A', ST: 'A' };
+const GRP = { GK: 'G', CB: 'D', LB: 'D', RB: 'D', LWB: 'D', RWB: 'D', CDM: 'M', CM: 'M', CAM: 'M', LM: 'A', RM: 'A', LW: 'A', RW: 'A', ST: 'A' };
 const NEED = { G: 1, D: 4, M: 3, A: 3 };
 // 득점·도움·카드 가중치 (역할별)
 const GW = { ST: 1, W: .5, AM: .42, CM: .17, DM: .07, FB: .06, CB: .1, GK: 0 };
@@ -55,18 +55,13 @@ MD.natSide = (w, nat, pools, y) => {
 // 선발·교체 (조금씩 로테이션)
 // yb: 유망주·임대 복귀 선수에게 주는 출전 기회 가산 (컵 경기에서는 더 크게, 로테이션도 더 많이)
 // cx: { ban: Set(출전 정지 선수), fat: id → 피로 감점 } — 연전이면 주전을 쉬게 한다 (로테이션)
-function lineup(sq, excludeId, cup, cx) {
-  let src = sq.filter(x => x.id !== excludeId);
-  if (cx && cx.ban && cx.ban.size) { const ok = src.filter(x => !cx.ban.has(x.id)); if (ok.length >= 13) src = ok; }
-  const pool = src.map(x => ({ x, s: x.ovr + N(0, cup ? 3.6 : 2.2) + (x.yb || 0) * (cup ? 1.8 : 1) - (cx && cx.fat ? cx.fat(x) : 0) }));
-  pool.sort((a, b) => b.s - a.s);
-  const xi = [], used = new Set(), cnt = { G: 0, D: 0, M: 0, A: 0 };
-  for (const g of ['G', 'D', 'M', 'A']) for (const o of pool) { if (cnt[g] >= NEED[g]) break; if (!used.has(o) && (GRP[o.x.pos] || 'M') === g) { xi.push(o.x); used.add(o); cnt[g]++; } }
-  for (const o of pool) { if (xi.length >= 11) break; if (!used.has(o) && (GRP[o.x.pos] !== 'G' || !cnt.G)) { xi.push(o.x); used.add(o); if (GRP[o.x.pos] === 'G') cnt.G++; } }
-  const bench = pool.filter(o => !used.has(o) && GRP[o.x.pos] !== 'G').slice(0, 7).map(o => o.x);
-  return { xi, bench };
+function lineup(sq, excludeId, cup, cx, form) {
+  // 포메이션 자리(슬롯)에 맞춰 배치 (tactics.js). 선수 객체를 복사해 sp(자리)·sl(슬롯 번호)를 붙인다
+  const src = sq.filter(x => x.id !== excludeId);
+  const L = C.pickLineup(src, { form, ban: cx && cx.ban, fat: cx && cx.fat, imp: cx && cx.imp != null ? cx.imp : (cup ? .45 : .7) });
+  const xi = L.xi.map(s => Object.assign({}, s.x, { sp: s.slot, sl: s.i }));
+  return { xi, bench: L.bench.slice(0, 9), form: L.form };
 }
-
 // ---------- 징계·피로 (관전 모드 AI 선수) ----------
 // MD.ctx = { w, d, kind: 'lg' | 'cup' | 'cont' } — 달력이 경기 전에 채운다
 // w.susp[pid] = { dom: 국내(리그·컵) 남은 경기, lg: 리그만, cont: 대륙 대회 }
@@ -78,6 +73,8 @@ function discCx(cx, sd, kind) {
   for (const x of sd.sq) { const b = SU[x.id]; if (b && BANK[kind].some(k => b[k] > 0)) ban.add(x.id); }
   // 출전 정지 소화
   for (const id of ban) { const b = SU[id]; for (const k of BANK[kind]) if (b[k] > 0) { b[k]--; break; } if (!b.dom && !b.lg && !b.cont) delete SU[id]; }
+  // EPL 25인 명단에서 빠진 선수는 리그 경기에 못 나온다
+  if (kind === 'lg' && C.mkt) { const U = C.mkt.unreg(w, sd.key); if (U) for (const id of U) ban.add(id); }
   const fat = x => { const l = LP[x.id]; if (l == null) return 0; const gap = d - l, gk = (GRP[x.pos] || 'M') === 'G'; const v = gap <= 2 ? 6 : gap === 3 ? 3.2 : gap === 4 ? 1 : 0; return gk ? v * .35 : v; };
   return { ban, fat };
 }
@@ -143,7 +140,9 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   const P = [[], []]; // 출전 선수: { id, pos, ovr, on, off, start, g, a, y, r, ri }
   const CX = MD.ctx && MD.ctx.w && !(opt && opt.nat) ? MD.ctx : null, kind = CX ? (cup ? 'cup' : CX.kind || 'lg') : null;
   const st9 = 2 + Math.floor(R() * 6); // 이 경기의 후반 추가시간
-  const Ls = sides.map(sd => lineup(sd.sq, null, cup, CX ? discCx(CX, sd, kind) : null));
+  // 포메이션: 구단은 감독 성향, 국가대표는 기본 4-3-3/4-2-3-1
+  const formOf = sd => { const w = CX ? CX.w : C._w; if (opt && opt.nat) return C.seeded('nf|' + sd.key)() < .5 ? '4-3-3' : '4-2-3-1'; const M = w && C.mgrOf ? C.mgrOf(w, sd.key) : null; if (M) { C.mgrStyle(M, (w.clubs[sd.key] || {}).nat); return C.formFor(w, sd.key, M, sd.sq); } return '4-2-3-1'; };
+  const Ls = sides.map(sd => { const cx = CX ? discCx(CX, sd, kind) : null; if (cx) cx.imp = CX.imp != null ? (Array.isArray(CX.imp) ? CX.imp[sides.indexOf(sd)] : CX.imp) : null; return lineup(sd.sq, null, cup, cx, formOf(sd)); });
   const avg = Ls.map(L => L.xi.length ? L.xi.reduce((a, x) => a + x.ovr, 0) / L.xi.length : 60);
   for (let s = 0; s < 2; s++) {
     const me = u && u.side === s && u.rec && u.rec.played ? u.rec : null;
@@ -177,10 +176,12 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
     if (me) { // 내 선수를 명단에 넣는다: 선발이면 같은 포지션 선수 하나를 빼고, 교체면 교체 1명 자리를 쓴다
       const myPos = me.pos || u.pos || 'CM';
       const meObj = { id: 'ME', pos: myPos, ovr: u.ovr || 70 };
-      if (me.start) { let k = xi.findIndex(x => GRP[x.pos] === GRP[myPos]); if (k < 0) k = xi.length - 1; xi.splice(k, 1, meObj); }
+      if (me.start) { let k = xi.findIndex(x => x.sp === myPos); if (k < 0) k = xi.findIndex(x => GRP[x.sp || x.pos] === GRP[myPos]); if (k < 0) k = xi.length - 1; meObj.sp = xi[k].sp; meObj.sl = xi[k].sl; xi.splice(k, 1, meObj); }
       else bench.unshift(meObj);
     }
-    for (const x of xi) P[s].push({ id: x.id, pos: x.pos, ovr: x.ovr, on: 0, off: 90, start: 1, g: 0, a: 0, y: 0, r: 0 });
+    // 경기에서의 포지션 = 포메이션 자리 (득점 확률·통계도 그 자리 기준). 본래 포지션은 bp
+    for (const x of xi) P[s].push({ id: x.id, pos: x.sp || x.pos, bp: x.pos, sl: x.sl, ovr: x.id === 'ME' ? x.ovr : Math.round(C.posEff ? C.posEff(x, x.sp || x.pos) : x.ovr), on: 0, off: 90, start: 1, g: 0, a: 0, y: 0, r: 0 });
+    Ls[s].xiP = P[s].slice();
     // 교체: 특별한 일이 없으면 5명을 거의 다 쓴다. 경기 중 교체 타이밍은 3번(+하프타임)이라 두세 명씩 묶어서 들어간다
     const rq = R(), want = rq < .58 ? 5 : rq < .82 ? 4 : rq < .95 ? 3 : 2;
     const nSub = Math.min(bench.length, 5 - cameo.length, me && !me.start ? Math.max(1, want - cameo.length) : Math.max(0, want - cameo.length));
@@ -211,7 +212,7 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
       const same = outs.filter(x => GRP[x.pos] === GRP[sb.pos]);
       const o = same.length ? same[(R() * same.length) | 0] : outs[Math.floor(R() * outs.length)];
       o.off = minute;
-      P[s].push({ id: sb.id, pos: sb.pos, ovr: sb.ovr, on: minute, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 });
+      P[s].push({ id: sb.id, pos: o.pos, bp: sb.pos, sl: o.sl, ovr: sb.id === 'ME' ? sb.ovr : Math.round(C.posEff ? C.posEff(sb, o.pos) : sb.ovr), on: minute, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 });
     }
     if (me && me.start && me.min < 90) { const mp = P[s].find(x => x.id === 'ME'); mp.off = me.min; const b2 = bench.filter(b => !P[s].some(x => x.id === b.id))[0]; if (b2) P[s].push({ id: b2.id, pos: b2.pos, ovr: b2.ovr, on: me.min, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 }); }
   }
@@ -289,8 +290,9 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   const evS = ev.map(e => `${e[0]}${e[1]}.${e[2]}.${enc(e[3])}${e[4] != null ? '.' + enc(e[4]) : ''}`).join('|');
   // 실제 선수가 한 명도 없는 하부 구단끼리의 경기는 출전 명단을 남기지 않는다 (득점·카드만)
   const real = sd => sd.sq.some(x => x.id[0] !== '~') || (u && u.rec);
-  const lnS = real(A) || real(B) ? P.map(list => list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on + (x.off < 90 ? '-' + x.off : ''))).join(',')).join('/') : '';
-  if (CX) try { discAfter(CX, kind, sides, P, ev); recAfter(CX, kind, sides, P, ev, ga, gb, id => { for (const sd of sides) { const x = sd.sq.find(z => z.id === id); if (x) return x.n; } return id; }); } catch (e) { console.error('rec', e); }
+  // 라인업 기록: 맨 앞 '~포메이션번호', 선수마다 끝에 '@슬롯' (포메이션 자리)
+  const lnS = real(A) || real(B) ? P.map((list, s) => (Ls[s].form && C.FORMK ? ['~' + C.FORMK.indexOf(Ls[s].form)] : []).concat(list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on + (x.off < 90 ? '-' + x.off : '')) + (x.sl != null ? '@' + x.sl.toString(36) : ''))).join(',')).join('/') : '';
+  if (CX) try { discAfter(CX, kind, sides, P, ev); recAfter(CX, kind, sides, P, ev, ga, gb, id => { for (const sd of sides) { const x = sd.sq.find(z => z.id === id); if (x) return x.n; } return id; }); if (C.pkHook) C.pkHook(CX, kind, sides, ev, ga, gb); } catch (e) { console.error('rec', e); }
   return { ev: evS, ln: lnS, P };
 };
 MD.momPick = cands => { let b = null; for (const c of cands) { if (!b || c.rt > b.rt || (c.rt === b.rt && (c.ga > b.ga || (c.ga === b.ga && ((c.win && !b.win) || (c.win === b.win && c.start > b.start)))))) b = c; } return b; };
@@ -333,12 +335,16 @@ MD.decode = (st, m) => {
   // m: [라운드/단계, a, b, ga, gb, ev, ln, ...]
   const id = s => st.P[u62(s)];
   const ev = !m[5] ? [] : m[5].split('|').map(t => { const k = t[0], [mn, sd, p1, p2] = t.slice(1).split('.'); return { k, m: +mn, s: +sd, p: id(p1), a: p2 != null ? id(p2) : null }; });
-  const ln = !m[6] ? null : m[6].split('/').map(side => side ? side.split(',').map(t => {
-    const mt = /^([0-9A-Za-z]+)([0-9A-Za-z])([+-]\d+)?(-\d+)?$/.exec(t); if (!mt) return null;
+  const fm = [null, null];
+  const ln = !m[6] ? null : m[6].split('/').map((side, si) => side ? side.split(',').map(t => {
+    if (t[0] === '~') { fm[si] = (C.FORMK || [])[+t.slice(1)] || null; return null; }
+    const mt = /^([0-9A-Za-z]+)([0-9A-Za-z])([+-]\d+)?(-\d+)?(@[0-9a-z])?$/.exec(t); if (!mt) return null;
     const sub = mt[3] && mt[3][0] === '+', v = mt[3] ? +mt[3].slice(1) : 0;
-    return { id: id(mt[1]), start: !sub, on: sub ? v : 0, off: sub ? (mt[4] ? +mt[4].slice(1) : 90) : (mt[3] ? v : 90), rt: (B62.indexOf(mt[2]) + 45) / 10 };
+    const o = { id: id(mt[1]), start: !sub, on: sub ? v : 0, off: sub ? (mt[4] ? +mt[4].slice(1) : 90) : (mt[3] ? v : 90), rt: (B62.indexOf(mt[2]) + 45) / 10 };
+    if (mt[5]) { o.sl = parseInt(mt[5].slice(1), 36); if (fm[si] && C.FORMS[fm[si]][o.sl]) o.sp = C.FORMS[fm[si]][o.sl][0]; }
+    return o;
   }).filter(Boolean) : []);
-  return { ev, ln };
+  return { ev, ln, fm };
 };
 // 경기 통계 (점유율·슈팅): 저장하지 않고 경기 키로 항상 같은 값이 나오게 만든다
 MD.teamStats = (key, sa, sb, ga, gb) => {

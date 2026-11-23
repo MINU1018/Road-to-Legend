@@ -4,7 +4,7 @@
 const path = require('path');
 global.window = global;
 const B = process.env.SRC || path.join(__dirname, '..') + path.sep;
-['data_fc27.js', 'data_fa.js', 'data_yth.js', 'data_loans.js', 'data_world.js', 'data_ext.js', 'profiles.js', 'core.js', 'world.js', 'cups.js', 'season.js', 'history.js', 'matchdb.js', 'matchstats.js', 'calendar.js', 'wnews.js', 'events.js', 'moments.js', 'game.js', 'shop.js', 'achievements.js', 'bio.js', 'logos.js', 'extras.js']
+['data_fc27.js', 'data_fa.js', 'data_yth.js', 'data_loans.js', 'data_world.js', 'data_ext.js', 'profiles.js', 'core.js', 'world.js', 'market.js', 'cups.js', 'season.js', 'history.js', 'tactics.js', 'matchdb.js', 'puskas.js', 'matchstats.js', 'calendar.js', 'wnews.js', 'events.js', 'moments.js', 'game.js', 'shop.js', 'achievements.js', 'bio.js', 'logos.js', 'extras.js']
   .forEach(f => { try { require(path.join(B, f)); } catch (e) { if (!/ENOENT|Cannot find/.test(e.message)) throw e; } });
 TC.cfg.moments = 'off';
 module.exports = { C: TC, GM: TCG };

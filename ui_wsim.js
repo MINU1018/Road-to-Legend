@@ -288,14 +288,15 @@ function hofView(s) {
 U.pages.hist = function () {
   const s = U.S(), w = s.w, sv = v();
   const root = h('div', { class: 'wrap prof screen' });
-  root.append(U.pageHead('시상·역사', '발롱도르 30인 · 골든보이 · 유러피언 골든슈 · 시즌별 우승 (한 해는 8월 1일에 마감, 시상식은 9월 넷째 주 월요일)'));
+  root.append(U.pageHead('시상·역사', '발롱도르 30인 · 골든보이 · 유러피언 골든슈 · 푸스카스상 · 시즌별 우승 (한 해는 8월 1일에 마감, 시상식은 9월 넷째 주 월요일)'));
   { const cb = U.cerBanner(s); if (cb) root.append(cb); }
   const ws = s.ws || [];
-  if (!ws.length && !(w.hof || []).length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 해(8월 1일)가 지나면 시상과 우승 기록이 쌓입니다.'))); return root; }
-  const SUB = [['bd', '발롱도르'], ['gb', '골든보이'], ['gs', '골든슈'], ['xi', '월드 베스트 XI'], ['season', '시즌별 우승'], ['champ', '역대 우승'], ['hof', '명예의 전당']];
+  if (!ws.length && !(w.hof || []).length && !(w.pusk && w.pusk.c && w.pusk.c.length)) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 해(8월 1일)가 지나면 시상과 우승 기록이 쌓입니다.'))); return root; }
+  const SUB = [['bd', '발롱도르'], ['gb', '골든보이'], ['gs', '골든슈'], ['xi', '월드 베스트 XI'], ['pk', '푸스카스상'], ['season', '시즌별 우승'], ['champ', '역대 우승'], ['hof', '명예의 전당']];
   if (!sv.hs || !SUB.some(x => x[0] === sv.hs)) sv.hs = 'bd';
   root.append(h('div', { class: 'etabs' }, ...SUB.map(([k, l]) => h('button', { class: sv.hs === k ? 'on' : '', onclick: () => { sv.hs = k; U.stay(); } }, l))));
   if (sv.hs === 'hof') { root.append(hofView(s)); return root; }
+  if (sv.hs === 'pk') { root.append(U.pkView(s)); return root; }
   if (sv.hs === 'xi') {
     const src = w.wxiHist || [];
     if (!src.length) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '이번 업데이트 이후 시상식부터 기록됩니다.'))); return root; }

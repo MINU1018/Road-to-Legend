@@ -148,7 +148,7 @@ async function lgRound(S, LS, d, hooks) {
     const sr = C.splitRounds(C.sortTable(LS.tb).map(r => r.id), C.lgFormat(lg));
     LS.R = LS.R.slice(0, LS.nreg).concat(sr.map(ms => ms.map(([a, b]) => [cx(w, a), cx(w, b)])));
   }
-  const ms = LS.R[LS.ri] || [], me = meClub(S);
+  const ms = LS.R[LS.ri] || [], me = meClub(S), rb = raceBoost(LS);
   const keepLn = (lg.tier || 1) <= 2 || (me && lg.clubs.includes(me));
   for (const [ai, bi] of ms) {
     const a = cid(w, ai), b = cid(w, bi);
@@ -162,7 +162,7 @@ async function lgRound(S, LS, d, hooks) {
       ga = home ? rec.gf : rec.ga; gb = home ? rec.ga : rec.gf; u = uArg(S, home ? 0 : 1, rec);
     } else [ga, gb] = C.quickMatch(C.mstr(w, a), C.mstr(w, b), 1);
     addRes(LS.tb, a, b, ga, gb);
-    C.MD.ctx = { w, d, kind: 'lg' };
+    C.MD.ctx = { w, d, kind: 'lg', imp: impPair(w, a, b, .74, rb) };
     const res = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
     addAgg(h.agg, ai, res.P[0]); addAgg(h.agg, bi, res.P[1]);
     h.s.push(`${C.MD.b62(ai)}.${C.MD.b62(bi)}.${ga}.${gb}`); h.e.push(res.ev); h.l.push(keepLn ? res.ln : ''); h.d.push(d); h.r.push(LS.ri);
@@ -311,7 +311,8 @@ async function cupDay(S, st, d, hooks) {
     const res = st.res[st.res.length - 1];
     for (const m of res.m) {
       const [a, b, ga, gb, pw] = m, isU = u && a === u.a && b === u.b;
-      C.MD.ctx = { w, d, kind: 'cup' };
+      const left = st.rounds.length - st.ri + 1; // 방금 치른 라운드 포함 남은 라운드 수
+      C.MD.ctx = { w, d, kind: 'cup', imp: impPair(w, a, b, left <= 1 ? 1 : left === 2 ? .88 : left === 3 ? .7 : st.kind === 'cup' ? .44 : .3) };
       const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, isU ? uArg(S, a === me ? 0 : 1, urec) : null, { cup: true });
       h.rows.push([rd.n, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
       addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -480,13 +481,34 @@ function contCreate(w, k, sy, parts) {
   cs.tdraw = {};
   return cs;
 }
+
+// 경기 중요도 (0~1): 높으면 베스트 11, 낮으면 로테이션. [홈, 원정]
+function impPair(w, a, b, base, o) {
+  const A = w.clubs[a], B = w.clubs[b], sa = (A && A.str) || 66, sb = (B && B.str) || 66, dby = C.derbyOf && C.derbyOf(a, b);
+  const one = (me, op, diff, rk) => {
+    let v = base;
+    if (diff > 9) v -= .22; else if (diff > 5) v -= .1; else if (diff < -4) v += .08; // 한참 약한 상대면 쉬게, 강팀 상대면 정예
+    if (rk && rk[me] != null) v += rk[me]; // 우승·잔류 경쟁 막판
+    if (dby) v += .2;
+    return clamp(v, .15, 1);
+  };
+  return [one(a, b, sa - sb, o), one(b, a, sb - sa, o)];
+}
+// 리그 막판 순위 경쟁: 선두권(선두와 6점 이내) · 강등권 근처(3점 이내) 팀은 +
+function raceBoost(LS) {
+  const late = LS.ri / Math.max(1, LS.dates.length); if (late < .7) return null;
+  const T = C.sortTable(LS.tb), n = T.length, top = T[0] ? T[0].pts : 0, cut = T[Math.max(0, n - 4)] ? T[Math.max(0, n - 4)].pts : 0, o = {};
+  T.forEach((r, i) => { let v = 0; if (top - r.pts <= 6 || i < 4) v = .18; if (Math.abs(r.pts - cut) <= 3) v = .2; if (v) o[r.id] = v * (late > .85 ? 1.3 : 1); });
+  return o;
+}
 async function contUser(S, cs, oid, home, stage, imp, d, hooks) {
   const w = S.w, oc = w.clubs[oid];
   return C.userMatch(S, { d, kind: 'E', compKey: 'cont', compName: cs.name, stage, opp: oid, oppName: oc.name, oppStr: C.mstr(w, oc), home, imp }, hooks);
 }
 function contRow(S, cs, h, stage, a, b, ga, gb, u, pw, d) {
   const w = S.w;
-  C.MD.ctx = { w, d, kind: 'cont' };
+  const ko = /결승|준결승|8강|16강|플레이오프/.test(stage), fin = /^결승/.test(stage);
+  C.MD.ctx = { w, d, kind: 'cont', imp: impPair(w, a, b, fin ? 1 : ko ? .94 : .8) };
   const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
   h.rows.push([stage, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
   addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -1037,6 +1059,7 @@ function rollover(S) {
   let bd = null; try { bd = C.ballonDor(S); } catch (e) { console.error('ballon', e); }
   w.bdLast = bd ? { y: w.year + 1, top: bd.top.map(x => [x.n, x.cid, x.pid || '', x.me ? 1 : 0, x.ovr, x.pos || '']), rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank } : null;
   if (S.ss && S.ss.on && bd) S.ss.ballon = bd;
+  try { if (C.pkClose) C.pkClose(S); } catch (e) { console.error('puskas', e); }
   // 시상식: 9월 넷째 주 월요일. 그때까지 순위는 비공개 (후보 30인만 공개)
   if (bd) w.cer = { y: w.year + 1, d: C.cerDay(w.year + 1), rev: 0, seen: 0, me: S.mode !== 'world' ? { rank: bd.rank, youngRank: bd.youngRank, gsRank: bd.gsRank, gs0: bd.gs[0] || null, gk: !!bd.isGK, xi: bd.wxiMe ? 1 : 0, label: S.ss && S.ss.label } : null };
   if (C.wn) try { C.wn.yearEnd(S, bd); } catch (e) { console.error(e); }
@@ -1101,6 +1124,11 @@ function injTick(S, d) {
   for (const id in w.clubs) {
     const c = w.clubs[id]; if (c.lite || !c.sq || !c.sq.length) continue;
     if (mon1) c.fm = clamp((c.fm || 0) * .85 + N(0, .38), -2.6, 2.6);
+    // 출전 시간 불만 (다혈질·야망형 주전급 선수가 벤치에 있으면): 다음 이적시장에서 떠나려 한다
+    if (mon1 && C.mkt && c.lg && w.lg[c.lg] && w.lg[c.lg].tier === 1 && C.squadRoles) { const rl = C.squadRoles(c);
+      for (const e of c.sq) { if (e[31] || e[7] || e[14] || e[3] < 21 || e[3] > 31 || e[2] < 74 || rl.get(e) !== 2) continue; const p = C.mkt.persona(e); if (p.temp + p.amb * .5 < .95 || R() > .12) continue;
+        e[31] = 1; if (C.wn && e[2] >= 78 && String(e[0])[0] !== '~') C.wn.push(S, { d, c: 'gossip', imp: e[2] >= 83 ? 2 : 1, h: `${C.pName(w, e)}, 출전 시간 부족에 불만`, s: `${c.name}에서 벤치를 지키는 시간이 길어지자 "더 뛰고 싶다"는 뜻을 내비쳤다. 다음 이적시장에서 거취가 주목된다.`, p: [String(e[0])], cl: [c.id] }); } }
+    if (mon1 && C.tacAdj) { try { c.tac = Math.round(C.tacAdj(w, id) * 80) / 100; } catch (e) { c.tac = 0; } } // 감독·포메이션 적합도 (약하게)
     let ch = 0, any = 0;
     for (const e of c.sq) {
       if (e[14] && e[14] <= d) { e[14] = 0; ch = 1; if (C.wn && e[17]) C.wn.injBack(S, e, c, d, e[17]); e[17] = 0; }

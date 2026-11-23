@@ -34,7 +34,17 @@ U.pfInfoCard = function (s, pid, e, c, P) {
   const others = F ? FAMK.filter((k, i) => (F[3] >> i) & 1 && k !== main) : [];
   const pitch = h('div', { class: 'pfpitch' }, U.svg('<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%" fill="none" stroke="rgba(255,255,255,.14)" stroke-width=".8"><rect x="1" y="1" width="98" height="98" rx="3"/><line x1="1" y1="50" x2="99" y2="50"/><circle cx="50" cy="50" r="10"/><rect x="25" y="1" width="50" height="14"/><rect x="25" y="85" width="50" height="14"/></svg>'),
     ...[main].concat(others).filter(Boolean).map((k, i) => { const xy = PXY[k] || [50, 50]; return h('span', { class: 'pfpm' + (i ? ' alt' : ''), style: { left: xy[0] + '%', top: xy[1] + '%' } }, PSH[k] || k); }));
-  return h('div', { class: 'sec pfinfo' }, h('div', { class: 'pfig' }, ...cells.map(([v, l]) => h('div', null, h('b', null, v), h('small', { class: 'mute' }, l)))),
+  if (e && c && C.mkt) { const bo = e[24] || (C.mkt && w.lg[c.lg] && w.lg[c.lg].nation === 'ESP' ? C.mkt.buyout(w, e, c) : 0); if (bo) cells.push([C.fmtEUR(bo * 1e4), '바이아웃 조항']); }
+  const tags = [];
+  if (e && C.mkt) {
+    if (e[25] && w.clubs[e[25][0]]) tags.push(`셀온 ${e[25][1]}% (${w.clubs[e[25][0]].name})`);
+    if (e[26] && w.clubs[e[26][0]]) tags.push(`바이백 ${C.fmtEUR(e[26][1] * 1e4)} (${w.clubs[e[26][0]].name})`);
+    if (e[27] && e[7]) tags.push(`완전 이적 ${e[27][0] === 'b' ? '의무' : '옵션'} ${C.fmtEUR(e[27][1] * 1e4)}`);
+    if (c && c.lg === 'ENG1') { const r = C.mkt.reg(w, c); if (e[3] <= 21) tags.push('EPL 명단: 21세 이하 (등록 불필요)'); else if (r && r.out.has(String(e[0]))) tags.push('EPL 25인 명단 제외 (리그 출전 불가)'); else tags.push(C.mkt.homegrown(e, 'ENG') ? 'EPL 홈그로운' : 'EPL 비홈그로운'); }
+    if (e[31]) tags.push('출전 시간 불만');
+    for (const t of C.mkt.traits(e)) tags.push('성격: ' + t);
+  }
+  return h('div', { class: 'sec pfinfo' }, h('div', { class: 'pfig' }, ...cells.map(([v, l]) => h('div', null, h('b', null, v), h('small', { class: 'mute' }, l)))), tags.length ? h('div', { class: 'pftags' }, ...tags.map(t => h('span', { class: 'chip' + (/불만|제외/.test(t) ? ' red' : '') }, t))) : null,
     h('div', { class: 'pfpos' }, h('div', null, h('div', { class: 'lbl' }, '포지션'), main ? h('div', null, h('small', { class: 'mute' }, '기본'), h('b', null, POSKO[main] || main)) : null, others.length ? h('div', null, h('small', { class: 'mute' }, '기타'), h('div', null, others.map(k => POSKO[k] || k).join(' · '))) : null), pitch));
 };
 

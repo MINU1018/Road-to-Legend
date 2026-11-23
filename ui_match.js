@@ -134,7 +134,8 @@ U.showMatch = function (o) {
   const hasLn = d.ln && d.ln.length === 2 && d.ln[0].length && d.ln[1].length;
   const posOf = posLookup(s);
   let ms = null;
-  const getMs = () => ms || (ms = C.MS.gen({ key, sa, sb, ga: o.ga, gb: o.gb, d, posOf: id => posOf(id) }));
+  const mdate = o.ctx && (o.ctx.date != null ? o.ctx.date : o.ctx.d);
+  const getMs = () => ms || (ms = C.MS.gen({ key, sa, sb, ga: o.ga, gb: o.gb, d, posOf: id => posOf(id), spec: !o.nat && C.pkSpec ? C.pkSpec(w, mdate, o.a, o.b) : null }));
   const mom = MD.momOf(d, o.ga, o.gb);
   let col = [teamColor(w, o.a, o.nat, 0), teamColor(w, o.b, o.nat, 1)];
   if (colDist(col[0], col[1]) < 90) col[1] = colDist(col[0], '#5fa8ff') > 90 ? '#5fa8ff' : '#e9ecf1';
@@ -234,12 +235,19 @@ U.showMatch = function (o) {
       const labels = [];
       for (const sd of [0, 1]) {
         const list = M.PL[sd].map((p, i) => Object.assign(p, { ix: i }));
-        const F = formation(list); labels.push(F.label);
-        const nR = F.rows.length, y0 = 5.5, y1 = 44;
-        const Y = k => y0 + (y1 - y0) * (k + 1) / (nR + .35);
         const place = (p, x, y) => pitch.append(card(p, sd ? x : 100 - x, sd ? 100 - y : y, sd));
-        if (F.gk) place(F.gk, 50, y0);
-        F.rows.forEach((row, k) => row.forEach((p, i) => place(p, 100 * (i + 1) / (row.length + 1), Y(k))));
+        const fk = d.fm && d.fm[sd], FS = fk && C.FORMS && C.FORMS[fk], xi = list.filter(p => p.start);
+        if (FS && xi.length && xi.every(p => p.sl != null && FS[p.sl])) {
+          // 기록된 포메이션의 자리 좌표 그대로
+          labels.push(fk);
+          for (const p of xi) { const [, fx, fy] = FS[p.sl]; place(p, 6 + fx * .88, 5.5 + (fy - 4) / 81 * 38.5); }
+        } else {
+          const F = formation(list); labels.push(F.label);
+          const nR = F.rows.length, y0 = 5.5, y1 = 44;
+          const Y = k => y0 + (y1 - y0) * (k + 1) / (nR + .35);
+          if (F.gk) place(F.gk, 50, y0);
+          F.rows.forEach((row, k) => row.forEach((p, i) => place(p, 100 * (i + 1) / (row.length + 1), Y(k))));
+        }
       }
       B.append(h('div', { class: 'lphd' }, h('span', null, crestOf(0), h('b', null, tname(0)), h('span', { class: 'mute' }, ' ' + labels[0])), h('span', null, h('span', { class: 'mute' }, labels[1] + ' '), h('b', null, tname(1)), crestOf(1))));
       B.append(pitch);
@@ -249,7 +257,7 @@ U.showMatch = function (o) {
         return h('div', { class: 'mlr click', onclick: rowClick(p.id) }, h('span', { class: 'mln' }, pname(p.id, close)), h('span', { class: 'mute' }, `↑${p.on}'` + (outP ? ` (${shortName(nameOf(outP.id))} ↓)` : '')), icons(p.id), U.rt1(p.rt));
       }), M.PL[sd].some(p => !p.start) ? null : h('div', { class: 'mute', style: { fontSize: '12px' } }, '교체 없음'));
       B.append(h('div', { class: 'mlus' }, bench(0), bench(1)));
-      B.append(h('div', { class: 'mute', style: { fontSize: '11px' } }, '포메이션은 선발 선수의 포지션으로 표시합니다. 선수를 누르면 경기 세부 기록.'));
+      B.append(h('div', { class: 'mute', style: { fontSize: '11px' } }, '포메이션과 자리는 감독이 그 경기에 짠 배치입니다. 원래 포지션이 아닌 자리에 서면 그만큼 기량이 덜 나옵니다. 선수를 누르면 경기 세부 기록.'));
     }
     function crestOf(sd) { const id = sd ? o.b : o.a; return o.nat ? U.natCrest(id, 18) : crest(w.clubs[id] || null, 18); }
     // ---------- 통계 ----------
@@ -296,7 +304,7 @@ U.showMatch = function (o) {
       }
       const det = cur ? h('div', { class: 'shdet' },
         h('div', { class: 'shh' }, h('span', { class: 'mm' }, U.fmtMin(cur.m)), h('span', { class: 'shc', style: { background: col[cur.s] } }), pname(cur.p, close), cur.as ? h('span', { class: 'mute', style: { fontSize: '12px' } }, ' · 키 패스 ', pname(cur.as, close)) : null),
-        h('div', { class: 'shg' }, ...[['슛 유형', cur.type], ['상황', cur.sit], ['결과', cur.res === '선방' ? '유효 슈팅 (선방)' : cur.res === '막힘' ? '막힘' : cur.res], ['xG', f2(cur.xg)], ['xGOT', cur.xgot != null && (cur.res === '골' || cur.res === '선방') ? f2(cur.xgot) : '-']].map(([k, val]) => h('div', null, h('small', { class: 'mute' }, k), h('b', null, val)))))
+        h('div', { class: 'shg' }, ...[['슛 유형', cur.type], ['상황', cur.pk ? (C.PKT.find(t => t.k === cur.pk) || {}).n || cur.sit : cur.sit], ['결과', cur.res === '선방' ? '유효 슈팅 (선방)' : cur.res === '막힘' ? '막힘' : cur.res], ['xG', f2(cur.xg)], ['xGOT', cur.xgot != null && (cur.res === '골' || cur.res === '선방') ? f2(cur.xgot) : '-']].map(([k, val]) => h('div', null, h('small', { class: 'mute' }, k), h('b', null, val)))))
         : h('div', { class: 'mute', style: { fontSize: '12px', textAlign: 'center' } }, '이 구간에는 슈팅이 없습니다');
       const leg = h('div', { class: 'shleg mute' }, h('span', null, h('i', { class: 'lg g' }), '골'), h('span', null, h('i', { class: 'lg o' }), '유효 슈팅'), h('span', null, h('i', { class: 'lg x' }), '빗나감·막힘'), h('span', null, '원 크기 = xG'));
       const cnt = sd => { const a = SH.filter(x => x.s === sd); return `${a.length}슈팅 · xG ${f2(a.reduce((t, x) => t + x.xg, 0))}`; };

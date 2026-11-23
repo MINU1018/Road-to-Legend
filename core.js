@@ -47,7 +47,7 @@ const ACAT = { accel: 1, sprint: 1, agility: 1, balance: 1, stamina: 1, jumping:
 const POS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
 const POSKO = { GK: '골키퍼', CB: '센터백', LB: '왼쪽 풀백', RB: '오른쪽 풀백', CDM: '수비형 미드필더', CM: '중앙 미드필더', CAM: '공격형 미드필더', LM: '왼쪽 미드필더', RM: '오른쪽 미드필더', LW: '왼쪽 윙어', RW: '오른쪽 윙어', ST: '스트라이커' };
 // 역할 분류 (기록·평점 계산용)
-const ROLE = { GK: 'GK', CB: 'CB', LB: 'FB', RB: 'FB', CDM: 'DM', CM: 'CM', CAM: 'AM', LM: 'W', RM: 'W', LW: 'W', RW: 'W', ST: 'ST' };
+const ROLE = { GK: 'GK', CB: 'CB', LB: 'FB', RB: 'FB', LWB: 'FB', RWB: 'FB', CDM: 'DM', DM: 'DM', CM: 'CM', CAM: 'AM', AM: 'AM', LM: 'W', RM: 'W', LW: 'W', RW: 'W', ST: 'ST', CF: 'ST' };
 // 스쿼드 경쟁 그룹 (같은 자리를 두고 다투는 포지션)
 const SLOT = { GK: 'GK', CB: 'CB', LB: 'LB', RB: 'RB', CDM: 'DM', CM: 'CM', CAM: 'AM', LM: 'LW', LW: 'LW', RM: 'RW', RW: 'RW', ST: 'ST' };
 const SLOTN = { GK: 1, CB: 2, LB: 1, RB: 1, DM: 1, CM: 2, AM: 1, LW: 1, RW: 1, ST: 1 };

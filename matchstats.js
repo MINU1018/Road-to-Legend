@@ -59,10 +59,10 @@ function build(o) {
     let si = 0;
     list.forEach(x => {
       const idx = x.start ? si++ : -1;
-      let pos = (o.posOf && o.posOf(x.id, s, idx, x.start)) || (x.start ? ORDER_POS[Math.min(idx, 10)] : 'CM');
+      let pos = x.sp || (o.posOf && o.posOf(x.id, s, idx, x.start)) || (x.start ? ORDER_POS[Math.min(idx, 10)] : 'CM'); // 포메이션 자리가 기록돼 있으면 그 자리
       const role = ROLEOF(pos);
       const on = x.on || 0, off = x.off == null ? 90 : x.off, min = Math.max(1, off - on);
-      PL[s].push({ id: x.id, s, pos, role, on, off, min, start: !!x.start, rt: x.rt || 6.6, A: attrOf(x.id, role), st: {} });
+      PL[s].push({ id: x.id, s, pos, role, sl: x.sl, on, off, min, start: !!x.start, rt: x.rt || 6.6, A: attrOf(x.id, role), st: {} });
     });
   });
   const has = PL[0].length && PL[1].length;
@@ -112,13 +112,23 @@ function build(o) {
     sh.as = assist !== undefined ? assist : null;
     return sh;
   }
+  // 푸스카스상 후보 골: 기록된 거리·종류로 슈팅 정보를 맞춘다
+  function specShot(sh, sp) {
+    sh.dx = sp.dx; sh.dy = sp.dy; sh.inBox = sp.dx < 16.5 && Math.abs(sp.dy) < 20.16 ? 1 : 0; sh.pk = sp.k;
+    if (sp.k === 'fk') sh.sit = '세트피스'; else if (sp.k === 'solo') sh.sit = '일반 플레이'; else if (sh.sit === '코너킥' || sh.sit === '세트피스') sh.sit = '일반 플레이';
+    if (sp.k === 'bike' || sp.k === 'scorp' || sp.k === 'heel') sh.type = sp.k === 'bike' ? '오버헤드킥' : sp.k === 'heel' ? '백힐' : '스콜피온 킥';
+    else if (sh.type === '헤더') sh.type = '오른발';
+    sh.xg = Math.round(clamp(sp.dx > 40 ? .005 : sp.dx > 20 ? .03 : sp.k === 'bike' || sp.k === 'scorp' ? .06 : .08 - (sp.dx - 8) * .004, .005, .2) * 100) / 100; sh.big = 0;
+    sh.xgot = clamp(sh.xg + .25 + r() * .3, .2, .95);
+  }
   if (has) for (let s = 0; s < 2; s++) {
     const evG = d.ev.filter(e => e.s === s && (e.k === 'g' || e.k === 'p'));
     const nG = evG.length;
     let sh = Math.max(ts.sh[s], nG + 2), sot = clamp(Math.round(nG + Math.max(0, ts.sot[s] - nG) * .78), nG, sh);
     // 퇴장 등으로 사람이 적을 때 조금 줄인다
     const nonG = sh - nG, saved = sot - nG, rest = nonG - saved, blk = Math.round(rest * U(.28, .45)), off = rest - blk;
-    for (const e of evG) { const p = PL[s].find(x => x.id === e.p) || null; const asP = e.a ? PL[s].find(x => x.id === e.a) : null; shots.push(mkShot(s, e.m, p, e.k === 'p' ? 'pen' : 'goal', asP ? asP.id : null)); }
+    for (const e of evG) { const p = PL[s].find(x => x.id === e.p) || null; const asP = e.a ? PL[s].find(x => x.id === e.a) : null; const sh0 = mkShot(s, e.m, p, e.k === 'p' ? 'pen' : 'goal', asP ? asP.id : null);
+      const sp = e.k === 'g' && o.spec && o.spec.find(z => z.s === s && z.p === e.p && z.m === e.m); if (sp) specShot(sh0, sp); shots.push(sh0); }
     const kinds = [].concat(Array(saved).fill('saved'), Array(off).fill('off'), Array(blk).fill('block'));
     for (const k of kinds) {
       const m = clamp(Math.round(r() < .53 ? U(46, 91.5) : U(1, 46.5)), 1, 90);
