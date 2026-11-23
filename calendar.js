@@ -947,7 +947,12 @@ function applyWindow(S, kind, d0, d1, opt) {
   { w.ps = w.ps || {};
     for (const r of rows) { if (!MVK.has(r[3]) || r[0][0] === '~') continue; let P = w.ps[r[0]];
       if (!P) { const f = findE(w, r[0]); if (!f) continue; const e = f[0]; P = w.ps[r[0]] = { n: C.pName(w, e), nat: e[5], pos: e[1], h: '', c0: [r[1] || '', r[3] === 'lret' ? r[2] : ''] }; }
-      P.mv = (P.mv || '') + `${r[10]},${r[3]},${r[1] || ''},${r[2] || ''},${r[4] || 0};`; C.psDirty = true; C.psGen = (C.psGen || 0) + 1; } }
+      P.mv = (P.mv || '') + `${r[10]},${r[3]},${r[1] || ''},${r[2] || ''},${r[4] || 0};`; C.psDirty = true; C.psGen = (C.psGen || 0) + 1; }
+    // 구단 기록: 역대 최고 이적료 영입·판매 (상위 5)
+    const CR = w.crec = w.crec || {}, top5 = (L, x) => { L.push(x); L.sort((a, b) => b[0] - a[0]); if (L.length > 3) L.length = 3; };
+    for (const r of rows) { if (r[3] !== 'buy' || !(r[4] > 0)) continue; const nm = 0;
+      if (w.clubs[r[2]]) { const R = CR[r[2]] || (CR[r[2]] = { st: {} }); top5(R.buy = R.buy || [], [r[4], r[0], nm, r[10], r[1]]); }
+      if (w.clubs[r[1]]) { const R = CR[r[1]] || (CR[r[1]] = { st: {} }); top5(R.sell = R.sell || [], [r[4], r[0], nm, r[10], r[2]]); } } }
   w.txPending = w.txPending || {}; w.txPending[lbl] = rows; w.txKeys = (w.txKeys || []).filter(x => x !== lbl).concat(lbl);
   while (w.txKeys.length > 40) (w.txDrop = w.txDrop || []).push(w.txKeys.shift());
   // 선수 위치 지도 (거래 후)
@@ -1025,6 +1030,8 @@ function noLeagueClubs(S) {
 function rollover(S) {
   const w = S.w, lb = C.wLabel(w.year);
   w.ycnt = {}; // 리그 경고 누적은 시즌마다 새로
+  // 여름 감독 교체 (경질 말고도 계약 만료·사임으로 해마다 몇몇 구단은 바뀐다)
+  if (w.mgr && C.mgrChange) for (const id of Object.keys(w.mgr)) if (R() < .07) C.mgrChange(w, id, w.cal ? w.cal.d : 0, '교체');
   noLeagueClubs(S);
   // 발롱도르 (지난 1년: 리그·컵·대륙 대회·여름 국제 대회)
   let bd = null; try { bd = C.ballonDor(S); } catch (e) { console.error('ballon', e); }
@@ -1084,6 +1091,10 @@ function newYear(S, y) {
 // 부상: 선수마다 주당 약 2% (시즌 평균 1회 안팎). 대부분 1~3주, 일부 1~2달, 드물게 장기(큰 부상은 다음 시즌 기량 손실)
 // 시즌 폼: 여름에 구단마다 새로 정해지고(감독·분위기) 달마다 조금씩 흔들린다. 같은 전력이라도 해마다 성적이 달라진다
 const INJW = .02;
+// 부상 종류: 기간에 맞는 것 중에서 (짧은 부상 → 근육 피로·타박상, 긴 부상 → 인대·골절)
+const INJT = [['근육 피로', 0, 14], ['타박상', 0, 14], ['가벼운 발목 염좌', 0, 18], ['감기·몸살', 0, 10], ['허벅지 근육 부상', 7, 35], ['햄스트링 부상', 10, 60], ['종아리 부상', 10, 45], ['사타구니 부상', 10, 50], ['발목 인대 부상', 18, 70], ['무릎 부상', 18, 80], ['허리 부상', 10, 45], ['어깨 부상', 18, 60], ['발 골절', 45, 120], ['반월판 손상', 50, 150], ['전방십자인대 파열', 160, 400], ['아킬레스건 파열', 160, 400], ['정강이뼈 골절', 90, 260]];
+C.INJT = INJT.map(x => x[0]);
+C.injType = (days, r) => { const ok = INJT.map((x, i) => [x, i]).filter(([x]) => days >= x[1] && days <= x[2]); const L = ok.length ? ok : [[INJT[13], 13]]; return L[Math.floor(r * L.length) % L.length][1]; };
 function injTick(S, d) {
   const w = S.w, mon1 = ymd(d)[2] <= 7;
   if (w.lastPl && ymd(d)[2] === 1) for (const k in w.lastPl) if (d - w.lastPl[k] > 8) delete w.lastPl[k]; // 피로 기록은 최근 것만
@@ -1094,7 +1105,11 @@ function injTick(S, d) {
     for (const e of c.sq) {
       if (e[14] && e[14] <= d) { e[14] = 0; ch = 1; if (C.wn && e[17]) C.wn.injBack(S, e, c, d, e[17]); e[17] = 0; }
       if (e[14]) { any = 1; continue; }
-      if (R() < INJW) { const u = R(), days = u < .6 ? 5 + Math.floor(R() * 16) : u < .91 ? 21 + Math.floor(R() * 40) : 61 + Math.floor(R() * 200); e[14] = d + days; e[17] = days; if (days >= 90) e[15] = 1; ch = 1; any = 1; if (C.wn && e[2] >= 82) C.wn.injury(S, e, c, days, d); }
+      if (R() < INJW) { const u = R(), days = u < .6 ? 5 + Math.floor(R() * 16) : u < .91 ? 21 + Math.floor(R() * 40) : 61 + Math.floor(R() * 200); e[14] = d + days; e[17] = days; if (days >= 90) e[15] = 1; ch = 1; any = 1;
+        const ti = C.injType(days, R()); e[23] = ti;
+        // 부상 이력: P.inj = '시작일,기간,종류,구단;' (실제 선수와 OVR 60 이상만 — 용량)
+        const pid = String(e[0]); if (pid[0] !== '~') { w.ps = w.ps || {}; let P = w.ps[pid]; if (!P && e[2] >= 60) P = w.ps[pid] = { n: C.pName(w, e), nat: e[5], pos: e[1], h: '', c0: [c.id, e[7] || ''] }; if (P) { P.inj = (P.inj || '') + `${d},${days},${ti},${c.id};`; C.psDirty = true; } }
+        if (C.wn && e[2] >= 82) C.wn.injury(S, e, c, days, d); }
     }
     // 부상자·출전 정지 선수가 빠진 전력 (징계는 대회 범위와 상관없이 다음 경기 전력에 반영)
     const SU = w.susp || {}, sus = c.sq.some(e => SU[String(e[0])]);

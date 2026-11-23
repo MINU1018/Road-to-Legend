@@ -38,7 +38,7 @@ const CW = { CB: 1.4, DM: 1.5, FB: 1.2, CM: 1.1, AM: .8, W: .75, ST: .85, GK: .3
 // side: { key, sq: [{ id, n, pos, ovr }] }
 MD.clubSide = (w, cid, y) => {
   const c = w.clubs[cid]; if (!c) return { key: cid, sq: [] };
-  const sq = C.squadOf(w, c, y).map(x => ({ id: x.id ? String(x.id) : '~' + cid + '~' + x.n, n: x.n, pos: x.pos, ovr: x.ovr, yb: x.yb || 0 }));
+  const sq = C.squadOf(w, c, y).map(x => ({ id: x.id ? String(x.id) : '~' + cid + '~' + x.n, n: x.n, pos: x.pos, ovr: x.ovr, age: x.age, yb: x.yb || 0 }));
   // 부상자는 명단에서 뺀다 (남은 인원이 너무 적으면 그대로)
   if (!c.lite && c.sq && c.sq.some(e => e[14])) { const inj = new Set(c.sq.filter(e => e[14]).map(e => String(e[0]))), ok = sq.filter(x => !inj.has(x.id)); if (ok.length >= 13) return { key: cid, sq: ok }; }
   return { key: cid, sq };
@@ -93,6 +93,49 @@ function discAfter(cx, kind, sides, P, ev) {
   }
 }
 MD.discAfter = discAfter;
+// ---------- 구단 기록 (게임 진행 중 쌓이는 것만) ----------
+// w.crec[구단] = { bw/bl: 최다 점수 차 승·패, st: 연속 기록(현재·최고), fg: 최단 시간 득점, yA/oA/yG/oG: 최연소·최고령 출전·득점, att: 최다 관중, ps: 연속 경기 득점/공격포인트 }
+// 기록 하나 = [값, 선수 id, 이름, 날짜, 상대, 부가] 처럼 짧은 배열
+const D2K = () => C.dayOf(2000, 1, 1);
+function ageAt(id, x, d) { const F = G.FC27; if (/^\d+$/.test(id) && F && F.P[+id]) return (d - D2K() - F.P[+id][9]) / 365.25; return x && x.age != null ? x.age + .5 : null; }
+function streak(R, k, hit, d) { const c = R.st[k] || (R.st[k] = [0, 0, 0, 0, 0]); // [현재, 현재 시작일, 최고, 최고 시작일, 최고 끝일]
+  if (hit) { if (!c[0]) c[1] = d; c[0]++; if (c[0] > c[2]) { c[2] = c[0]; c[3] = c[1]; c[4] = d; } } else c[0] = 0; }
+function recAfter(cx, kind, sides, P, ev, ga, gb, nmOf0) {
+  const nmOf = id => 0; // 이름은 화면에서 id로 찾는다 (생성 선수 id = '이름#…') — 저장 용량
+  const r2 = a => Math.round(a * 100) / 100;
+  const w = cx.w, d = cx.d, CR = w.crec = w.crec || {}, PST = w.pstk = w.pstk || {};
+  const sc = [ga, gb];
+  for (let s = 0; s < 2; s++) {
+    const id = sides[s].key, c = w.clubs[id]; if (!c || c.lite) continue;
+    const R = CR[id] || (CR[id] = { st: {} }), opp = sides[1 - s].key, gf = sc[s], gc = sc[1 - s], res = gf > gc ? 'W' : gf < gc ? 'L' : 'D', lg = kind === 'lg', home = s === 0;
+    const mg = gf - gc;
+    if (mg > 0 && (!R.bw || mg > R.bw[0] || (mg === R.bw[0] && gf > R.bw[1]))) R.bw = [mg, gf, gc, opp, d, kind];
+    if (mg < 0 && (!R.bl || -mg > R.bl[0] || (-mg === R.bl[0] && gc > R.bl[2]))) R.bl = [-mg, gf, gc, opp, d, kind];
+    for (const [k, on] of [['aW', res === 'W'], ['aU', res !== 'L'], ['aL', res === 'L'], ['aN', res !== 'W']]) streak(R, k, on, d);
+    if (lg) for (const [k, on] of [['lW', res === 'W'], ['lU', res !== 'L'], ['lL', res === 'L'], ['lN', res !== 'W']]) streak(R, k, on, d);
+    if (home) { streak(R, 'hU', res !== 'L', d); if (C.attend) { const n = C.attend(w, id, opp, C.MD.attKey(id, opp, ga, gb, ev.filter(e => 'gpo'.includes(e[0])).map(e => e[1])), false); if (!R.att || n > R.att[0]) R.att = [n, opp, d]; } }
+    // 감독 성적
+    const M = C.mgrOf ? C.mgrOf(w, id, d) : null; if (M) { M.g++; if (res === 'W') M.w++; else if (res === 'D') M.dr++; else M.l++; }
+    // 선수 기록
+    const goals = ev.filter(e => e[2] === s && (e[0] === 'g' || e[0] === 'p')), fst = goals.slice().sort((a, b) => a[1] - b[1])[0];
+    if (fst && fst[3] !== 'ME' && (!R.fg || fst[1] < R.fg[0])) R.fg = [fst[1], fst[3], nmOf(fst[3]), d, opp];
+    for (const p of P[s]) {
+      if (p.id === 'ME' || (p.off - p.on) <= 0) continue;
+      const a = ageAt(p.id, (sides[s].sq || []).find(x => x.id === p.id), d);
+      if (a != null && a > 14) { if (!R.yA || a < R.yA[0]) R.yA = [r2(a), p.id, nmOf(p.id), d, opp]; if (!R.oA || a > R.oA[0]) R.oA = [r2(a), p.id, nmOf(p.id), d, opp];
+        if (p.g) { if (!R.yG || a < R.yG[0]) R.yG = [r2(a), p.id, nmOf(p.id), d, opp]; if (!R.oG || a > R.oG[0]) R.oG = [r2(a), p.id, nmOf(p.id), d, opp]; } }
+      // 연속 경기 득점 / 공격포인트 (이 구단 소속 경기)
+      const k = PST[p.id] && PST[p.id][2] === id ? PST[p.id] : (PST[p.id] = [0, 0, id]);
+      k[0] = p.g ? k[0] + 1 : 0; k[1] = p.g || p.a ? k[1] + 1 : 0;
+      if (k[0] >= 3 && (!R.sG || k[0] > R.sG[0])) R.sG = [k[0], p.id, nmOf(p.id), d];
+      if (k[1] >= 4 && (!R.sA || k[1] > R.sA[0])) R.sA = [k[1], p.id, nmOf(p.id), d];
+      if (!k[0] && !k[1]) delete PST[p.id];
+    }
+  }
+}
+// 관중 수 씨앗: 홈·원정·점수·골 시간 (경기 화면과 기록이 같은 값을 내도록 날짜 대신 경기 내용으로)
+MD.attKey = (h, a, ga, gb, mins) => `${h}|${a}|${ga}-${gb}|${mins.slice().sort((x, y) => x - y).join('.')}`;
+
 // ---------- 경기 한 개 ----------
 // u: 내 선수가 뛴 경기면 { side: 0|1, rec } (rec = 실제 경기 기록)
 MD.play = function (st, A, B, ga, gb, u, opt) {
@@ -247,7 +290,7 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   // 실제 선수가 한 명도 없는 하부 구단끼리의 경기는 출전 명단을 남기지 않는다 (득점·카드만)
   const real = sd => sd.sq.some(x => x.id[0] !== '~') || (u && u.rec);
   const lnS = real(A) || real(B) ? P.map(list => list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on + (x.off < 90 ? '-' + x.off : ''))).join(',')).join('/') : '';
-  if (CX) try { discAfter(CX, kind, sides, P, ev); } catch (e) { }
+  if (CX) try { discAfter(CX, kind, sides, P, ev); recAfter(CX, kind, sides, P, ev, ga, gb, id => { for (const sd of sides) { const x = sd.sq.find(z => z.id === id); if (x) return x.n; } return id; }); } catch (e) { console.error('rec', e); }
   return { ev: evS, ln: lnS, P };
 };
 MD.momPick = cands => { let b = null; for (const c of cands) { if (!b || c.rt > b.rt || (c.rt === b.rt && (c.ga > b.ga || (c.ga === b.ga && ((c.win && !b.win) || (c.win === b.win && c.start > b.start)))))) b = c; } return b; };

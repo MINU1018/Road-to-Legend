@@ -142,8 +142,9 @@ function round(S, LS, d, h) {
       if (pos - ex < 6 || pos < 7 || m.sack[id] === LS.label || R() > .16) continue;
       m.sack[id] = LS.label;
       const r = rows[pos];
-      push(S, { d, c: 'sack', imp: ex < 3 && BIG5.includes(lg.nation) ? 3 : 2, h: `${cn(w, id)}, 감독 경질… ${lg.name} ${pos + 1}위 부진`, s: `${ri}라운드까지 ${r.w}승 ${r.d}무 ${r.l}패 (승점 ${r.pts}). 구단은 "새로운 동력이 필요하다"고 밝혔다.`, cl: [id], lg: LS.id });
-      m.q.push({ d: d + rint(2, 6), n: { c: 'sack', imp: 1, h: `${cn(w, id)}, 새 감독 선임 발표`, s: `시즌 도중 지휘봉을 잡은 새 감독은 "목표는 반등"이라고 말했다.`, cl: [id], lg: LS.id } });
+      const oldM = C.mgrOf ? (C.mgrOf(w, id, d) || {}).n : '', newM = C.mgrChange ? (C.mgrChange(w, id, d, '경질') || {}).n : '';
+      push(S, { d, c: 'sack', imp: ex < 3 && BIG5.includes(lg.nation) ? 3 : 2, h: `${cn(w, id)}, ${oldM ? oldM + ' ' : ''}감독 경질… ${lg.name} ${pos + 1}위 부진`, s: `${ri}라운드까지 ${r.w}승 ${r.d}무 ${r.l}패 (승점 ${r.pts}). 구단은 "새로운 동력이 필요하다"고 밝혔다.`, cl: [id], lg: LS.id });
+      m.q.push({ d: d + rint(2, 6), n: { c: 'sack', imp: 1, h: `${cn(w, id)}, ${newM ? newM + ' ' : '새 '}감독 선임 발표`, s: `시즌 도중 지휘봉을 잡은 새 감독은 "목표는 반등"이라고 말했다.`, cl: [id], lg: LS.id } });
     }
   }
   // 무패 행진

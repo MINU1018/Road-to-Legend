@@ -776,6 +776,21 @@ function applyPromotion(w, tables) {
   return moves;
 }
 C.applyPromotion = applyPromotion;
+// ---------- 감독 ----------
+// 구단마다 감독 한 명 (게임 시작 시점부터 기록). 경질·교체되면 w.mgrH[구단]에 재임 기록을 남긴다
+const MGRNAT = ['ESP', 'ITA', 'GER', 'POR', 'ENG', 'FRA', 'NED', 'ARG', 'BRA'];
+C.mgrOf = (w, id, d) => {
+  const c = w.clubs[id]; if (!c || c.lite) return null; w.mgr = w.mgr || {};
+  let M = w.mgr[id];
+  if (!M) { const nat = R() < .7 ? c.nat : pick(MGRNAT); M = w.mgr[id] = { n: genName(nat), nat, d0: d != null ? d : (w.cal ? w.cal.d : 0), g: 0, w: 0, dr: 0, l: 0 }; }
+  return M;
+};
+C.mgrChange = (w, id, d, why) => {
+  const M = C.mgrOf(w, id, d); if (!M) return null;
+  const H = (w.mgrH = w.mgrH || {})[id] = (w.mgrH[id] || []); H.push(Object.assign({}, M, { d1: d, why: why || '' })); if (H.length > 25) H.shift();
+  delete w.mgr[id]; return C.mgrOf(w, id, d);
+};
+
 // ---------- 더비·관중 ----------
 const DERBY = [['ENG_MUN', 'ENG_MCI', '맨체스터 더비'], ['ENG_LIV', 'ENG_EVE', '머지사이드 더비'], ['ENG_ARS', 'ENG_TOT', '북런던 더비'], ['ENG_LIV', 'ENG_MUN', '노스웨스트 더비'], ['ENG_NEW', 'ENG_SUN', '타인위어 더비'],
   ['ESP_RMA', 'ESP_BAR', '엘 클라시코'], ['ESP_RMA', 'ESP_ATM', '마드리드 더비'], ['ESP_SEV', 'ESP_BET', '세비야 더비'], ['ESP_ATH', 'ESP_RSO', '바스크 더비'],

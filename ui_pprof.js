@@ -360,17 +360,29 @@ U.pfCareer = function (s, pid, P, path, seasons) {
   for (const sn of seasons.slice().reverse()) {
     const its = sn.items.filter(it => it.club && it.cat !== 'nt'); if (!its.length) continue;
     const y = sn.live ? w.year - 2000 : sn.y, by = new Map();
-    for (const it of its) { const k = by.get(it.club) || { a: 0, g: 0, loan: 0 }; k.a += it.apps; k.g += it.g; if (it.loan) k.loan = 1; by.set(it.club, k); }
+    for (const it of its) { const k = by.get(it.club) || { a: 0, g: 0, as: 0, rs: 0, loan: 0 }; k.a += it.apps; k.g += it.g; k.as += it.a || 0; k.rs += (it.rt || 0) * it.apps; if (it.loan) k.loan = 1; by.set(it.club, k); }
     const cl = [...by.keys()].sort((p, q) => pIdx(q, y) - pIdx(p, y));
     for (const id of cl) { const k = by.get(id), pi = pIdx(id, y), ln = k.loan || (pi >= 0 && path[pi].loan);
-      sRows.push(h('div', { class: 'pfcr' + (ln ? ' loan' : '') }, crest(w.clubs[id] || null, 20), h('div', null, h('b', { class: 'lnk', onclick: () => U.openClub(id) }, (w.clubs[id] || {}).name || id), ln ? h('span', { class: 'segtag loan' }, '임대') : null, h('small', { class: 'mute' }, sn.label || sn.wl)), h('span', null, k.a), h('span', null, k.g))); }
+      sRows.push(h('div', { class: 'pfcr s4' + (ln ? ' loan' : '') }, crest(w.clubs[id] || null, 20), h('div', null, h('b', { class: 'lnk', onclick: () => U.openClub(id) }, (w.clubs[id] || {}).name || id), ln ? h('span', { class: 'segtag loan' }, '임대') : null, h('small', { class: 'mute' }, sn.live ? sn.label : sn.wl)), h('span', null, k.a), h('span', null, k.g), h('span', null, k.as), h('span', null, k.a ? U.rt2(k.rs / k.a) : '-'))); }
   }
   return h('div', { class: 'sec pfcar' }, h('h3', null, '경력'), h('div', { class: 'in' }, h('div', { class: 'mtabs pft' }, h('button', { class: v.ct === 'club' ? 'on' : '', onclick: () => { v.ct = 'club'; U.stay(); } }, '클럽'), h('button', { class: v.ct === 'season' ? 'on' : '', onclick: () => { v.ct = 'season'; U.stay(); } }, '시즌')),
-    h('div', { class: 'pfcrh mute' }, h('span', null, v.ct === 'club' ? '1군 경력' : '시즌별 (클럽 경기)'), h('span', null, '경기'), h('span', null, '득점')),
+    v.ct === 'club' ? h('div', { class: 'pfcrh mute' }, h('span', null, '1군 경력'), h('span', null, '경기'), h('span', null, '득점')) : h('div', { class: 'pfcrh s4 mute' }, h('span', null, '시즌별 (클럽 경기)'), h('span', null, '경기'), h('span', null, '골'), h('span', null, '도움'), h('span', null, '평점')),
     ...(v.ct === 'club' ? rows : sRows),
     v.ct === 'club' && nat && ntA ? [h('div', { class: 'pfcrh mute' }, h('span', null, '국가대표 팀'), h('span'), h('span')), h('div', { class: 'pfcr' }, U.natCrest(nat, 22), h('div', null, h('b', { class: 'lnk', onclick: () => U.openNat(nat) }, C.natName(nat)), h('small', { class: 'mute' }, '국제 대회 본선·A매치')), h('span', null, ntA), h('span', null, ntG))] : null));
 };
 
+
+// ---------- 부상 이력 ----------
+U.pfInjuries = function (s, pid, e, c, P) {
+  const w = s.w, L = String((P && P.inj) || '').split(';').filter(Boolean).map(x => { const [d, n, t, cid] = x.split(','); return { d: +d, n: +n, t: (C.INJT || [])[+t] || '부상', cid }; }).sort((a, b) => b.d - a.d);
+  const now = w.cal ? w.cal.d : 0;
+  if (!L.length) return h('div', { class: 'sec' }, h('h3', null, '부상 이력'), h('div', { class: 'empty' }, '게임 시작 이후 부상 기록이 없습니다.'));
+  const tot = L.reduce((a, x) => a + x.n, 0);
+  return h('div', { class: 'sec' }, h('h3', null, '부상 이력', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${L.length}회 · 결장 ${tot}일`)),
+    h('div', { class: 'in pfinj' }, ...L.map(x => { const cur = x.d + x.n > now; return h('div', { class: 'pfij' + (cur ? ' cur' : '') },
+      h('div', { class: 'pfijt' }, h('b', null, x.t), cur ? h('span', { class: 'injb' }, '치료 중') : null), h('span', { class: 'pfijd' }, `${x.n}일`),
+      h('small', { class: 'mute' }, crest(w.clubs[x.cid] || null, 13), ` ${(w.clubs[x.cid] || {}).name || ''} · ${C.fmtDateY(x.d)} ~ ${C.fmtDateY(x.d + x.n)}`)); })))
+};
 // ---------- 트로피 (오른쪽) ----------
 U.pfTrophies = function (s, pid, P, seasons) {
   const w = s.w, by = new Map(), add = (key, crestEl, title, sub, name, sl) => { let g = by.get(key); if (!g) by.set(key, g = { crestEl, title, sub, list: new Map() }); const t = g.list.get(name) || { n: name, ys: [] }; t.ys.push(sl); g.list.set(name, t); };
