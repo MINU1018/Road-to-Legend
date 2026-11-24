@@ -162,7 +162,7 @@ async function lgRound(S, LS, d, hooks) {
       ga = home ? rec.gf : rec.ga; gb = home ? rec.ga : rec.gf; u = uArg(S, home ? 0 : 1, rec);
     } else [ga, gb] = C.quickMatch(C.mstr(w, a), C.mstr(w, b), 1);
     addRes(LS.tb, a, b, ga, gb);
-    C.MD.ctx = { w, d, kind: 'lg', imp: impPair(w, a, b, .74, rb) };
+    C.MD.ctx = { w, d, kind: 'lg', imp: impPair(w, a, b, .74, rb), ck: 'L:' + LS.id, sl: LS.label, tier: lg.tier || 1 };
     const res = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
     addAgg(h.agg, ai, res.P[0]); addAgg(h.agg, bi, res.P[1]);
     h.s.push(`${C.MD.b62(ai)}.${C.MD.b62(bi)}.${ga}.${gb}`); h.e.push(res.ev); h.l.push(keepLn ? res.ln : ''); h.d.push(d); h.r.push(LS.ri);
@@ -246,6 +246,7 @@ function lgFinalize(S, LS) {
     C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   }
   (w.hist.lg[LS.id] = w.hist.lg[LS.id] || []).push({ y: LS.label, c: rows[0] && rows[0].id });
+  if (C.mgrLeagueEnd) C.mgrLeagueEnd(w, LS.id, rows);
   if (C.wn) C.wn.lgEnd(S, LS, rows, agg);
   w.last[LS.id] = rows.map(r => r.id);
   if (lg.tier === 1 && rows[0]) resAdd(w, rows[0].id, .6);
@@ -312,7 +313,7 @@ async function cupDay(S, st, d, hooks) {
     for (const m of res.m) {
       const [a, b, ga, gb, pw] = m, isU = u && a === u.a && b === u.b;
       const left = st.rounds.length - st.ri + 1; // 방금 치른 라운드 포함 남은 라운드 수
-      C.MD.ctx = { w, d, kind: 'cup', imp: impPair(w, a, b, left <= 1 ? 1 : left === 2 ? .88 : left === 3 ? .7 : st.kind === 'cup' ? .44 : .3) };
+      C.MD.ctx = { w, d, kind: 'cup', ck: 'C:' + st.nat + ':' + st.kind, sl: st.label, imp: impPair(w, a, b, left <= 1 ? 1 : left === 2 ? .88 : left === 3 ? .7 : st.kind === 'cup' ? .44 : .3) };
       const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, isU ? uArg(S, a === me ? 0 : 1, urec) : null, { cup: true });
       h.rows.push([rd.n, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
       addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -333,6 +334,7 @@ function cupFinalize(S, st) {
     if (C.wn) C.wn.cupEnd(S, st, sum);
     store.CUP[st.nat + ':' + st.kind] = (h.rows || []).map(r => r.slice(0, 8).concat([r[8]]));
     if (st.kind === 'cup') (w.hist.cup[st.nat] = w.hist.cup[st.nat] || []).push({ y: st.label, c: sum.w });
+    if (C.mgrTrophy && sum.w) C.mgrTrophy(w, sum.w, 'cup', st.nat);
     writeC(w, st.kind + ':' + st.nat, h.agg || {});
   }
   delete w.cal.cup[st.k]; delete w.cal.h[st.k]; C._hd.add(st.k); w.cal.dirty = 1;
@@ -508,7 +510,7 @@ async function contUser(S, cs, oid, home, stage, imp, d, hooks) {
 function contRow(S, cs, h, stage, a, b, ga, gb, u, pw, d) {
   const w = S.w;
   const ko = /결승|준결승|8강|16강|플레이오프/.test(stage), fin = /^결승/.test(stage);
-  C.MD.ctx = { w, d, kind: 'cont', imp: impPair(w, a, b, fin ? 1 : ko ? .94 : .8) };
+  C.MD.ctx = { w, d, kind: 'cont', imp: impPair(w, a, b, fin ? 1 : ko ? .94 : .8), ck: 'K:' + cs.k, sl: cs.label };
   const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
   h.rows.push([stage, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
   addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -633,7 +635,7 @@ function contFinalize(S, cs) {
   A.cont[cs.k] = { n: cs.name, w: cs.winner, sl: cs.label, ph: cs.phaseN ? C.sortTable(cs.table).slice(0, 36).map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null, r: (cs.ties || []).map((ts, i) => ({ n: (cs.rounds[i] || [])[2] || '', t: (ts || []).map(t => [t[0], t[1], t.win || null, t.sc ? t.sc[0] : null, t.sc ? t.sc[1] : null, t.pen ? 1 : 0]) })) };
   store.CONT[cs.k] = (h.rows || []).slice();
   if (C.wn) C.wn.contEnd(S, cs, h);
-  if (cs.winner) { (w.hist.cont[cs.k] = w.hist.cont[cs.k] || []).push({ y: cs.label, c: cs.winner }); resAdd(w, cs.winner, C.COMPS[cs.k].tier === 1 ? 1 : .4); }
+  if (cs.winner) { (w.hist.cont[cs.k] = w.hist.cont[cs.k] || []).push({ y: cs.label, c: cs.winner }); if (C.mgrTrophy) C.mgrTrophy(w, cs.winner, 'cont', cs.k); resAdd(w, cs.winner, C.COMPS[cs.k].tier === 1 ? 1 : .4); }
   writeC(w, 'cont:' + cs.k, h.agg || {});
   delete w.cal.cont[cs.key]; delete w.cal.h[cs.key]; C._hd.add(cs.key); w.cal.dirty = 1;
 }
@@ -725,9 +727,11 @@ async function intlDay(S, T, d, hooks) {
       if (ko) { win = C.koWinner(sa, sb, ga, gb) === 0 ? a : b; if (ga === gb) pw = win; }
     }
     const u = urec && urec.played ? { side: a === me ? 0 : 1, rec: urec, pos: S.p.pos, ovr: C.effOvr(S.p) } : null;
+    C.MD.ctx = { w, d, kind: 'intl', ck: 'I:' + T.k, sl: String(T.y) };
     const r = C.MD.play(dictOf(w), C.MD.natSide(w, a, pools, w.year), C.MD.natSide(w, b, pools, w.year), ga, gb, u);
     h.rows.push([stage, a, b, ga, gb, r.ev, r.ln, pw || null, d]);
     addAgg(h.agg, a, r.P[0]); addAgg(h.agg, b, r.P[1]);
+    if (C.rankMatch) C.rankMatch(w, a, b, ga, gb, C.rankImp(T.k, stage), pw, ko);
     if (C.wn) C.wn.match(S, { k: 'I', comp: T.k, name: `${T.n} ${T.y}`, stage, a, b, ga, gb, pw, P: r.P, d, nat: 1, sa: T.str[a], sb: T.str[b], fin: stage === '결승', ref: { mk: 'I', sk: T.k, ri: h.rows.length - 1, d, a, b } });
     return { m: [a, b, ga, gb, pw], win };
   };
@@ -915,9 +919,11 @@ async function amDay(S, d, hooks) {
       q.win = win; q.agg = [aggA, aggB];
     }
     if (urec && (f.ko || f.leg2)) { urec.koWin = win === me; if (pw) urec.pens = win === me ? 'W' : 'L'; }
+    C.MD.ctx = { w, d, kind: 'am', ck: 'A:' + f.c, sl: C.wLabel(w.year) };
     const r = C.MD.play(dictOf(w), C.MD.natSide(w, f.a, pools, w.year), C.MD.natSide(w, f.b, pools, w.year), ga, gb, u);
     h.rows.push([f.stage, f.a, f.b, ga, gb, r.ev, r.ln, pw || null, d]);
     addAgg(h.agg, f.a, r.P[0]); addAgg(h.agg, f.b, r.P[1]);
+    if (C.rankMatch) C.rankMatch(w, f.a, f.b, ga, gb, C.rankImp(f.c, f.stage), pw, false);
     f.r = [ga, gb];
     if (f.c === 'UNL' && U_) {
       if (f.g != null && U_.g[f.g]) { const g = U_.g[f.g]; addRes(g.tb, f.a, f.b, ga, gb); g.m.push([f.a, f.b, ga, gb]); }
@@ -1053,7 +1059,10 @@ function rollover(S) {
   const w = S.w, lb = C.wLabel(w.year);
   w.ycnt = {}; // 리그 경고 누적은 시즌마다 새로
   // 여름 감독 교체 (경질 말고도 계약 만료·사임으로 해마다 몇몇 구단은 바뀐다)
-  if (w.mgr && C.mgrChange) for (const id of Object.keys(w.mgr)) if (R() < .07) C.mgrChange(w, id, w.cal ? w.cal.d : 0, '교체');
+  // 여름 감독 시장: 성적·눈높이에 따른 교체, 오래 쉰 명장 재취업, 은퇴
+  if (w.mgr && C.mgrYear) { const Y = C.mgrYear(S, w.cal ? w.cal.d : 0);
+    for (const [id, old, N] of Y.res) { const c = w.clubs[id]; if (N && c && C.wn && c.lg && w.lg[c.lg] && w.lg[c.lg].tier <= 2 && (c.str || 0) >= 64) C.wn.push(S, { d: w.cal.d, c: 'sack', imp: (c.str || 0) >= 78 || (N.rep || 0) >= 80 ? 2 : 1, h: `${c.name}, 새 감독 ${N.n} 선임`, s: `${old.n} 감독이 물러나고 ${N.via && w.clubs[N.via] ? w.clubs[N.via].name + '을 이끌던 ' : ''}${C.natName(N.nat)} 출신 ${N.n} 감독(${C.mgrTier(N.rep || 0)} 명성)이 새 시즌을 이끈다.`, cl: [id], lg: c.lg }); }
+    for (const [, x] of Y.out) if (C.wn) C.wn.push(S, { d: w.cal.d, gl: 1, c: 'gossip', imp: 1, h: `${x.n} 감독, 지도자 은퇴`, s: `${C.natName(x.nat)} 출신으로 ${C.mgrTier(x.rep)} 명성을 쌓은 지도자 생활을 마무리한다.` }); }
   noLeagueClubs(S);
   // 발롱도르 (지난 1년: 리그·컵·대륙 대회·여름 국제 대회)
   let bd = null; try { bd = C.ballonDor(S); } catch (e) { console.error('ballon', e); }
@@ -1210,6 +1219,8 @@ function dayEvents(S, d) {
   if (m === 6 && dd === 15) applyWindow(S, 'summer', d, day(y, 9, 1));
   if (w.cal.win && d > w.cal.win.d1) w.cal.win = null;
   runQueue(S, d);
+  if (C.mgrDaily) C.mgrDaily(S, d, !w.cal.started);
+  if (C.rankDaily && w.cal.started) C.rankDaily(S, d);
   if (C.wn && w.cal.started) C.wn.day(S, d);
 }
 

@@ -192,8 +192,18 @@ function flag(code, w = 26) {
 U.flag = flag;
 function lum(hex) { if (!hex || typeof hex !== 'string') return .5; const c = hex.replace('#', ''); const v = c.length === 3 ? c.split('').map(x => parseInt(x + x, 16)) : [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16)); return (v[0] * .299 + v[1] * .587 + v[2] * .114) / 255; }
 U.lum = lum;
+// 2군·U23·유스 팀은 자체 로고가 없으면 1군 로고를 쓴다 (c.parent, 없으면 이름으로 1군을 찾는다: '… B', '… II', '… U23', '용 …', '… 카스티야')
+let PMAP = null;
+function parentOf(c) {
+  if (!c) return null; if (c.parent) return c.parent;
+  const w = S && S.w; if (!w) return null;
+  if (!PMAP || PMAP.w !== w) { PMAP = { w, m: {} }; const byName = new Map(); for (const id in w.clubs) byName.set(w.clubs[id].nat + '|' + w.clubs[id].name, id);
+    for (const id in w.clubs) { const x = w.clubs[id]; if (x.parent || id === 'NED_WII') continue; const m = /^(.+?) (B|II|U2[0-9]|U1[0-9]|카스티야|아틀레틱)$/.exec(x.name) || /^용 (.+)$/.exec(x.name); if (!m) continue; const p = byName.get(x.nat + '|' + m[1]); if (p && p !== id) PMAP.m[id] = p; } }
+  return PMAP.m[c.id] || null;
+}
 function crest(c, size = 32) {
-  const lg = c && C.logos && C.logos.club(c.id || c.club);
+  let lg = c && C.logos && C.logos.club(c.id || c.club);
+  if (!lg && c && C.logos) { const p = parentOf(c); if (p) lg = C.logos.club(p); }
   if (lg) return svg(`<svg width="${size}" height="${Math.round(size * 1.1)}" viewBox="0 0 40 44" aria-hidden="true"><image href="${lg}" x="0" y="2" width="40" height="40" preserveAspectRatio="xMidYMid meet"/></svg>`);
   if (!c) return svg(`<svg width="${size}" height="${size}" viewBox="0 0 40 44"><path d="M20 2 37 8v14c0 11-8 17-17 20C11 39 3 33 3 22V8z" fill="#333a46"/><text x="20" y="27" font-size="11" text-anchor="middle" fill="#9aa3b2" font-family="Barlow Condensed" font-weight="700">FA</text></svg>`);
   const c1 = c.c1 || '#444', c2 = c.c2 || '#ddd';
@@ -362,6 +372,9 @@ U.setTabQuiet = t => { tab = t; };
 
 // 예전 저장 파일 보정: 팀 색이 비어 있는 구단에 색을 채운다
 function repairSave(o) {
+  if (o.w && C.mgrSeed && !(o.w.mgrV >= 2)) C.mgrSeed(o.w); // 실제 감독 (v35)
+  if (o.w && C.mgrFill) { for (const x of o.w.mgrFree || []) C.mgrFill(o.w, x); for (const id in o.w.mgr || {}) C.mgrFill(o.w, o.w.mgr[id], o.w.clubs[id]); } // 명성·실력 (v36)
+  if (o.w && C.rankInit && !o.w.rank) C.rankInit(o.w); // 국가대표 랭킹 (v35)
   // 난이도는 커리어별. 예전 저장은 당시 설정값을 새 난이도로 옮기고, 재능 한계가 없으면 성장 한계 기준으로 만든다
   if (!o.diff) o.diff = C.diffKey(C.cfg.difficulty);
   C.curDiff = o.diff;
@@ -498,7 +511,7 @@ function sideNav(drawer) {
 function topSearch() {
   const box = h('div', { class: 'tsrch' });
   const list = h('div', { class: 'tsl' });
-  const inp = h('input', { type: 'search', placeholder: '선수·구단·대표팀 검색', 'aria-label': '검색',
+  const inp = h('input', { type: 'search', placeholder: '선수·구단·감독 검색', 'aria-label': '검색',
     oninput: e => { clearTimeout(box._t); box._t = setTimeout(() => draw(e.target.value), 150); },
     onkeydown: e => { if (e.key === 'Enter') { const d = (st.db = st.db || { view: 'home', q: '' }); d.q = inp.value; d.view = 'home'; d.id = null; U.setTab('db'); } if (e.key === 'Escape') { inp.value = ''; list.replaceChildren(); } },
     onblur: () => setTimeout(() => list.replaceChildren(), 200) });
@@ -509,6 +522,7 @@ function topSearch() {
     // 이름이 검색어와 같거나 단어가 검색어로 시작하면 앞으로
     const sc = n => { const f = U.fold(n); return f === fq ? 0 : f.split(' ').some(x => x.startsWith(fq)) ? 1 : 2; };
     const all = [].concat((r.comps || []).slice(0, 5).map(x => ({ s: Math.min(sc(x.n), x.t === 0 ? 0 : 2), t: -1, v: 10 - x.t, el: () => h('button', { class: 'tsi', onmousedown: () => U.openComp(x) }, x.nat ? flag(x.nat, 18) : trophy(x.k === 'intl' ? 'nt' : x.k === 'cont' ? 'cont' : 'cup', 18, '#f2c14e'), h('span', null, x.n), h('span', { class: 'mute' }, x.sub)) })), r.nats.slice(0, 4).map(n => ({ s: sc(C.natName(n)), t: 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openNat(n) }, U.natCrest(n, 18), h('span', null, `${C.natName(n)} 대표팀`), h('span', { class: 'mute' }, '국가대표')) })),
+      (r.mgrs || []).slice(0, 5).map(x => ({ s: sc(x.n), t: 1.5, v: x.rep, el: () => h('button', { class: 'tsi', onmousedown: () => U.openMgr(x.n) }, flag(x.nat, 18), h('span', null, x.n), h('span', { class: 'mute' }, `감독 · ${x.club && w.clubs[x.club] ? w.clubs[x.club].name : '무직'}`)) })),
       r.clubs.slice(0, 8).map(c => ({ s: sc(c.name), t: 1, v: c.str, el: () => h('button', { class: 'tsi', onmousedown: () => U.openClub(c.id) }, crest(c, 18), h('span', null, c.name), h('span', { class: 'mute' }, (w.lg[c.lg] || {}).name || '')) })),
       r.players.slice(0, 20).map(x => ({ s: sc(x.n), t: 2, v: x.ovr || 0, el: () => h('button', { class: 'tsi', onmousedown: () => U.openPlayer(x.pid) }, flag(x.nat, 18), h('span', null, x.n), h('span', { class: 'mute tscl' }, x.retired ? ((w.ps[x.pid] || {}).ret ? '은퇴' : '무소속') : [`${x.pos} · ${x.ovr} · `, x.fa ? '무소속' : [crest(w.clubs[x.club] || null, 15), ' ', (w.clubs[x.club] || {}).name || '']])) })));
     all.sort((a, b) => a.s - b.s || a.t - b.t || (b.v || 0) - (a.v || 0));

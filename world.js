@@ -800,17 +800,173 @@ C.applyPromotion = applyPromotion;
 // ---------- 감독 ----------
 // 구단마다 감독 한 명 (게임 시작 시점부터 기록). 경질·교체되면 w.mgrH[구단]에 재임 기록을 남긴다
 const MGRNAT = ['ESP', 'ITA', 'GER', 'POR', 'ENG', 'FRA', 'NED', 'ARG', 'BRA'];
+const pd = t => { const [y, m, d] = String(t).split('-').map(Number); return C.day(y, m, d); };
+// 감독이 구단을 옮겨도 따라가는 값 (사람 자체의 정보)
+const KEEP = ['n', 'nat', 'b', 'f', 'f2', 'build', 'def', 'q', 'r', 'rep', 'pc', 'lic', 'rh', 'tro'];
+const carry = (src, dst) => { for (const k of KEEP) if (src[k] != null) dst[k] = Array.isArray(src[k]) ? src[k].slice() : src[k]; return dst; };
+// 명성 단계 (FM식): 무명 · 지역적 · 국내적 · 대륙적 · 세계적
+C.REPT = [[83, '세계적'], [65, '대륙적'], [45, '국내적'], [25, '지역적'], [0, '무명']];
+C.mgrTier = rep => (C.REPT.find(t => rep >= t[0]) || C.REPT[4])[1];
+C.PCN = { I: '국가대표 출신', P: '프로 선수 출신', S: '하부 리그 선수 출신', N: '선수 경력 거의 없음' };
+const BIG5 = ['ENG1', 'ESP1', 'ITA1', 'GER1', 'FRA1'];
+const lgPrest = (w, c) => { const L = c && c.lg && w.lg[c.lg]; if (!L) return .3; return BIG5.includes(c.lg) ? 1 : L.tier === 1 ? (C.confOf && C.confOf(L.nation) === 'UEFA' ? .65 : .5) : L.tier === 2 ? .4 : .25; };
+// 구단이 원하는 감독 명성 (전력 기준): 최강팀 ≈ 85, 중위권 1부 ≈ 45~60, 하부 리그 ≈ 10~30
+C.mgrWant = (w, c) => clamp(Math.round(18 + ((c && c.str || 60) - 60) * 2.4), 8, 92);
+// 명성·실력·선수 경력·라이선스 채우기 (실제 감독은 data_mgr.js, 나머지는 이름 시드)
+C.mgrFill = (w, M, c) => {
+  if (!M) return M;
+  if (M.rep == null) { const k = ((G.FC27 || {}).MGR_REP || {})[M.n];
+    if (k) { M.rep = k[0]; M.pc = k[1]; M.r = 1; }
+    else { const r = seeded('rep|' + M.n); M.rep = clamp(Math.round((c ? C.mgrWant(w, c) - 10 : 30) + (r() - .5) * 22), 3, 76); const u = r(); M.pc = u < .1 ? 'I' : u < .5 ? 'P' : u < .8 ? 'S' : 'N'; } }
+  if (M.q == null) { const r = seeded('q|' + M.n); M.q = clamp(Math.round(((M.rep - 50) / 70 + (r() - .5) * .5) * 100) / 100, -.6, .7); }
+  if (!M.lic) { const cf = C.confOf ? C.confOf(M.nat) : 'UEFA'; M.lic = `${cf} ${M.rep >= 38 || M.r ? 'Pro' : M.rep >= 20 ? 'A' : 'B'}`; }
+  if (!M.rh) M.rh = [[w.year || 2026, M.rep]];
+  return M;
+};
+const mkReal = (row, d0) => { const [n, nat, b, , f, build, def, q] = row; const M = { n, nat, b, d0, g: 0, w: 0, dr: 0, l: 0, r: 1 }; if (f) M.f = f; if (build) M.build = build; if (def) M.def = def; if (q != null) M.q = q; return M; };
+const toPool = (w, M, id, d, dRep) => { const P = w.mgrFree = w.mgrFree || []; const fr = carry(M, { last: id, out: d }); if (dRep) fr.rep = clamp((fr.rep || 30) + dRep, 1, 99); P.push(fr); if (P.length > 120) { P.sort((a, b) => (b.rep || 0) - (a.rep || 0)); P.length = 110; } };
+const mnews = (w, x) => { (w.mgrNews = w.mgrNews || []).push(x); if (w.mgrNews.length > 40) w.mgrNews.shift(); };
+// 실제 감독 배치 (새 세계 / 예전 저장 파일은 한 번만 교체) + 무직 감독 시장 + 시즌 중 실제 교체 일정
+C.mgrSeed = (w, force) => {
+  const F = G.FC27 || {}; if (!F.MGR || (w.mgrV >= 2 && !force)) return;
+  w.mgr = w.mgr || {}; w.mgrH = w.mgrH || {};
+  for (const id in F.MGR) { const c = w.clubs[id]; if (!c || c.lite) continue; const row = F.MGR[id];
+    w.mgr[id] = C.mgrFill(w, Object.assign(mkReal(row, Math.min(pd(row[3]), w.cal ? w.cal.d : pd(row[3]))), { src: 1 }), c); }
+  const used = new Set(Object.values(w.mgr).map(M => M.n)), later = new Set((F.MGR_CHG || []).filter(x => x[3]).map(x => x[3][0]));
+  w.mgrFree = (F.MGR_FREE || []).filter(r => !used.has(r[0]) && !later.has(r[0])).map(r => { const [n, nat, b, f, build, def, q] = r; return C.mgrFill(w, { n, nat, b, f, build, def, q, r: 1, out: w.cal ? w.cal.d - 60 : 0 }); });
+  w.mgrV = 2; w.mgrCi = 0;
+  if (w.cal) C.mgrDaily({ w }, w.cal.d, true);
+};
+// 실제 교체 일정: 그날 원래 감독(데이터에서 온 감독)이 아직 그 자리에 있으면 일어난다
+C.mgrDaily = (S, d, quiet) => {
+  const w = S.w, F = G.FC27 || {}, L = F.MGR_CHG; if (!L || w.mgrV < 2) return;
+  while ((w.mgrCi || 0) < L.length && pd(L[w.mgrCi][1]) <= d) {
+    const [id, dt, why, row] = L[w.mgrCi++], M = w.mgr && w.mgr[id], c = w.clubs[id];
+    if (!c || !M || !M.src) continue;
+    const busy = row && Object.keys(w.mgr).some(k => w.mgr[k].n === row[0]);
+    const old = M.n, d1 = pd(dt);
+    const H = (w.mgrH[id] = w.mgrH[id] || []); H.push(Object.assign({}, M, { d1, why, club: id }));
+    toPool(w, M, id, d1, why === '경질' ? -3 : 0);
+    delete w.mgr[id];
+    let N;
+    if (row && !busy) { const P = w.mgrFree; const k = P.findIndex(x => x.n === row[0]); const prev = k >= 0 ? P.splice(k, 1)[0] : null; N = w.mgr[id] = C.mgrFill(w, Object.assign(prev ? carry(prev, {}) : {}, mkReal(row, Math.max(d1, pd(row[3]))), { src: 1 }), c); }
+    else N = hire(w, id, d1, 0, old);
+    if (!quiet && C.wn) C.wn.push(S, { d, gl: 1, c: 'sack', imp: (c.str || 0) >= 78 ? 3 : 2, h: `${c.name}, ${old} 감독 ${why}… 후임 ${N.n}`, s: `${C.natName(N.nat)} 출신 ${N.n} 감독(${C.mgrTier(N.rep)} 명성)이 지휘봉을 잡는다.`, cl: [id], lg: c.lg });
+  }
+};
 C.mgrOf = (w, id, d) => {
   const c = w.clubs[id]; if (!c || c.lite) return null; w.mgr = w.mgr || {};
   let M = w.mgr[id];
-  if (!M) { const nat = R() < .7 ? c.nat : pick(MGRNAT); M = w.mgr[id] = { n: genName(nat), nat, d0: d != null ? d : (w.cal ? w.cal.d : 0), g: 0, w: 0, dr: 0, l: 0 }; }
+  if (!M) { const nat = R() < .7 ? c.nat : pick(MGRNAT); const r = seeded('mb|' + id + '|' + (d || 0)); M = w.mgr[id] = { n: genName(nat), nat, b: (w.year || 2026) - 36 - Math.floor(r() * 28), d0: d != null ? d : (w.cal ? w.cal.d : 0), g: 0, w: 0, dr: 0, l: 0 }; }
+  if (M.rep == null) C.mgrFill(w, M, c);
   return M;
 };
+// 감독 고르기: 구단이 원하는 명성(want) 근처에서, 무직 감독 → (빅클럽이면) 다른 구단 감독 영입 → 새 얼굴 순
+// 세계적 감독은 작은 구단을 맡지 않는다 (무직이 길어질수록 눈높이를 낮춘다)
+const fitScore = (x, want, c, d) => { const idle = x.out != null && d != null ? Math.max(0, (d - x.out) / 365) : 0; const hi = want + 22 + idle * 10;
+  if ((x.rep || 0) > hi) return null; if ((x.rep || 0) < want - (want >= 60 ? 10 : 22)) return null;
+  return -Math.abs((x.rep || 0) - (want + 6)) + (x.q || 0) * 10 + (x.nat === c.nat ? 4 : 0) + N(0, 4); };
+function hire(w, id, d, depth, exclude) {
+  const c = w.clubs[id], want = C.mgrWant(w, c), P = w.mgrFree = w.mgrFree || [];
+  let best = null, bs = -1e9;
+  for (const x of P) { if (x.n === exclude || x.last === id || (d != null && x.out != null && d - x.out < 14)) continue; const sc = fitScore(x, want, c, d); if (sc != null && sc > bs) { bs = sc; best = x; } }
+  if (best) { P.splice(P.indexOf(best), 1); return (w.mgr[id] = C.mgrFill(w, carry(best, { d0: d != null ? d : (w.cal ? w.cal.d : 0), g: 0, w: 0, dr: 0, l: 0 }), c)); }
+  // 빅클럽: 더 작은 구단에서 잘하는 감독을 데려온다
+  if (want >= 52 && depth < 2) {
+    let pb = null, ps = -1e9;
+    const cf = C.confOf ? C.confOf(c.nat) : '';
+    for (const k in w.mgr) { const M = w.mgr[k], oc = w.clubs[k]; if (!oc || k === id || M.n === exclude || oc.parent) continue; if (C.mgrWant(w, oc) > want - 8 || (d != null && d - (M.d0 || 0) < 120)) continue;
+      if (C.confOf && C.confOf(oc.nat) !== cf) continue; // 같은 대륙 안에서만
+      if ((M.rep || 0) < want - 8) continue; const sc = (M.rep || 0) + (M.q || 0) * 10 + (M.lastDelta || 0) * 20 + N(0, 3); if (sc > ps) { ps = sc; pb = k; } }
+    if (pb && R() < .8) {
+      const M = w.mgr[pb], oc = w.clubs[pb];
+      (w.mgrH[pb] = w.mgrH[pb] || []).push(Object.assign({}, M, { d1: d, why: `${c.name} 부임`, club: pb }));
+      delete w.mgr[pb];
+      const N2 = w.mgr[id] = C.mgrFill(w, carry(M, { d0: d != null ? d : 0, g: 0, w: 0, dr: 0, l: 0, via: pb }), c);
+      const rep2 = hire(w, pb, d, depth + 1, M.n);
+      mnews(w, { d, k: 'rep', club: pb, n: rep2 && rep2.n, old: M.n, to: id });
+      return N2;
+    }
+  }
+  // 새 얼굴: 구단 수준보다 조금 낮은 명성의 지도자
+  const nat = R() < .7 ? c.nat : pick(MGRNAT), r = seeded('mb|' + id + '|' + (d || 0));
+  const M = { n: genName(nat), nat, b: (w.year || 2026) - 34 - Math.floor(r() * 24), d0: d != null ? d : (w.cal ? w.cal.d : 0), g: 0, w: 0, dr: 0, l: 0 };
+  M.rep = clamp(Math.round(want - 12 + (r() - .5) * 14), 3, 72);
+  return (w.mgr[id] = C.mgrFill(w, M, c));
+}
+// 감독 교체: 떠난 감독은 시장(w.mgrFree)으로, 새 감독은 hire()로
 C.mgrChange = (w, id, d, why) => {
   const M = C.mgrOf(w, id, d); if (!M) return null;
-  const H = (w.mgrH = w.mgrH || {})[id] = (w.mgrH[id] || []); H.push(Object.assign({}, M, { d1: d, why: why || '' })); if (H.length > 25) H.shift();
-  delete w.mgr[id]; return C.mgrOf(w, id, d);
+  const H = (w.mgrH = w.mgrH || {})[id] = (w.mgrH[id] || []); H.push(Object.assign({}, M, { d1: d, why: why || '', club: id })); if (H.length > 25) H.shift();
+  delete w.mgr[id];
+  const pct = M.g ? (M.w * 3 + M.dr) / (M.g * 3) : 0;
+  if (M.r || (M.rep || 0) >= 30 || (M.g >= 20 && pct > .45)) toPool(w, M, id, d, why === '경질' ? -3 : 0);
+  return hire(w, id, d, 0, M.n);
 };
+// 리그 종료: 기대 순위(전력 순)보다 잘하면 명성·실력이 오르고, 못하면 내려간다. 우승·강등은 크게
+C.mgrLeagueEnd = (w, lid, rows) => {
+  const lg = w.lg[lid]; if (!lg || !w.mgr) return; const n = rows.length; if (n < 4) return;
+  const exp = rows.map(r => r.id).sort((a, b) => ((w.clubs[b] || {}).str || 0) - ((w.clubs[a] || {}).str || 0));
+  rows.forEach((r, pos) => {
+    const M = w.mgr[r.id], c = w.clubs[r.id]; if (!M || !c) return; C.mgrFill(w, M, c);
+    const ex = exp.indexOf(r.id), delta = (ex - pos) / n, lp = lgPrest(w, c);
+    let g = delta * 12 * lp;
+    if (pos === 0) g += lg.tier === 1 ? 2 + 6 * lp : 3;
+    if (lg.tier === 1 && pos >= n - 3) g -= 4 * lp;
+    if (lg.tier > 1 && pos <= 1) g += 2;
+    if (g > 0) g *= Math.min(1, (100 - M.rep) / 35);
+    M.rep = clamp(Math.round((M.rep + g) * 10) / 10, 1, 99);
+    M.q = clamp(Math.round(((M.q || 0) + clamp(delta * .07, -.04, .04) - (M.b && (w.year - M.b) > 66 ? .02 : 0)) * 100) / 100, -.7, .75);
+    M.lastDelta = Math.round(delta * 100) / 100;
+    if (pos === 0) M.tro = (M.tro || 0) + 1;
+    const rh = M.rh || (M.rh = []), y = w.year; if (rh.length && rh[rh.length - 1][0] === y) rh[rh.length - 1][1] = M.rep; else rh.push([y, M.rep]); if (rh.length > 40) rh.shift();
+  });
+};
+// 컵·대륙 대회 우승
+C.mgrTrophy = (w, id, kind, k) => {
+  const M = w.mgr && w.mgr[id], c = w.clubs[id]; if (!M || !c) return; C.mgrFill(w, M, c);
+  const g = kind === 'cont' ? (C.COMPS[k] && C.COMPS[k].tier === 1 ? (k === 'UCL' ? 9 : 5) : 3) : 2.5 * lgPrest(w, c);
+  M.rep = clamp(Math.round((M.rep + g * Math.min(1, (100 - M.rep) / 30)) * 10) / 10, 1, 99); M.tro = (M.tro || 0) + 1;
+};
+// 해마다 (8월 1일): 무직 감독 명성 하락·은퇴, 성적 부진·눈높이 차이로 여름 교체, 오래 쉰 명장 재취업
+C.mgrYear = (S, d) => {
+  const w = S.w, P = w.mgrFree = w.mgrFree || [], out = [];
+  for (const x of P.slice()) { C.mgrFill(w, x); const idle = x.out != null ? (d - x.out) / 365 : 0, age = x.b ? w.year - x.b : 55;
+    if (idle > 1) x.rep = clamp((x.rep || 30) - 2, 1, 99);
+    if (age >= 75 || idle > 4.5 || (age >= 69 && R() < .3)) { P.splice(P.indexOf(x), 1); if ((x.rep || 0) >= 72) out.push(['retire', x]); } }
+  const moves = [];
+  for (const id of Object.keys(w.mgr || {})) {
+    const M = w.mgr[id], c = w.clubs[id]; if (!c || !c.lg || c.parent) continue; C.mgrFill(w, M, c);
+    const want = C.mgrWant(w, c), ten = (d - (M.d0 || d)) / 365;
+    let p = .03; if ((M.rep || 0) < want - 25) p += .2; if ((M.lastDelta || 0) < -.22) p += .25; if ((M.lastDelta || 0) > .1) p *= .3; if (M.r && ten >= 4 && (M.rep || 0) >= want) p *= .3;
+    if (R() < p) moves.push(id);
+  }
+  // 오래 쉰 명장(명성 75+, 반년 이상): 부진한 큰 구단이 데려간다
+  for (const x of P.filter(x => (x.rep || 0) >= 75 && x.out != null && d - x.out > 180).sort((a, b) => b.rep - a.rep)) {
+    const ids = Object.keys(w.mgr).filter(k => { const c = w.clubs[k], M = w.mgr[k]; if (!c || !c.lg || moves.includes(k)) return false; const want = C.mgrWant(w, c); return want >= x.rep - 22 && want <= x.rep + 10 && (M.rep || 0) < x.rep - 10 && (M.lastDelta || 0) < .05; });
+    if (ids.length && R() < .6) { const k = ids.sort((a, b) => (w.clubs[b].str || 0) - (w.clubs[a].str || 0))[0]; moves.push(k); x._pref = k; }
+  }
+  const res = [];
+  for (const id of moves) { const c = w.clubs[id], old = w.mgr[id]; if (!old) continue;
+    const pref = P.find(x => x._pref === id);
+    const H = (w.mgrH[id] = w.mgrH[id] || []); H.push(Object.assign({}, old, { d1: d, why: (old.lastDelta || 0) < -.22 ? '성적 부진' : '계약 만료', club: id }));
+    delete w.mgr[id]; if ((old.rep || 0) >= 30 || old.r) toPool(w, old, id, d, 0);
+    let N; if (pref) { P.splice(P.indexOf(pref), 1); delete pref._pref; N = w.mgr[id] = C.mgrFill(w, carry(pref, { d0: d, g: 0, w: 0, dr: 0, l: 0 }), c); } else N = hire(w, id, d, 0, old.n);
+    res.push([id, old, N]); }
+  for (const x of P) delete x._pref;
+  return { res, out };
+};
+// 감독 한 명의 경력 (이름 기준): 지난 재임 + 현재 + 시장
+C.mgrCareer = (w, name) => {
+  const st = []; for (const id in (w.mgrH || {})) for (const m of w.mgrH[id]) if (m.n === name) st.push(Object.assign({ club: id }, m));
+  let cur = null; for (const id in (w.mgr || {})) if (w.mgr[id].n === name) { cur = Object.assign({ club: id }, w.mgr[id]); st.push(cur); }
+  const free = (w.mgrFree || []).find(x => x.n === name) || null;
+  st.sort((a, b) => (a.d0 || 0) - (b.d0 || 0));
+  const base = cur || free || st[st.length - 1] || null; if (base) C.mgrFill(w, base, cur ? w.clubs[cur.club] : null);
+  return { st, cur, free, base };
+};
+// 감독 이름 목록 (검색용)
+C.mgrAll = w => { const m = new Map(); for (const id in (w.mgrH || {})) for (const x of w.mgrH[id]) m.set(x.n, { n: x.n, nat: x.nat }); for (const x of w.mgrFree || []) m.set(x.n, { n: x.n, nat: x.nat }); for (const id in (w.mgr || {})) m.set(w.mgr[id].n, { n: w.mgr[id].n, nat: w.mgr[id].nat, club: id }); return [...m.values()]; };
 
 // ---------- 더비·관중 ----------
 const DERBY = [['ENG_MUN', 'ENG_MCI', '맨체스터 더비'], ['ENG_LIV', 'ENG_EVE', '머지사이드 더비'], ['ENG_ARS', 'ENG_TOT', '북런던 더비'], ['ENG_LIV', 'ENG_MUN', '노스웨스트 더비'], ['ENG_NEW', 'ENG_SUN', '타인위어 더비'],

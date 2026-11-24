@@ -375,7 +375,13 @@ U.pfCareer = function (s, pid, P, path, seasons) {
     for (const id of cl) { const k = by.get(id), pi = pIdx(id, y), ln = k.loan || (pi >= 0 && path[pi].loan);
       sRows.push(h('div', { class: 'pfcr s4' + (ln ? ' loan' : '') }, crest(w.clubs[id] || null, 20), h('div', null, h('b', { class: 'lnk', onclick: () => U.openClub(id) }, (w.clubs[id] || {}).name || id), ln ? h('span', { class: 'segtag loan' }, '임대') : null, h('small', { class: 'mute' }, sn.live ? sn.label : sn.wl)), h('span', null, k.a), h('span', null, k.g), h('span', null, k.as), h('span', null, k.a ? U.rt2(k.rs / k.a) : '-'))); }
   }
+  // 시즌별 차트용: 클럽 경기 합계 (오래된 순)
+  const chL = []; for (const sn of seasons) { const its = sn.items.filter(it => it.club && it.cat !== 'nt'); if (!its.length) continue; const y = sn.live ? w.year - 2000 : sn.y; const a = its.reduce((q, it) => q + it.apps, 0), rs = its.reduce((q, it) => q + (it.rt || 0) * it.apps, 0);
+    chL.push({ y, lb: sl(y), apps: a, g: its.reduce((q, it) => q + it.g, 0), a: its.reduce((q, it) => q + (it.a || 0), 0), rt: a ? (rs > 100 * a ? rs / a / 100 : rs / a) : 0 }); }
+  chL.sort((p, q) => p.y - q.y);
+  const chart = v.ct !== 'club' && U.chPlayerSeasons ? U.chPlayerSeasons(chL) : null;
   return h('div', { class: 'sec pfcar' }, h('h3', null, '경력'), h('div', { class: 'in' }, h('div', { class: 'mtabs pft' }, h('button', { class: v.ct === 'club' ? 'on' : '', onclick: () => { v.ct = 'club'; U.stay(); } }, '클럽'), h('button', { class: v.ct === 'season' ? 'on' : '', onclick: () => { v.ct = 'season'; U.stay(); } }, '시즌')),
+    chart,
     v.ct === 'club' ? h('div', { class: 'pfcrh mute' }, h('span', null, '1군 경력'), h('span', null, '경기'), h('span', null, '득점')) : h('div', { class: 'pfcrh s4 mute' }, h('span', null, '시즌별 (클럽 경기)'), h('span', null, '경기'), h('span', null, '골'), h('span', null, '도움'), h('span', null, '평점')),
     ...(v.ct === 'club' ? rows : sRows),
     v.ct === 'club' && nat && ntA ? [h('div', { class: 'pfcrh mute' }, h('span', null, '국가대표 팀'), h('span'), h('span')), h('div', { class: 'pfcr' }, U.natCrest(nat, 22), h('div', null, h('b', { class: 'lnk', onclick: () => U.openNat(nat) }, C.natName(nat)), h('small', { class: 'mute' }, '국제 대회 본선·A매치')), h('span', null, ntA), h('span', null, ntG))] : null));

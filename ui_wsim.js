@@ -363,7 +363,9 @@ U.pages.hist = function () {
 U.pages.rank = function () {
   const s = U.S(), w = s.w, sv = v();
   const root = h('div', { class: 'wrap prof screen' });
-  root.append(U.pageHead('세계 파워랭킹', 'OVR 기준 · 전 세계 구단 선수와 무소속 선수'));
+  root.append(U.pageHead('세계 파워랭킹', sv.rkm === 'nat' ? 'FIFA 랭킹 방식 · A매치·대회 결과로 점수가 오르내림' : 'OVR 기준 · 전 세계 구단 선수와 무소속 선수'));
+  root.append(h('div', { class: 'seg lsub' }, ...[['pl', '선수 OVR'], ['nat', '국가대표 랭킹']].map(([k, l]) => h('button', { class: (sv.rkm || 'pl') === k ? 'on' : '', onclick: () => { sv.rkm = k; U.stay(); } }, l))));
+  if (sv.rkm === 'nat') { U.natRankView(s, root); return root; }
   const all = [];
   for (const id in w.clubs) { const c = w.clubs[id]; if (!c.sq) continue; for (const e of c.sq) if (e[2] >= 60) all.push([e, c]); }
   for (const e of w.fa || []) if (e[2] >= 60) all.push([e, null]);

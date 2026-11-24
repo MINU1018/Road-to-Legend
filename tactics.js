@@ -70,7 +70,9 @@ C.pickLineup = function (sq, opt) {
   const imp = opt.imp == null ? .7 : opt.imp, rot = 1 - imp;
   // 개인 점수: OVR + 흔들림(로테이션 성향) - 피로 + 유망주 기회. 덜 중요한 경기는 상위 몇 명을 쉬게 한다
   const top = src.filter(x => norm(x.pos) !== 'GK').sort((a, b) => b.ovr - a.ovr).slice(0, 6).map(x => x.id);
-  const base = new Map(src.map(x => [x.id, (opt.noise == null ? N(0, 1.2 + rot * 3.2) : opt.noise) - (opt.fat ? opt.fat(x) * (.6 + rot * .9) : 0) + (x.yb || 0) * rot * 2.2 - (top.includes(x.id) && R() < rot * rot * .7 ? 7 : 0)]));
+  // 골키퍼는 흔들림 없이 주전 고정 (피로 영향도 작다). 컵 대회 로테이션(gkRot)이면 세컨드 키퍼가 나온다
+  const gks = src.filter(x => norm(x.pos) === 'GK').sort((a, b) => b.ovr - a.ovr), gk2 = opt.gkRot && gks[1] && gks[1].ovr >= gks[0].ovr - 14 ? gks[1].id : null;
+  const base = new Map(src.map(x => [x.id, norm(x.pos) === 'GK' ? (x.id === gk2 ? 30 : 0) - (opt.fat ? opt.fat(x) * .3 : 0) : (opt.noise == null ? N(0, 1.2 + rot * 3.2) : opt.noise) - (opt.fat ? opt.fat(x) * (.6 + rot * .9) : 0) + (x.yb || 0) * rot * 2.2 - (top.includes(x.id) && R() < rot * rot * .7 ? 7 : 0)]));
   const used = new Set(), xi = new Array(S.length);
   const order = S.map((s, i) => i).sort((a, b) => SLOTORD.indexOf(S[a][0]) - SLOTORD.indexOf(S[b][0]));
   for (const i of order) {
@@ -84,9 +86,14 @@ C.pickLineup = function (sq, opt) {
     if (eff(A.x, B.slot) + eff(B.x, A.slot) > eff(A.x, A.slot) + eff(B.x, B.slot) + .5) { const t = A.x; A.x = B.x; B.x = t; }
   }
   const bench = src.filter(x => !used.has(x.id)).sort((a, b) => (b.ovr + base.get(b.id)) - (a.ovr + base.get(a.id)));
-  // 교체 명단: 골키퍼 1명 + 자리별로 고루
-  const gkB = bench.find(x => norm(x.pos) === 'GK'), rest = bench.filter(x => x !== gkB).slice(0, gkB ? 8 : 9);
-  return { form, xi: xi.filter(Boolean), bench: (gkB ? [gkB] : []).concat(rest) };
+  // 교체 명단 (nb명, 대회 규정): 골키퍼(9명 이하 1 · 12명 2 · 15명 3) + 수비·미드·공격 최소 2명씩 + 나머지는 좋은 선수 순
+  const nb = opt.nb || 9, ngk = nb >= 15 ? 3 : nb >= 12 ? 2 : 1, out = [];
+  for (const x of bench) if (norm(x.pos) === 'GK' && out.length < ngk) out.push(x);
+  const of = bench.filter(x => norm(x.pos) !== 'GK'), grp = x => { const p = norm(x.pos); return p === 'CB' || /B$/.test(p) ? 'D' : /^(CDM|CM|CAM)$/.test(p) ? 'M' : 'A'; };
+  for (const g of ['D', 'M', 'A']) { let k = 0; for (const x of of) if (k < 2 && grp(x) === g && !out.includes(x) && out.length < nb) { out.push(x); k++; } }
+  for (const x of of) { if (out.length >= nb) break; if (!out.includes(x)) out.push(x); }
+  const gkOut = out.filter(x => norm(x.pos) === 'GK'), ofOut = out.filter(x => norm(x.pos) !== 'GK').sort((a, b) => (b.ovr + base.get(b.id)) - (a.ovr + base.get(a.id)));
+  return { form, xi: xi.filter(Boolean), bench: gkOut.concat(ofOut) };
 };
 C.lineupFit = L => L.xi.reduce((t, s) => t + fit(s.x, s.slot), 0) / Math.max(1, L.xi.length);
 
@@ -94,14 +101,20 @@ C.lineupFit = L => L.xi.reduce((t, s) => t + fit(s.x, s.slot), 0) / Math.max(1, 
 // 감독 성향(이름으로 고정): 주 포메이션·보조 포메이션, 압박·수비 라인·템포·폭, 공격 방식·수비 방식, 로테이션·유망주 기용
 const BUILD = ['점유율', '역습', '직선적', '측면 공략', '중앙 침투'], DEF = ['전방 압박', '중간 블록', '낮은 블록'];
 C.mgrStyle = function (M, nat) {
-  if (M.f) return M;
-  const r = C.seeded('mgr|' + M.n + '|' + (M.d0 || 0)), T = TREND[nat] || TREND._;
+  if (M.press != null && M.f2) return M;
+  // 실제 감독은 데이터의 포메이션·공격·수비 방식을 쓰고, 나머지 값만 이름 시드로 채운다
+  const r = C.seeded('mgr|' + M.n), T = TREND[M.nat] || TREND[nat] || TREND._;
   const wp = (o) => { const ks = Object.keys(o), tot = ks.reduce((a, k) => a + o[k], 0); let u = r() * tot; for (const k of ks) { u -= o[k]; if (u <= 0) return k; } return ks[0]; };
-  M.f = wp(T); let f2 = wp(T), k = 0; while (f2 === M.f && k++ < 6) f2 = wp(TREND._); M.f2 = f2;
-  M.press = Math.round(25 + r() * 70); M.line = Math.round(clamp(M.press + (r() - .5) * 40, 10, 95)); M.tempo = Math.round(30 + r() * 65); M.width = Math.round(25 + r() * 70);
-  M.build = BUILD[Math.floor(r() * BUILD.length)]; M.def = M.press > 68 ? DEF[0] : M.press < 40 ? DEF[2] : DEF[Math.floor(r() * 3)];
-  M.rot = Math.round(r() * 100) / 100; M.yp = Math.round(r() * 100) / 100;
-  M.q = Math.round((r() - .5) * 120) / 100; // 지도력 -0.6 ~ +0.6 (전력 보정)
+  const f = wp(T); if (!M.f) M.f = f; let f2 = wp(T), k = 0; while (f2 === M.f && k++ < 8) f2 = wp(TREND._); if (!M.f2) M.f2 = f2;
+  const DP = { '전방 압박': [70, 95], '중간 블록': [42, 68], '낮은 블록': [22, 42] };
+  const pr = Math.round(25 + r() * 70), ln = r(), tp = Math.round(30 + r() * 65), wd = Math.round(25 + r() * 70), bi = Math.floor(r() * BUILD.length), di = Math.floor(r() * 3), ro = r(), yp = r(), q = r();
+  M.press = M.def && DP[M.def] ? Math.round(DP[M.def][0] + (DP[M.def][1] - DP[M.def][0]) * (pr - 25) / 70) : pr;
+  M.line = Math.round(clamp(M.press + (ln - .5) * 40, 10, 95));
+  M.tempo = M.build === '점유율' ? Math.round(30 + tp * .45) : M.build === '역습' || M.build === '직선적' ? Math.round(60 + (tp - 30) * .5) : tp;
+  M.width = M.build === '측면 공략' ? Math.max(70, wd) : M.build === '중앙 침투' ? Math.min(45, wd) : wd;
+  if (!M.build) M.build = BUILD[bi]; if (!M.def) M.def = M.press > 68 ? DEF[0] : M.press < 40 ? DEF[2] : DEF[di];
+  M.rot = Math.round(ro * 100) / 100; M.yp = Math.round(yp * 100) / 100;
+  if (M.q == null) M.q = Math.round((q - .5) * 120) / 100; // 지도력 -0.6 ~ +0.6 (전력 보정)
   return M;
 };
 C.BUILD = BUILD; C.DEFS = DEF;

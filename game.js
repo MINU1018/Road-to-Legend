@@ -368,6 +368,8 @@ GM.newWorld = function (startLg) {
   const S = { v: 1, mode: 'world', w, p: { name: '', nat: 'ENG', pos: 'ST', age: 0, a: {}, mods: [], hid: { inj: 1, lon: 1, pot: 0, peak: 27 }, traits: [], money: 0, rep: 0, morale: 60, weak: 1, skill: 1, num: 0 },
     car: { club: null, status: 'none', trust: 50 }, hist: [], flags: {}, phase: 'world', vh: [], trophies: [], awards: [], evLog: [], ws: [], created: Date.now() };
   C.calInit(S);
+  if (C.mgrSeed) C.mgrSeed(w);
+  if (C.rankInit) C.rankInit(w, true);
   S.startLg = startLg || null;
   return S;
 };
