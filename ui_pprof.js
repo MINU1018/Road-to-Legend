@@ -44,7 +44,9 @@ U.pfInfoCard = function (s, pid, e, c, P) {
     if (e[31]) tags.push('출전 시간 불만');
     for (const t of C.mkt.traits(e)) tags.push('성격: ' + t);
   }
-  return h('div', { class: 'sec pfinfo' }, h('div', { class: 'pfig' }, ...cells.map(([v, l]) => h('div', null, h('b', null, v), h('small', { class: 'mute' }, l)))), tags.length ? h('div', { class: 'pftags' }, ...tags.map(t => h('span', { class: 'chip' + (/불만|제외/.test(t) ? ' red' : '') }, t))) : null,
+  if (C.legOf) for (const [cid, t] of C.legOf(w, pid)) if (w.clubs[cid]) tags.unshift(`${w.clubs[cid].name} ${C.LEGT[t]}`);
+  { const M = C.mgrByPid && C.mgrByPid(w, pid); if (M) tags.unshift(M.pending ? `지도자 수업 중 (${M.pending}년 데뷔 예정)` : h('span', { class: 'chip lnk', onclick: () => U.openMgr(M.n) }, `지도자: ${M.club && w.clubs[M.club] ? w.clubs[M.club].name + ' 감독' : '무직 감독'} ›`)); }
+  return h('div', { class: 'sec pfinfo' }, h('div', { class: 'pfig' }, ...cells.map(([v, l]) => h('div', null, h('b', null, v), h('small', { class: 'mute' }, l)))), tags.length ? h('div', { class: 'pftags' }, ...tags.map(t => typeof t !== 'string' ? t : h('span', { class: 'chip' + (/불만|제외/.test(t) ? ' red' : /레전드|아이콘|컬트/.test(t) ? ' gold' : '') }, t))) : null,
     h('div', { class: 'pfpos' }, h('div', null, h('div', { class: 'lbl' }, '포지션'), main ? h('div', null, h('small', { class: 'mute' }, '기본'), h('b', null, POSKO[main] || main)) : null, others.length ? h('div', null, h('small', { class: 'mute' }, '기타'), h('div', null, others.map(k => POSKO[k] || k).join(' · '))) : null), pitch));
 };
 
@@ -203,7 +205,7 @@ function aggOf(s, pid, list) {
     const conc = m.d.ev.filter(e => e.s !== p.s && 'gpo'.includes(e.k) && e.m >= p.on && (e.m <= p.off || p.off >= 90)).length;
     A.concOn += conc; if (!conc && p.min >= 60) A.cs++;
     A.xgaOn += M.shots.filter(x => x.s !== p.s && x.m >= p.on && (x.m <= p.off || p.off >= 90)).reduce((t, x) => t + x.xg, 0);
-    if (A.heat.length < 2400) A.heat.push(...U.heatPts(p, M));
+    if (A.heat.length < 9000) for (const q of U.heatPts(p, M)) A.heat.push(q);
   }
   A.role = Object.keys(A.roles).sort((a, b) => A.roles[b] - A.roles[a])[0] || 'CM';
   return A;

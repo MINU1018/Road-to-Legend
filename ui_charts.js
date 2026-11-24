@@ -62,7 +62,15 @@ U.chClubTiles = (s, id, played) => {
   const M = C.mgrOf && C.mgrOf(w, id);
   return V().tiles([{ k: `${lg.name} 순위`, v: `${i + 1}위`, sub: `${T.length}팀 중 · 전력 ${strRank}위` }, { k: '승점', v: String(r.pts), sub: `${r.p}경기 ${r.w}승 ${r.d}무 ${r.l}패` }, { k: '득실', v: `${r.gf - r.ga >= 0 ? '+' : ''}${r.gf - r.ga}`, sub: `${r.gf}득점 ${r.ga}실점` },
     { k: '최근 5경기 (전 대회)', v: fm.length ? V().form(fm) : '-', sub: fm.length ? `${fm.filter(x => x.r === 'W').length}승 ${fm.filter(x => x.r === 'D').length}무 ${fm.filter(x => x.r === 'L').length}패` : '' },
-    M ? { k: '감독', v: h('span', { class: 'lnk', onclick: () => U.openMgr(M.n) }, M.n.split(' ').slice(-1)[0]), sub: `${C.mgrTier(M.rep || 0)} 명성` } : null]);
+    M ? { k: '감독', v: h('span', { class: 'lnk', onclick: () => U.openMgr(M.n) }, M.n.split(' ').slice(-1)[0]), sub: `${C.mgrTier(M.rep || 0)} 명성` } : null,
+    (() => { const wr = C.crRankOf && C.crRankOf(w, id); return wr ? { k: '세계 구단 랭킹', v: h('span', { class: 'lnk', onclick: () => { U.st.wsv = Object.assign(U.st.wsv || {}, { rkm: 'club' }); U.st.crk = Object.assign(U.st.crk || {}, { hl: id }); U.setTab('rank'); } }, `${wr}위`), sub: '종합 지수 (경기력·역사·팬·재정)' } : null; })()]);
+};
+// 구단: 세계 구단 랭킹 추이 (매달 1일 발표)
+U.chClubRank = (w, id) => {
+  const R = w.cr, S = R && R.ser && R.ser[id]; if (!S || S.length < 2) return null;
+  const rk = S.map(x => x[1]), lo = Math.max(1, Math.min(...rk) - 3), hi2 = Math.max(...rk) + 3;
+  return sec('세계 구단 랭킹 추이', `매달 1일 발표 · ${S.length}회`, V().line({ x: S.map(x => { const [y, m] = C.ymd(x[0]); return `${String(y).slice(2)}.${m}`; }), series: [{ name: (w.clubs[id] || {}).name || id, color: V().idColor(w.clubs[id]), v: rk }], invert: true, yMin: lo, yMax: hi2, h: 180,
+    tip: i => [`${C.fmtDateY(S[i][0])} 발표`, `${rk[i]}위`] }));
 };
 // 리그: 전 구단 순위 흐름 (한 팀 강조 + 선두)
 U.chLeagueBump = (s, root, lg, src) => {

@@ -108,31 +108,111 @@ const f1 = x => (Math.round(x * 10) / 10).toFixed(1), f2 = x => (Math.round(x * 
 const pctS = (a, n) => n ? `${a}/${n} (${Math.round(a / n * 100)}%)` : '0/0 (0%)';
 const shortName = n => { const t = String(n).split(' '); return t.length > 1 && t[t.length - 1].length > 2 ? t[t.length - 1] : n; };
 
-// 히트맵 점 (경기·선수마다 고정). 좌표는 공격 방향 → 기준 [0~1, 0~1]
+// ---------- 히트맵 ----------
+// 실제 히트맵(옵타·FotMob·SofaScore)은 '선수가 공을 만진 모든 이벤트(패스·받기·드리블·태클·인터셉트·클리어·슈팅…)'의 좌표를
+// 모은 뒤 커널 밀도 추정(KDE)으로 번지게 그린 것. 위치를 대충 칠하는 게 아니라 이벤트 좌표의 밀도다.
+// 여기서는 기록된 경기 통계(터치·박스 터치·크로스·수비 행동·슈팅)를 이벤트 수로 쓰고, 각 이벤트 좌표는
+//   ① 그 순간 공의 위치를 팀 점유 분포(우리 공격 / 상대 공격)에서 뽑고
+//   ② 공 위치에 따라 이동한 그 선수의 자리(포메이션 슬롯 + 블록 이동 + 공 쪽 쏠림)와 가까울수록 그 선수가 만졌을 확률을 높여 채택
+// 하는 방식으로 만든다. 슈팅은 실제 슈팅 좌표를 그대로 쓴다. 좌표: 공격 방향 → 기준 [0~1 (골라인→상대 골라인), 0~1 (위→아래)]
+const HM_K = { // 블록 이동 비율(공 x), 공 쪽 쏠림(공 y), 채택 반경 σx, σy (m)
+  GK: [.12, .12, 7, 9], CB: [.55, .3, 9, 8], FB: [.62, .32, 10, 7], DM: [.6, .42, 11, 10], CM: [.68, .45, 13, 11], AM: [.62, .45, 12, 11], W: [.52, .3, 10, 7], ST: [.48, .38, 13, 10] };
+const HM_DEF = { GK: [50, 4], LB: [12, 24], RB: [88, 24], LWB: [10, 40], RWB: [90, 40], CB: [50, 18], CDM: [50, 38], CM: [50, 48], LM: [14, 52], RM: [86, 52], CAM: [50, 64], LW: [15, 76], RW: [85, 76], ST: [50, 84], CF: [50, 80] };
+function hmAnchor(p, M) {
+  const fk = M.fm && M.fm[p.s], FS = fk && C.FORMS && C.FORMS[fk];
+  let sx, sy;
+  if (FS && p.sl != null && FS[p.sl]) [, sx, sy] = FS[p.sl];
+  else { const d = HM_DEF[p.pos] || HM_DEF[(p.pos || '').replace(/^[LR]/, '')] || HM_DEF.CM; [sx, sy] = d; if (p.pos === 'CB' || /^[LR]CB$/.test(p.pos || '')) sx = p.pos === 'LCB' ? 37 : p.pos === 'RCB' ? 63 : 50; }
+  return [sy / 100 * 105, sx / 100 * 68];
+}
 U.heatPts = function (p, M) {
-      const r = C.seeded('hm|' + (M.key || '') + '|' + p.id), g = () => { const u = r() || 1e-9, q = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * q); };
-      const lat = LAT(p.pos), ly = lat === 0 ? .2 : lat === 2 ? .8 : .5;
-      const BASE = { GK: [.07, .5, .04, .1], CB: [.27, ly === .5 ? .5 : ly, .1, .12], FB: [.47, lat === 0 ? .1 : .9, .19, .08], DM: [.4, .5, .13, .17], CM: [.52, lat === 1 ? .5 : ly, .16, .17], AM: [.66, .5, .13, .19], W: [.7, lat === 0 ? .12 : .88, .15, .1], ST: [.78, .5, .1, .14] };
-      const b = BASE[p.role] || BASE.CM, pos = M.H ? (C.MS.team(M, p.s, 2).pos - 50) / 100 : 0;
-      const pts = []; const n = Math.max(3, p.st.touch || 10);
-      for (let i = 0; i < n; i++) { const fx = clamp(b[0] + pos * .2 + g() * b[2] * (1 + (r() < .15 ? 1 : 0)), .01, .99), fy = clamp(b[1] + g() * b[3] * (1 + (r() < .15 ? .8 : 0)), .02, .98); pts.push([fx, fy]); }
-  return pts;
+  const r = C.seeded('hm2|' + (M.key || '') + '|' + p.id), g = () => { const u = r() || 1e-9, q = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * q); };
+  const role = p.role || 'CM', K = HM_K[role] || HM_K.CM, st = p.st || {}, A = p.A || {};
+  const [ax0, ay] = hmAnchor(p, M);
+  const poss = M.H && C.MS.team ? C.MS.team(M, p.s, 2).pos : 50, tilt = (poss - 50) / 50; // 점유 우위 → 라인이 높다
+  // 개인 성향: 공격적(드리블·결정력) ↔ 수비적(태클·인터셉트), 반대발 윙어는 안쪽으로
+  const lean = ((A.drib || 65) + (A.fin || 60) - (A.tack || 60) - (A.intc || 60)) / 40;
+  const inv = role === 'W' || role === 'AM' ? ((ay < 30 && A.foot === 'R') || (ay > 38 && A.foot === 'L') ? 1 : 0) : 0;
+  const ax = 52.5 + (ax0 - 52.5) * .7 + lean * 2.5 + tilt * 4, ayI = ay + (inv ? (ay < 34 ? 6 : -6) : 0);
+  // 공 위치 분포 (우리 공격 중)
+  const wD = Math.max(.12, .34 - tilt * .1), wA = Math.max(.12, .26 + tilt * .12);
+  const ballOwn = () => { const q = r(); const x = q < wD ? 12 + r() * 26 : q < 1 - wA ? 35 + r() * 36 : 68 + r() * 34; const y = r() < .55 ? 2 + r() * 64 : 34 + g() * 13; return [Math.min(104, x), Math.max(1, Math.min(67, y))]; };
+  // 상대 공격 중 (우리 기준 좌표)
+  const ballOpp = () => { const q = r(), wa2 = Math.max(.12, .26 - tilt * .12), wd2 = Math.max(.12, .34 + tilt * .1); const x = q < wd2 ? 8 + r() * 30 : q < 1 - wa2 ? 35 + r() * 36 : 68 + r() * 29; const y = r() < .55 ? 2 + r() * 64 : 34 + g() * 13; return [Math.max(1, 105 - x), Math.max(1, Math.min(67, y))]; };
+  const posAt = (B, def) => {
+    // 블록은 앞으로 밀 때는 크게, 뒤로 물러설 때는 덜 움직인다 (빌드업 땐 라인이 넓게 서 있음)
+    const kx = B[0] < 52.5 ? K[0] * (def ? .75 : .6) : K[0];
+    const back = { CB: 1, FB: 4, DM: 3, CM: 4, AM: 6, W: 9, ST: 8 }[role] || 4;
+    const x = (def ? ax - back : ax + 5 + (role === 'FB' ? 5 : 0)) + kx * (B[0] - 52.5);
+    const y = (def ? ay + (34 - ay) * .15 : ayI) + K[1] * (B[1] - 34);
+    if (!def && (role === 'ST' || role === 'AM') && r() < .35) return [x - 14, y]; // 내려와서 연계
+    return [role === 'GK' ? Math.min(x, def ? 14 : 24) : x, y];
+  };
+  const out = [], push = (x, y) => out.push([Math.min(.995, Math.max(.005, x / 105)), Math.min(.99, Math.max(.01, y / 68))]);
+  const draw = (n, src, def, box) => {
+    let got = 0, tries = 0;
+    const sx = K[2] * (def ? .85 : 1), sy = K[3];
+    while (got < n && tries < n * 60) {
+      tries++;
+      const B = src(); if (box && !box(B)) continue;
+      const P = posAt(B, def), dx = (B[0] - P[0]) / sx, dy = (B[1] - P[1]) / sy;
+      // 가끔(약 6%) 자기 구역 밖 이벤트도 (세트피스·역습·커버)
+      if (r() < Math.exp(-(dx * dx + dy * dy) / 2) || (tries > 8 && r() < .012)) { push(B[0] + g() * .8, B[1] + g() * .8); got++; }
+    }
+  };
+  const inOppBox = B => B[0] > 88.5 && B[1] > 13.8 && B[1] < 54.2, wideFinal = B => B[0] > 68 && (B[1] < 16 || B[1] > 52), ownThird = B => B[0] < 32;
+  // 슈팅 (실제 좌표)
+  const shots = (M.shots || []).filter(x => x.p === p.id);
+  for (const x of shots) push(105 - (x.dx || 14), 34 + (x.dy || 0));
+  const touch = Math.max(3, st.touch || 10), boxT = Math.max(0, (st.boxT || 0) - shots.filter(x => x.inBox).length);
+  const crs = st.crs || 0, clr = st.clr || 0, defA = (st.tkl || 0) + (st.int || 0) + (st.blk || 0) + Math.round((st.rec || 0) * .6);
+  if (role === 'GK') {
+    // 키퍼: 캐치·펀칭·골킥은 박스 안, 빌드업 패스는 박스 앞까지
+    const nIn = Math.round(touch * .55);
+    for (let i = 0; i < nIn; i++) push(2 + Math.abs(g()) * 7, 34 + g() * 7);
+    draw(touch - nIn, ballOwn, 0);
+    return out;
+  }
+  const rest = Math.max(0, touch - shots.length - boxT - crs - clr - defA);
+  draw(boxT, ballOwn, 0, inOppBox);
+  draw(crs, ballOwn, 0, wideFinal);
+  draw(clr, ballOpp, 1, ownThird);
+  draw(defA, ballOpp, 1);
+  draw(rest, ballOwn, 0);
+  return out;
 };
+// KDE: 1m 격자에 점을 쌓고 가우시안(대역폭 h m)으로 분리 합성곱 → 상위 백분위로 정규화 → 녹→황→적 컬러맵, 낮은 밀도는 투명
+U.heatGrid = function (pts, hbw) {
+  const GW = 105, GH = 68, H = new Float32Array(GW * GH);
+  for (const [fx, fy] of pts) { const x = fx * GW - .5, y = fy * GH - .5, x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0;
+    for (const [xx, yy, w] of [[x0, y0, (1 - tx) * (1 - ty)], [x0 + 1, y0, tx * (1 - ty)], [x0, y0 + 1, (1 - tx) * ty], [x0 + 1, y0 + 1, tx * ty]]) if (xx >= 0 && yy >= 0 && xx < GW && yy < GH) H[yy * GW + xx] += w; }
+  const h = hbw || (pts.length > 1500 ? 3.1 : pts.length > 400 ? 3.6 : pts.length > 150 ? 4.2 : 4.6), R = Math.ceil(h * 3), ker = [];
+  for (let i = -R; i <= R; i++) ker.push(Math.exp(-(i * i) / (2 * h * h)));
+  const T = new Float32Array(GW * GH), O = new Float32Array(GW * GH);
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) { let v = 0; for (let k = -R; k <= R; k++) { const xx = x + k; if (xx >= 0 && xx < GW) v += H[y * GW + xx] * ker[k + R]; } T[y * GW + x] = v; }
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) { let v = 0; for (let k = -R; k <= R; k++) { const yy = y + k; if (yy >= 0 && yy < GH) v += T[yy * GW + x] * ker[k + R]; } O[y * GW + x] = v; }
+  const sorted = Array.from(O).filter(v => v > 0).sort((a, b) => a - b), mx = sorted.length ? sorted[Math.floor(sorted.length * .995)] || sorted[sorted.length - 1] : 0;
+  return { w: GW, h: GH, v: O, mx };
+};
+const HM_STOPS = [[0, [16, 92, 52]], [.28, [38, 160, 72]], [.52, [148, 196, 58]], [.7, [236, 206, 52]], [.85, [238, 132, 40]], [1, [214, 44, 32]]];
+function hmColor(t) { for (let i = 1; i < HM_STOPS.length; i++) if (t <= HM_STOPS[i][0]) { const [t0, c0] = HM_STOPS[i - 1], [t1, c1] = HM_STOPS[i], k = (t - t0) / (t1 - t0); return c0.map((v, j) => v + (c1[j] - v) * k); } return HM_STOPS[HM_STOPS.length - 1][1]; }
 U.heatBox = function (pts, dir) {
-      const cw = 105 * 3, ch = 68 * 3, cv = h('canvas', { class: 'hmap', width: cw, height: ch });
+      const cw = 105 * 4, ch = 68 * 4, cv = h('canvas', { class: 'hmap', width: cw, height: ch });
       const NSs = 'http://www.w3.org/2000/svg', sv = document.createElementNS(NSs, 'svg'); sv.setAttribute('viewBox', '0 0 105 68'); sv.setAttribute('class', 'hlines');
       const L = 'stroke="rgba(255,255,255,.45)" stroke-width=".4" fill="none"';
       sv.innerHTML = `<rect x=".3" y=".3" width="104.4" height="67.4" ${L}/><line x1="52.5" y1="0" x2="52.5" y2="68" ${L}/><circle cx="52.5" cy="34" r="9.15" ${L}/><rect x="0" y="13.84" width="16.5" height="40.32" ${L}/><rect x="88.5" y="13.84" width="16.5" height="40.32" ${L}/><rect x="0" y="24.84" width="5.5" height="18.32" ${L}/><rect x="99.5" y="24.84" width="5.5" height="18.32" ${L}/>`;
       requestAnimationFrame(() => {
-        const cx = cv.getContext('2d'); if (!cx) return;
-        const gw = 70, gh = 46, grid = new Float32Array(gw * gh), sig = 3.2;
-        for (const [fx, fy] of pts) { const X = fx * gw, Y = fy * gh; for (let yy = Math.max(0, Math.floor(Y - 3 * sig)); yy < Math.min(gh, Y + 3 * sig); yy++) for (let xx = Math.max(0, Math.floor(X - 3 * sig)); xx < Math.min(gw, X + 3 * sig); xx++) { const dd = ((xx - X) ** 2 + (yy - Y) ** 2) / (2 * sig * sig); grid[yy * gw + xx] += Math.exp(-dd); } }
-        let mx = 0; for (const q of grid) mx = Math.max(mx, q);
-        const img = cx.createImageData(gw, gh);
-        const ramp = t => t < .5 ? [40 + 200 * t * 2, 190, 60] : [240, 190 - 150 * (t - .5) * 2, 50];
-        for (let i = 0; i < grid.length; i++) { const t = mx ? grid[i] / mx : 0; const [R_, G_, B_] = ramp(t); img.data[i * 4] = R_; img.data[i * 4 + 1] = G_; img.data[i * 4 + 2] = B_; img.data[i * 4 + 3] = t < .06 ? 0 : Math.min(235, 60 + t * 200); }
-        const tmp = document.createElement('canvas'); tmp.width = gw; tmp.height = gh; tmp.getContext('2d').putImageData(img, 0, 0);
-        cx.imageSmoothingEnabled = true; cx.filter = 'blur(6px)'; cx.drawImage(tmp, 0, 0, cw, ch); cx.filter = 'none';
+        const cx = cv.getContext('2d'); if (!cx || !pts || !pts.length) return;
+        const G = U.heatGrid(pts), img = cx.createImageData(G.w, G.h), TH = .1;
+        for (let i = 0; i < G.v.length; i++) {
+          const t = G.mx ? Math.min(1, G.v[i] / G.mx) : 0;
+          if (t < TH * .6) { img.data[i * 4 + 3] = 0; continue; }
+          const c = hmColor(Math.max(0, (t - TH) / (1 - TH)));
+          img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2];
+          img.data[i * 4 + 3] = Math.round(255 * Math.min(.9, t < TH ? (t - TH * .6) / (TH * .4) * .35 : .35 + (t - TH) * 1.6));
+        }
+        const tmp = document.createElement('canvas'); tmp.width = G.w; tmp.height = G.h; tmp.getContext('2d').putImageData(img, 0, 0);
+        cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high'; cx.drawImage(tmp, 0, 0, cw, ch);
       });
   return h('div', { class: 'hwrap' }, cv, sv, h('div', { class: 'hdir mute' }, dir || '공격 방향 →'));
 };

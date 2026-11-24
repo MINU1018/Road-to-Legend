@@ -750,7 +750,7 @@ function mgrView(s, root, name) {
   // 요약: 명성(단계) · 실력(별) · 선수 시절 · 라이선스 · 통산
   const st5 = Math.max(1, Math.min(5, Math.round(((M.q || 0) + .6) / 1.3 * 8 + 1) / 2));
   const stars = h('span', { class: 'stars', title: `지도력 ${st5}/5` }, ...[1, 2, 3, 4, 5].map(k => h('i', { class: k <= st5 ? 'on' : k - .5 === st5 ? 'half' : '' }, '★')));
-  if (U.viz) root.append(U.viz.tiles([{ k: '명성', v: C.mgrTier(M.rep || 0), sub: `${Math.round(M.rep || 0)} / 100` }, { k: '실력', v: stars, sub: '경기력에 반영되는 지도력' }, { k: '선수 시절', v: (C.PCN[M.pc] || '-').replace(' 출신', ''), sub: M.pc === 'I' ? '대표팀 경력' : '' }, { k: '라이선스', v: M.lic || '-' },
+  if (U.viz) root.append(U.viz.tiles([{ k: '명성', v: C.mgrTier(M.rep || 0), sub: `${Math.round(M.rep || 0)} / 100` }, { k: '실력', v: stars, sub: '경기력에 반영되는 지도력' }, { k: '선수 시절', v: M.pid ? h('span', { class: 'lnk', onclick: () => U.openPlayer(M.pid) }, (C.PCN[M.pc] || '선수').replace(' 출신', '') + ' ›') : (C.PCN[M.pc] || '-').replace(' 출신', ''), sub: M.pid ? (() => { const lg = C.legOf ? C.legOf(w, M.pid)[0] : null; return lg && w.clubs[lg[0]] ? `${w.clubs[lg[0]].name} ${C.LEGT[lg[1]]} · 선수 기록 보기` : '은퇴 선수 출신 · 선수 기록 보기'; })() : M.pc === 'I' ? '대표팀 경력' : '' }, { k: '라이선스', v: M.lic || '-' },
     { k: '통산', v: `${G}경기`, sub: `${W}승 ${D}무 ${L}패 · 승률 ${pct(W, G)}` }, { k: '우승', v: `${allT.length}회`, sub: '게임 시작 이후' }]));
   { const ch = U.chMgrRep ? U.chMgrRep(M) : null; if (ch) root.append(ch); }
   root.append(h('div', { class: 'cols2 xicols' },
@@ -823,6 +823,22 @@ function contStage(T, id) {
   for (const g of T.g || []) if ((g.rows || g.t || []).some(x => x[0] === id)) return { n: '조별리그' };
   return null;
 }
+// 구단 레전드: 이 구단 팬들이 레전드로 대하는 선수 (구단 위상에 따라 문턱이 다름) + 게임 이전 역사 속 레전드
+function clubLegends(s, root, id) {
+  const w = s.w; if (!C.legCalc) return;
+  const R = C.legCalc(w, id), hist = ((G.FC27 || {}).LEG_HIST || {})[id] || [];
+  if (!R.list.length && !hist.length) return;
+  const ps = w.ps || {}, cur = new Set(((w.clubs[id] || {}).sq || []).map(e => String(e[0])));
+  const TC2 = ['', 'cult', 'leg', 'icon'];
+  const wonTxt = x => { if (!x.won.length) return ''; const by = {}; for (const [, k] of x.won) { const n = k === 'up' ? '승격' : k === 'cup' ? '컵' : k === 'c1' || k === 'c2' ? '대륙' : '리그'; by[n] = (by[n] || 0) + 1; } return Object.entries(by).map(([k, v]) => `${k} ${v}`).join(' · '); };
+  const rows = R.list.slice(0, 20).map(x => { const P = ps[x.pid] || {}, act = cur.has(x.pid) && !P.ret;
+    return h('tr', null, h('td', null, h('span', { class: 'legt ' + TC2[x.tier] }, C.LEGT[x.tier])), h('td', { class: 'l' }, nameLink(P.n || x.pid, x.pid), act ? h('small', { class: 'mute' }, ' 현역') : P.ret ? h('small', { class: 'mute' }, ' 은퇴') : null),
+      h('td', { class: 'mute' }, `${x.y0 || ''}${x.y1 && x.y1 !== x.y0 ? '–' + (x.y1 + 1) : x.y0 ? '–' : ''}`), h('td', null, x.nSea), h('td', null, x.apps), h('td', null, x.g), h('td', null, x.rt ? x.rt.toFixed(2) : '-'), h('td', { class: 'l mute' }, [wonTxt(x), x.one ? '원클럽맨' : '', x.pre ? '게임 전 기록 포함(근사)' : ''].filter(Boolean).join(' · ')), h('td', null, x.sc.toFixed(1))); });
+  root.append(h('div', { class: 'sec' }, h('h3', null, '구단 레전드', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` 이 구단 기준: 레전드 ${R.T.toFixed(1)}점 이상 · 구단 위상 ${Math.round(R.s)}`)),
+    R.list.length ? h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, ...['등급', '선수', '기간', '시즌', '출전', '골', '평점', '공헌', '점수'].map(x => h('th', null, x)))), h('tbody', null, ...rows))) : h('div', { class: 'in mute' }, '아직 이 구단 기준을 넘은 선수가 없습니다.'),
+    h('div', { class: 'in mute', style: { fontSize: '12px', lineHeight: 1.6 } }, `점수 = 시즌 수 + 출전·골·도움 + 기량(그 구단 시절 OVR) + 우승·승격(주전으로 뛴 시즌) + 원클럽맨. 작은 구단일수록 우승·승격의 무게가 크고 문턱이 낮으며(6~7년 꾸준히 뛰거나 승격 주역이면 레전드), 빅클럽일수록 문턱이 높습니다. 컬트 히어로 ${(R.T * .72).toFixed(1)}점 · 레전드 ${R.T.toFixed(1)}점 · 아이콘 ${(R.T * 1.7).toFixed(1)}점.`),
+    hist.length ? h('div', { class: 'in' }, h('div', { class: 'mute', style: { fontSize: '12px', marginBottom: '6px' } }, '역사 속 레전드 (게임 시작 전)'), h('div', { class: 'leghist' }, ...hist.map(([n, y, d]) => h('div', { class: 'lgh' }, h('b', null, n), h('span', { class: 'mute' }, y), h('small', null, d))))) : null));
+}
 function clubHistory(s, root, id) {
   const w = s.w, c = w.clubs[id], n0 = root.children.length, now = w.cal ? w.cal.d : 0;
   // 트로피 진열장
@@ -832,6 +848,8 @@ function clubHistory(s, root, id) {
   if (grp.size) root.append(h('div', { class: 'sec' }, h('h3', null, `트로피 진열장 · ${T.length}개`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 게임 시작 이후')),
     h('div', { class: 'in trog' }, ...[...grp.values()].sort((a, b) => KO[a.k] - KO[b.k] || b.y.length - a.y.length).map(g => h('div', { class: 'troc tk-' + g.k }, h('div', { class: 'tron' }, '🏆 ×' + g.y.length), h('b', null, g.n), h('small', { class: 'mute' }, g.y.sort().reverse().join(' · ')))))));
   { const ch = U.chClubYears ? U.chClubYears(s, id) : null; if (ch) root.append(ch); }
+  { const ch = U.chClubRank ? U.chClubRank(s.w, id) : null; if (ch) root.append(ch); }
+  clubLegends(s, root, id);
   // 시즌 연혁
   const MG = [...((w.mgrH || {})[id] || []), ...((w.mgr || {})[id] ? [Object.assign({ club: id }, w.mgr[id])] : [])];
   const items = [];

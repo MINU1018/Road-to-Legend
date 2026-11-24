@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+*.zip
+shots/
+tools/data/loans_resolved.json

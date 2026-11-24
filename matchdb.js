@@ -337,7 +337,7 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   const real = sd => sd.sq.some(x => x.id[0] !== '~') || (u && u.rec);
   // 라인업 기록: 맨 앞 '~포메이션번호', 선수마다 끝에 '@슬롯' (포메이션 자리)
   const lnS = real(A) || real(B) ? P.map((list, s) => (Ls[s].form && C.FORMK ? ['~' + C.FORMK.indexOf(Ls[s].form)] : []).concat(list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on + (x.off < 90 ? '-' + x.off : '')) + (x.sl != null ? '@' + x.sl.toString(36) : ''))).concat((Ls[s].bnF || []).filter(b => !list.some(x => x.id === b.id)).map(b => '!' + enc(b.id))).join(',')).join('/') : ''; // '!선수' = 교체 명단에 있었지만 안 뛴 선수
-  if (CX) try { discAfter(CX, kind, sides, P, ev); recAfter(CX, kind, sides, P, ev, ga, gb, id => { for (const sd of sides) { const x = sd.sq.find(z => z.id === id); if (x) return x.n; } return id; }); if (C.pkHook) C.pkHook(CX, kind, sides, ev, ga, gb); if (C.lrecHook) C.lrecHook(CX, sides, P, ev, ga, gb); } catch (e) { console.error('rec', e); }
+  if (CX) try { discAfter(CX, kind, sides, P, ev); recAfter(CX, kind, sides, P, ev, ga, gb, id => { for (const sd of sides) { const x = sd.sq.find(z => z.id === id); if (x) return x.n; } return id; }); if (C.pkHook) C.pkHook(CX, kind, sides, ev, ga, gb); if (C.lrecHook) C.lrecHook(CX, sides, P, ev, ga, gb); if (C.crMatch && CX.w && CX.ck) C.crMatch(CX.w, sides[0].key, sides[1].key, ga, gb, CX.ck); } catch (e) { console.error('rec', e); }
   return { ev: evS, ln: lnS, P };
 };
 MD.momPick = cands => { let b = null; for (const c of cands) { if (!b || c.rt > b.rt || (c.rt === b.rt && (c.ga > b.ga || (c.ga === b.ga && ((c.win && !b.win) || (c.win === b.win && c.start > b.start)))))) b = c; } return b; };

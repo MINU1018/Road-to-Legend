@@ -370,6 +370,8 @@ GM.newWorld = function (startLg) {
   C.calInit(S);
   if (C.mgrSeed) C.mgrSeed(w);
   if (C.rankInit) C.rankInit(w, true);
+  if (C.crInit) C.crInit(w, true);
+  if (C.legSeed) C.legSeed(w);
   S.startLg = startLg || null;
   return S;
 };

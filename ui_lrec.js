@@ -136,4 +136,42 @@ U.natRankView = function (s, root) {
     'FIFA/코카콜라 남자 랭킹의 SUM 방식을 따릅니다. 경기마다 점수 = 이전 점수 + 중요도 × (결과 − 기대 결과). 기대 결과는 두 팀 점수 차로 정해지고(1 / (10^(−점수차/600) + 1)), 결과는 승 1 · 무 0.5 · 패 0, 승부차기는 이긴 팀 0.75 · 진 팀 0.5입니다. ',
     '중요도: 친선전 10 · 네이션스리그 리그 단계 15 · 네이션스리그 토너먼트 25 · 대륙 대회 본선 35 (8강부터 40) · 월드컵 본선 50 (8강부터 60). 본선 토너먼트에서 진 팀은 점수를 잃지 않습니다. 시작 점수는 2026년 10월 7일 FIFA 발표 점수입니다.')));
 };
+
+// ---------- 세계 구단 랭킹 ----------
+U.clubRankView = function (s, root) {
+  const w = s.w; if (!w.cr && C.crInit) C.crInit(w);
+  const R = w.cr, sv = U.st.crk = U.st.crk || { n: 50, conf: '', nat: '' };
+  const rows = C.crCalc(w), prev = R.pub[R.pub.length - 1];
+  const prevIdx = {}; if (prev) prev.r.forEach((id, i) => prevIdx[id] = i);
+  const CONF = [['', '전체 연맹'], ['UEFA', '유럽'], ['CONMEBOL', '남미'], ['CONCACAF', '북중미'], ['AFC', '아시아']];
+  const nats = [...new Set(rows.map(x => w.clubs[x.id].nat))].sort((a, b) => C.natName(a).localeCompare(C.natName(b)));
+  const opt = (list, cur) => list.map(([k, l]) => { const o = h('option', { value: k }, l); if (k === cur) o.selected = true; return o; });
+  root.append(h('div', { class: 'wfilter' },
+    h('select', { class: 'wsel', onchange: e => { sv.conf = e.target.value; sv.nat = ''; U.stay(); } }, ...opt(CONF, sv.conf)),
+    h('select', { class: 'wsel', onchange: e => { sv.nat = e.target.value; U.stay(); } }, ...opt([['', '전체 국가']].concat(nats.filter(n => !sv.conf || C.confOf(n) === sv.conf).map(n => [n, C.natName(n)])), sv.nat)),
+    h('span', { class: 'mute', style: { fontSize: '12px' } }, prev ? `순위 변동은 ${C.fmtDateY(prev.d)} 발표 대비 · 점수는 현재 기준` : '')));
+  const list = rows.map((x, i) => Object.assign({ i }, x)).filter(x => { const n = w.clubs[x.id].nat; return (!sv.conf || C.confOf(n) === sv.conf) && (!sv.nat || n === sv.nat); });
+  const bar = v => h('span', { class: 'crb' }, h('i', { style: { width: Math.max(2, Math.round(v * .52)) + 'px' } }), h('b', null, Math.round(v)));
+  const lgOf = c => { const L = c.lg && w.lg[c.lg]; return L ? L.name : C.natName(c.nat); };
+  const tb = h('table', { class: 'ltable lc crt' }, h('thead', null, h('tr', null, ...['순위', '변동', '구단', '리그', '종합', '경기력', '대륙', '역사', '팬', '재정'].map(x => h('th', { class: x === '구단' ? 'l' : x === '리그' ? 'l lgc' : null }, x)))),
+    h('tbody', null, ...list.slice(0, sv.n).map(x => { const c = w.clubs[x.id], pi = prevIdx[x.id], mv = pi == null ? null : pi - x.i;
+      return h('tr', { class: 'click' + (sv.hl === x.id ? ' hl' : ''), onclick: () => U.openClub(x.id) },
+        h('td', null, h('b', null, x.i + 1)),
+        h('td', null, mv == null ? h('span', { class: 'mute' }, 'NEW') : mv > 0 ? h('span', { style: { color: 'var(--good)' } }, '▲' + mv) : mv < 0 ? h('span', { style: { color: 'var(--bad)' } }, '▼' + (-mv)) : h('span', { class: 'mute' }, '–')),
+        h('td', { class: 'l' }, h('span', { class: 'cc' }, crest(c, 18), h('span', null, c.name))),
+        h('td', { class: 'l mute lgc' }, h('span', { class: 'cc' }, U.flag ? U.flag(c.nat, 12) : '', ' ', lgOf(c))),
+        h('td', null, h('b', null, x.s.toFixed(1))), h('td', null, bar(x.p)), h('td', null, bar(x.co)), h('td', null, bar(x.he)), h('td', null, bar(x.fa)), h('td', null, bar(x.fi))); })));
+  root.append(h('div', { class: 'sec' }, h('h3', null, '세계 구단 랭킹'), h('div', { class: 'in tscroll' }, tb),
+    list.length > sv.n ? h('div', { class: 'in' }, h('button', { class: 'btn ghost sm', onclick: () => { sv.n += 50; U.stay(); } }, `더 보기 (${list.length - sv.n}개 남음)`)) : null));
+  if (R.top.length) root.append(h('div', { class: 'sec' }, h('h3', null, '1위 기록'), h('div', { class: 'in chg' }, ...R.top.slice().reverse().slice(0, 12).map(([d, id]) => h('span', { class: 'chip' }, `${C.fmtDateY(d)} ~ `, crest(w.clubs[id], 14), ' ' + ((w.clubs[id] || {}).name || id))))));
+  const Wt = C.CRW || {};
+  root.append(h('div', { class: 'sec' }, h('h3', null, '계산 방식'), h('div', { class: 'in mute', style: { fontSize: '12.5px', lineHeight: 1.65 } },
+    `현실의 구단 순위는 기준마다 다릅니다 — Opta 파워랭킹·ClubElo는 경기 결과, UEFA 계수는 최근 5시즌 대륙 대회 성적, Deloitte Money League는 매출, Brand Finance·Forbes는 브랜드 가치를 봅니다. 이 랭킹은 이들을 섞은 종합 지수입니다 (각 항목 0~100).`,
+    h('br'), `· 경기력 ${Math.round(Wt.p * 100)}% — 모든 공식 경기 결과로 오르내리는 Elo (상대가 강할수록, 점수 차가 클수록 크게 변함). 시작값은 2026년 11월 Opta 파워 지수와 스쿼드 전력.`,
+    h('br'), `· 대륙 성적 ${Math.round(Wt.co * 100)}% — 최근 5시즌 대륙 대회 승점(승 2 · 무 1, 우승 보너스). 유럽 1 · 남미 0.75 · 그 밖 0.4 보정.`,
+    h('br'), `· 역사 ${Math.round(Wt.he * 100)}% — 역대 리그·대륙·국내 컵 우승을 리그 수준으로 환산하고, 우승 대부분이 오래전인 구단은 낮춰 반영. 제곱근을 씌워 우승이 아주 많은 구단과의 차이를 줄입니다. 게임 속 우승은 그대로 더해집니다.`,
+    h('br'), `· 팬·브랜드 ${Math.round(Wt.fa * 100)}% — 팔로워·관중 규모 근사치에서 시작해 우승·승격으로 오르고 강등으로 내려갑니다.`,
+    h('br'), `· 재정 ${Math.round(Wt.fi * 100)}% — 구단 매출 (로그 척도).`,
+    h('br'), '발표는 매달 1일. 하부 리그 구단과 리그 밖 구단은 전력·리그 수준으로 근사합니다.')));
+};
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -354,7 +354,10 @@ function day(S, d) {
     m.tq = m.tq.filter(t => t[0] >= d);
   }
   // 감독 이동 (빅클럽이 다른 구단 감독을 데려감)
-  if (w.mgrNews && w.mgrNews.length) { for (const x of w.mgrNews.splice(0)) { if (x.k !== 'rep') continue; const c = w.clubs[x.club], to = w.clubs[x.to]; if (!c || !to || (c.str || 0) < 62 || !x.n) continue;
+  if (w.mgrNews && w.mgrNews.length) { for (const x of w.mgrNews.splice(0)) {
+    if (x.k === 'exp') { const c = w.clubs[x.club]; if (!c) continue; const P = (w.ps || {})[x.pid], lg = C.legOf ? C.legOf(w, x.pid).find(z => z[0] === x.club || z[0] === c.parent) : null; if ((c.str || 0) < 66 && !lg) continue;
+      push(S, { d, c: 'sack', imp: lg ? 2 : 1, h: lg ? `${c.name} 레전드 ${x.n}, 감독으로 친정 복귀` : `${c.name}, 선수 출신 ${x.n} 감독 선임`, s: P ? `현역 시절 ${String(P.h || '').split(';').filter(Boolean).length}시즌을 뛰고 은퇴한 뒤 지도자로 첫발을 뗀다.` : '', cl: [x.club], lg: c.lg, p: x.pid ? [x.pid] : [] }); continue; }
+    if (x.k !== 'rep') continue; const c = w.clubs[x.club], to = w.clubs[x.to]; if (!c || !to || (c.str || 0) < 62 || !x.n) continue;
     push(S, { d, c: 'sack', imp: 1, h: `${c.name}, 새 감독 ${x.n} 선임`, s: `${x.old} 감독이 ${to.name}로 떠난 자리를 채운다.`, cl: [x.club, x.to], lg: c.lg }); } }
   // 마감일 정리
   if (m.dl && m.dl.d === d) { const q = m.dl; m.dl = null; if (q.n >= 5) push(S, { d, c: 'transfer', imp: 2, h: `이적시장 마감일, 하루에만 ${q.n.toLocaleString()}건 거래`, s: (q.fee ? `오늘 이적료 합계 ${C.fmtEUR(q.fee * 1e4)}. ` : '') + (q.top.length ? '주요 거래: ' + q.top.map(r => `${pn(r[0])} → ${cn(w, r[2]) || '-'}`).join(', ') : ''), p: q.top.map(r => r[0]), cl: [] }); }

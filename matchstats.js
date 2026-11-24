@@ -314,7 +314,7 @@ function build(o) {
   const vars = [];
   if (has) { const rv = C.seeded('var|' + o.key);
     for (let s = 0; s < 2; s++) if (rv() < .07 + shots.filter(x => x.s === s).length * .006) { const m = 3 + Math.floor(rv() * 87), on = onAt(s, m).filter(x => x.role !== 'GK'); if (!on.length) continue; let t = 0; for (const x of on) t += SW[x.role] + .05; let q = rv() * t, p = on[0]; for (const x of on) { q -= SW[x.role] + .05; if (q <= 0) { p = x; break; } } const z = rv(); vars.push({ m, s, p: p.id, why: z < .62 ? '오프사이드' : z < .8 ? '핸드볼' : '공격자 반칙' }); } }
-  return { PL, P, shots, H, tot, POS, has: !!has, vars, key: o.key };
+  return { PL, P, shots, H, tot, POS, has: !!has, vars, key: o.key, fm: d.fm || null };
 };
 // 반 선택: 0 = 전반, 1 = 후반, 2 = 모두
 C.MS.team = function (ms, s, hf) {

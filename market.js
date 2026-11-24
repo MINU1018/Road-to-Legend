@@ -15,9 +15,11 @@ MK.persona = e => {
   const id = String(e[0]); let p = PCACHE.get(id); if (p) return p;
   const r = C.seeded('pers|' + id);
   p = { loy: r(), amb: r(), home: r(), temp: r() };
+  // v37: 출전 시간 우선(pt) · 돈(money) · 명문·브랜드 선호(brand) — 앞의 값은 그대로 두고 뒤에 덧붙인다
+  p.pt = r(); p.money = r(); p.brand = r();
   if (PCACHE.size > 60000) PCACHE.clear(); PCACHE.set(id, p); return p;
 };
-MK.traits = e => { const p = MK.persona(e), t = []; if (p.loy > .86) t.push('원클럽맨 기질'); else if (p.loy > .72) t.push('충성심 높음'); if (p.amb > .8) t.push('야망형'); if (p.home > .84) t.push('고향 선호'); if (p.temp > .86) t.push('다혈질'); if (p.loy < .14 && p.amb > .5) t.push('이적에 열린 편'); return t; };
+MK.traits = e => { const p = MK.persona(e), t = []; if (p.loy > .86) t.push('원클럽맨 기질'); else if (p.loy > .72) t.push('충성심 높음'); if (p.amb > .8) t.push('야망형'); if (p.home > .84) t.push('고향 선호'); if (p.temp > .86) t.push('다혈질'); if (p.loy < .14 && p.amb > .5) t.push('이적에 열린 편'); if (p.pt > .8) t.push('출전 시간 중시'); if (p.money > .86) t.push('돈을 따름'); if (p.brand > .84) t.push('명문 구단 선호'); return t; };
 
 // ---------- 국적·홈그로운 ----------
 const EU = new Set('AUT BEL BUL CRO CYP CZE DEN EST FIN FRA GER GRE HUN IRL ITA LVA LTU LUX MLT NED POL POR ROU SVK SVN ESP SWE'.split(' '));
@@ -44,6 +46,7 @@ MK.gbe = (w, e, from) => {
 // ---------- 창 시작 ----------
 MK.begin = (w, winter) => {
   const W = MK._win = { winter, nonEU: {}, esc: {}, nrank: {}, nstr: {} };
+  W.stat = MK.stature(w);
   if (!winter || !w.mkq) w.mkq = { y: w.year, ne: {} }; // 세리에 A 비EU: 시즌(여름+겨울) 단위
   try { const pools = C.nationPools(w); for (const n in pools) { W.nstr[n] = C.nationStrength(pools[n]); pools[n].all.slice().sort((a, b) => b[2] - a[2]).slice(0, 26).forEach((e, i) => { W.nrank[String(e[0])] = i; }); } } catch (e) { /* 국가 풀 실패는 무시 */ }
 };
@@ -60,6 +63,62 @@ MK.weight = (w, e, to) => {
   if (to.nat === e[5] && p.home > .6) x *= 1 + (p.home - .6) * (e[3] >= 28 ? 6 : 2.5);
   if (to.lg === 'ENG1' && e[3] > 21 && !MK.homegrown(e, 'ENG')) { const n = to.sq.filter(z => z[3] > 21 && !MK.homegrown(z, 'ENG')).length; if (n >= 17) x *= .25; }
   return x;
+};
+// ---------- 행선지 매력 (v37) ----------
+// 현실에서 선수가 구단을 고르는 기준: ① 구단 위상(성적 + 이름값·역사·팬 — 지금 부진해도 맨유·유벤투스는 끌림이 있다)
+// ② 출전 시간(가서 주전인가) ③ 돈 ④ 고향. 잘하는 선수일수록 위상을, 벤치에 머물던 선수일수록 출전 시간을 본다.
+// MK.stature(w): 세계 구단 랭킹 종합 지수 → 구단 위상 / 이름값(역사·팬)
+MK.stature = w => {
+  const out = new Map(); let rows = null; try { rows = C.crCalc ? C.crCalc(w) : null; } catch (e) { rows = null; }
+  if (rows) for (const x of rows) out.set(x.id, { s: x.s, brand: (x.he + x.fa) / 2 });
+  return out;
+};
+const statOf = (w, c) => { const W = MK._win, m = W && W.stat, x = m && m.get(c.id); if (x) return x; const L = c.lg && w.lg[c.lg], t = L ? L.tier || 1 : 4; return { s: clamp(((c.str || 60) - 55) * 1.25 - (t - 1) * 4, 0, 60), brand: clamp(((c.pres || c.str || 60) - 60) * .8, 0, 30) }; };
+MK.statOf = statOf;
+// 그 구단에 가면 어떤 역할인가: 0 주전 · 1 로테이션 · 2 벤치 (같은 포지션 그룹 안 OVR 순위)
+const GRPK = { GK: 'GK', CB: 'D', LB: 'D', RB: 'D', LWB: 'D', RWB: 'D', CDM: 'M', CM: 'M', CAM: 'M', LW: 'A', RW: 'A', LM: 'A', RM: 'A', ST: 'A', CF: 'A' };
+const GST = { GK: 1, D: 4, M: 3, A: 3 };
+MK.roleAt = (e, to) => {
+  const g = GRPK[e[1]] || 'M', n = GST[g]; let better = 0;
+  for (const z of to.sq || []) if (z !== e && (GRPK[z[1]] || 'M') === g && z[2] > e[2]) better++;
+  return better < n ? 0 : better < Math.ceil(n * 1.9) ? 1 : 2;
+};
+MK.appeal = (w, e, from, to, kind) => {
+  const p = MK.persona(e), o = e[2], age = e[3];
+  if (kind === 'loan') { const ro = MK.roleAt(e, to); return ro === 0 ? 1.8 : ro === 1 ? 1 : .35; } // 임대는 뛰는 게 목적
+  const S1 = statOf(w, to), S0 = from ? statOf(w, from) : { s: 20, brand: 5 };
+  let x = 1;
+  // ① 위상: 기량이 높고 야망이 클수록 위상 차이에 민감 (전성기 스타가 자기보다 한참 아래 구단으로 가지 않음)
+  const q = clamp((o - 70) / 14, 0, 1.2), ds = S1.s - S0.s;
+  x *= Math.exp(ds * (.012 + q * (.03 + p.amb * .035)) * (age >= 32 ? .4 : 1));
+  // 이름값 끌림: 역사·팬이 큰 구단 (명문 선호 성향일수록)
+  x *= 1 + (S1.brand / 100) * (.35 + p.brand * 1.3) * (o >= 74 ? 1 : .4);
+  // ② 출전 시간
+  const ro = MK.roleAt(e, to), wantPlay = .35 + p.pt * .9 + (age >= 23 && age <= 30 ? .2 : 0) - (o >= 84 && S1.s >= 70 ? .25 : 0);
+  x *= ro === 0 ? 1 + wantPlay * .9 : ro === 1 ? 1 : Math.max(.08, 1 - wantPlay * .95);
+  // ③ 돈: 부자 리그(중동·미국 등)는 돈을 따르는 성향일수록, 나이가 많을수록
+  const n = to.lg && w.lg[to.lg] ? w.lg[to.lg].nation : to.nat;
+  if (RICHN[n]) x *= age >= 29 || p.money > .8 ? 1 + RICHN[n] * (p.money * 1.4 + (age >= 31 ? .6 : 0)) : Math.max(.2, 1 - (1 - p.money) * .7 * (o >= 80 ? 1 : .4));
+  return x;
+};
+const RICHN = { SAU: 1.4, QAT: 1.1, UAE: 1, USA: .55, CHN: .5, TUR: .25 };
+// 빅클럽 문턱: 위상 높은 구단은 '적어도 로테이션' 수준만 산다 (애매한 선수가 빅클럽 가는 일 방지). 유망주는 예외
+MK.bigGate = (w, e, to, kind) => {
+  if (kind === 'loan' || to.parent) return true;
+  const S1 = statOf(w, to); if (S1.s < 62 && (to.str || 0) < 82) return true;
+  const o = e[2], age = e[3];
+  if (age <= 21 && e[4] >= (to.str || 80) - 1) return true;
+  return o >= (to.str || 80) - (S1.s >= 75 ? 3 : 4.5) && MK.roleAt(e, to) <= 1;
+};
+// 월드클래스 문턱: 전성기 스타(82+, 31세 이하)는 위상이 한참 낮은 구단으로 가지 않는다 (돈을 좇는 성향·부자 리그 예외)
+MK.starGate = (w, e, from, to, kind) => {
+  if (kind === 'loan') return true;
+  const o = e[2], age = e[3]; if (o < 82 || age > 31) return true;
+  const S1 = statOf(w, to), S0 = from ? statOf(w, from) : { s: 50 }, p = MK.persona(e);
+  const n = to.lg && w.lg[to.lg] ? w.lg[to.lg].nation : to.nat;
+  if (RICHN[n] >= 1 && (p.money > .75 || age >= 29)) return true;
+  const floor = Math.min(S0.s - 12, 40 + (o - 82) * 4);
+  return S1.s >= floor;
 };
 // 이적 욕구 보정 (성격·불만)
 MK.ambition = (e, base) => { const p = MK.persona(e); let a = base * (.45 + p.amb * 1.1); if (p.loy > .86) a *= .25; else if (p.loy > .72) a *= .6; if (e[31]) a = Math.max(a, .55); return clamp(a, 0, .95); };
@@ -155,6 +214,10 @@ MK.metaText = (m, w) => {
     else if (k === 'ne') out.push('비EU 쿼터');
     else if (k === 'esc') out.push('취업 허가 ESC');
     else if (k === 'gbe') out.push(`취업 허가 ${a}점`);
+    else if (k === 'ws') out.push(`임대 구단 주급 ${a}% 부담`);
+    else if (k === 'vt') out.push('출전 시간 확보용 임대');
+    else if (k === 'pt') out.push('출전 시간을 찾아 이적');
+    else if (k === 'br') out.push('구단 이름값에 끌린 이적');
   }
   return out;
 };

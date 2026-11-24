@@ -247,6 +247,7 @@ function lgFinalize(S, LS) {
   }
   (w.hist.lg[LS.id] = w.hist.lg[LS.id] || []).push({ y: LS.label, c: rows[0] && rows[0].id });
   if (C.mgrLeagueEnd) C.mgrLeagueEnd(w, LS.id, rows);
+  if (C.crTrophy && rows[0] && (w.lg[LS.id] || {}).tier === 1) C.crTrophy(w, rows[0].id, 'lg');
   if (C.wn) C.wn.lgEnd(S, LS, rows, agg);
   w.last[LS.id] = rows.map(r => r.id);
   if (lg.tier === 1 && rows[0]) resAdd(w, rows[0].id, .6);
@@ -335,6 +336,7 @@ function cupFinalize(S, st) {
     store.CUP[st.nat + ':' + st.kind] = (h.rows || []).map(r => r.slice(0, 8).concat([r[8]]));
     if (st.kind === 'cup') (w.hist.cup[st.nat] = w.hist.cup[st.nat] || []).push({ y: st.label, c: sum.w });
     if (C.mgrTrophy && sum.w) C.mgrTrophy(w, sum.w, 'cup', st.nat);
+    if (C.crTrophy && sum.w) C.crTrophy(w, sum.w, 'cup', st.nat);
     writeC(w, st.kind + ':' + st.nat, h.agg || {});
   }
   delete w.cal.cup[st.k]; delete w.cal.h[st.k]; C._hd.add(st.k); w.cal.dirty = 1;
@@ -635,7 +637,7 @@ function contFinalize(S, cs) {
   A.cont[cs.k] = { n: cs.name, w: cs.winner, sl: cs.label, ph: cs.phaseN ? C.sortTable(cs.table).slice(0, 36).map(r => [r.id, r.p, r.w, r.d, r.l, r.gf, r.ga, r.pts]) : null, r: (cs.ties || []).map((ts, i) => ({ n: (cs.rounds[i] || [])[2] || '', t: (ts || []).map(t => [t[0], t[1], t.win || null, t.sc ? t.sc[0] : null, t.sc ? t.sc[1] : null, t.pen ? 1 : 0]) })) };
   store.CONT[cs.k] = (h.rows || []).slice();
   if (C.wn) C.wn.contEnd(S, cs, h);
-  if (cs.winner) { (w.hist.cont[cs.k] = w.hist.cont[cs.k] || []).push({ y: cs.label, c: cs.winner }); if (C.mgrTrophy) C.mgrTrophy(w, cs.winner, 'cont', cs.k); resAdd(w, cs.winner, C.COMPS[cs.k].tier === 1 ? 1 : .4); }
+  if (cs.winner) { (w.hist.cont[cs.k] = w.hist.cont[cs.k] || []).push({ y: cs.label, c: cs.winner }); if (C.mgrTrophy) C.mgrTrophy(w, cs.winner, 'cont', cs.k); if (C.crTrophy) C.crTrophy(w, cs.winner, 'cont', cs.k); resAdd(w, cs.winner, C.COMPS[cs.k].tier === 1 ? 1 : .4); }
   writeC(w, 'cont:' + cs.k, h.agg || {});
   delete w.cal.cont[cs.key]; delete w.cal.h[cs.key]; C._hd.add(cs.key); w.cal.dirty = 1;
 }
@@ -1057,12 +1059,15 @@ function noLeagueClubs(S) {
 }
 function rollover(S) {
   const w = S.w, lb = C.wLabel(w.year);
+  if (C.crSeason && w.cr) C.crSeason(w);
+  if (C.legAll) try { C.legAll(S); } catch (e) { console.error('leg', e); }
   w.ycnt = {}; // 리그 경고 누적은 시즌마다 새로
   // 여름 감독 교체 (경질 말고도 계약 만료·사임으로 해마다 몇몇 구단은 바뀐다)
   // 여름 감독 시장: 성적·눈높이에 따른 교체, 오래 쉰 명장 재취업, 은퇴
   if (w.mgr && C.mgrYear) { const Y = C.mgrYear(S, w.cal ? w.cal.d : 0);
     for (const [id, old, N] of Y.res) { const c = w.clubs[id]; if (N && c && C.wn && c.lg && w.lg[c.lg] && w.lg[c.lg].tier <= 2 && (c.str || 0) >= 64) C.wn.push(S, { d: w.cal.d, c: 'sack', imp: (c.str || 0) >= 78 || (N.rep || 0) >= 80 ? 2 : 1, h: `${c.name}, 새 감독 ${N.n} 선임`, s: `${old.n} 감독이 물러나고 ${N.via && w.clubs[N.via] ? w.clubs[N.via].name + '을 이끌던 ' : ''}${C.natName(N.nat)} 출신 ${N.n} 감독(${C.mgrTier(N.rep || 0)} 명성)이 새 시즌을 이끈다.`, cl: [id], lg: c.lg }); }
-    for (const [, x] of Y.out) if (C.wn) C.wn.push(S, { d: w.cal.d, gl: 1, c: 'gossip', imp: 1, h: `${x.n} 감독, 지도자 은퇴`, s: `${C.natName(x.nat)} 출신으로 ${C.mgrTier(x.rep)} 명성을 쌓은 지도자 생활을 마무리한다.` }); }
+    for (const [k, x] of Y.out) if (C.wn && k === 'debut' && x.rep >= 40) C.wn.push(S, { d: w.cal.d, gl: 1, c: 'gossip', imp: x.rep >= 50 ? 2 : 1, h: `${x.n}, 지도자 자격 취득 · 감독 데뷔 준비`, s: `현역 시절 ${x.leg && w.clubs[x.leg] ? w.clubs[x.leg].name + ' 레전드로 ' : ''}이름을 알린 ${C.natName(x.nat)} 출신. ${C.mgrTier(x.rep)} 명성으로 감독 시장에 나왔다.`, p: x.pid ? [x.pid] : [] });
+    for (const [k, x] of Y.out) if (C.wn && k === 'retire') C.wn.push(S, { d: w.cal.d, gl: 1, c: 'gossip', imp: 1, h: `${x.n} 감독, 지도자 은퇴`, s: `${C.natName(x.nat)} 출신으로 ${C.mgrTier(x.rep)} 명성을 쌓은 지도자 생활을 마무리한다.` }); }
   noLeagueClubs(S);
   // 발롱도르 (지난 1년: 리그·컵·대륙 대회·여름 국제 대회)
   let bd = null; try { bd = C.ballonDor(S); } catch (e) { console.error('ballon', e); }
@@ -1191,7 +1196,8 @@ function faTick(S, d) {
       if (room < wage * .6) continue;
       const L = w.lg[c.lg] || {}, n = L.nation || c.nat;
       const sc = (want - better) * (C.sqN(c) < 24 ? 1.5 : 1) * (n === e[5] ? 1.6 : 1) * Math.exp((c.str - o) * .12) * (.5 + R())
-        * (o >= 72 ? Math.pow(clamp((c.rev || 2e6) / 25e6, .1, 8), .8) * (L.tier === 1 ? 1 : .35) : 1) * (age >= 29 && o >= 72 ? RICH[n] || 1 : 1);
+        * (o >= 72 ? Math.pow(clamp((c.rev || 2e6) / 25e6, .1, 8), .8) * (L.tier === 1 ? 1 : .35) : 1) * (age >= 29 && o >= 72 ? RICH[n] || 1 : 1)
+        * (C.mkt ? (C.mkt.starGate(w, e, null, c, 'free') ? Math.sqrt(C.mkt.appeal(w, e, null, c, 'free')) : 0) : 1);
       if (sc > bs) { bs = sc; best = [c, wage]; }
     }
     if (!best) { keep.push(e); continue; }
@@ -1221,6 +1227,7 @@ function dayEvents(S, d) {
   runQueue(S, d);
   if (C.mgrDaily) C.mgrDaily(S, d, !w.cal.started);
   if (C.rankDaily && w.cal.started) C.rankDaily(S, d);
+  if (C.crDaily && w.cal.started) C.crDaily(S, d);
   if (C.wn && w.cal.started) C.wn.day(S, d);
 }
 

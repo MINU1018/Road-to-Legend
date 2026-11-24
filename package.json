@@ -1,6 +1,6 @@
 {
   "name": "road-to-legend",
-  "version": "33.0.0",
+  "version": "37.0.0",
   "private": true,
   "description": "Copero식 축구 선수 커리어·세계 관전 시뮬레이션 웹게임 (정적 HTML/JS, 빌드 없음)",
   "scripts": {

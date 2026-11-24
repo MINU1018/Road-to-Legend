@@ -375,6 +375,8 @@ function repairSave(o) {
   if (o.w && C.mgrSeed && !(o.w.mgrV >= 2)) C.mgrSeed(o.w); // 실제 감독 (v35)
   if (o.w && C.mgrFill) { for (const x of o.w.mgrFree || []) C.mgrFill(o.w, x); for (const id in o.w.mgr || {}) C.mgrFill(o.w, o.w.mgr[id], o.w.clubs[id]); } // 명성·실력 (v36)
   if (o.w && C.rankInit && !o.w.rank) C.rankInit(o.w); // 국가대표 랭킹 (v35)
+  if (o.w && C.crInit && !o.w.cr) C.crInit(o.w); // 세계 구단 랭킹 (v37)
+  if (o.w && C.legSeed && !o.w.legPre) { C.legSeed(o.w); if (C.legAll) C.legAll(o.w); } // 구단 레전드 (v37)
   // 난이도는 커리어별. 예전 저장은 당시 설정값을 새 난이도로 옮기고, 재능 한계가 없으면 성장 한계 기준으로 만든다
   if (!o.diff) o.diff = C.diffKey(C.cfg.difficulty);
   C.curDiff = o.diff;

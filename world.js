@@ -276,7 +276,7 @@ function ageSquad(c) {
     if (age >= 41) pr = Math.max(pr, .85);
     if (age >= 30 && o < 48) pr = Math.max(pr, .2);
     pr = Math.min(pr, .97);
-    if (R() < pr) { e[2] = o; e[3] = age; if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; if (C._w) txLog(C._w, e, c, null, 'ret', 0); continue; }
+    if (R() < pr) { e[2] = o; e[3] = age; if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; if (C._w) { txLog(C._w, e, c, null, 'ret', 0); C.retHook(C._w, e, c); } continue; }
     e[2] = o; e[3] = age; e[4] = Math.round(Math.max(pot, o)); e[6] -= 1;
     out.push(e);
   }
@@ -299,7 +299,7 @@ function faAge(w) {
     e[3]++; const age = e[3];
     e[2] = Math.max(40, Math.round(e[2] - (age >= 31 ? rnd(1, 3) : rnd(0, 1.5)))); e[4] = Math.max(e[2], e[4] || e[2]);
     const idle = d - (e[18] || d);
-    if (age >= 38 || e[2] < 58 || (idle > 330 && R() < .6) || (age >= 35 && R() < .4)) { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, null, null, 'ret', 0); continue; }
+    if (age >= 38 || e[2] < 58 || (idle > 330 && R() < .6) || (age >= 35 && R() < .4)) { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, null, null, 'ret', 0); C.retHook(w, e, null); continue; }
     keep.push(e);
   }
   w.fa = keep;
@@ -360,6 +360,8 @@ function worldTransfers(w, winter) {
     txLog(w, e, c, o, 'buy', fee); tag(['bx', MK.deal(w, e, c, o, 'buy', fee, { stamp })].join('|')); big(e, c, o, 'sale', fee); stat.sale++;
   }
   const wageRoom = (d, wk) => d.wb + wk <= d.rev * .62 / 52;
+  // 베테랑 임대 주급 분담: 받는 구단 형편만큼 (40~100%)
+  const vetShare = (e, d) => { const room = (d.rev || 2e6) * .62 / 52 - (d.wb || 0), wg = e[8] || 0; return wg <= 0 ? 100 : Math.round(clamp(room / wg, .4, 1) * 10) * 10; };
   // 2) 1군·2군 사이 이동 (여름): 2군에서 1군 수준이 된 어린 선수는 승격, 1군에서 뛰지 못하는 어린 선수는 2군으로
   if (!winter) for (const b of clubs) { if (!b.parent) continue; const p = w.clubs[b.parent]; if (!p || !p.sq || p.lite) continue;
     for (const e of b.sq.slice()) { if (e[7] || e[3] > 23 || e[2] < p.str - 7) continue; b.sq.splice(b.sq.indexOf(e), 1); p.sq.push(e); txLog(w, e, b, p, 'bu', 0); w._moved.add(e); }
@@ -369,13 +371,14 @@ function worldTransfers(w, winter) {
   }
   // 3) 선수별 결정
   const market = [];
+  const wAvgM = new Map(), wAvg = c => { let v = wAvgM.get(c); if (v == null) { v = c.sq.length ? c.sq.reduce((a, x) => a + (x[8] || 0), 0) / c.sq.length : 0; wAvgM.set(c, v); } return v; };
   const fresh = e => e[21] != null && stamp - e[21] <= 1;
   for (const c of clubs) {
     const rl = roles(c);
     for (const e of c.sq) {
       if (e[7] && e[7] !== c.id) continue; // 임대 온 선수는 원소속팀 소유: 임대 구단이 팔거나 다시 임대 보낼 수 없다
       const o = e[2], age = e[3], f = e[9] || 0, rr = rl.get(e), gap = o - c.str, ct = e[6];
-      const prospect = age <= 21 && e[4] >= o + 5;
+      const prospect = age <= 21 && e[4] >= o + 5; let vet = 0;
       // 구단이 원하는 정도
       let want = rr === 0 ? .95 : rr === 1 ? .72 : .3;
       want += f * .08; if (age >= 31) want -= .15; if (age >= 33) want -= .25; if (prospect) want += .3;
@@ -391,7 +394,9 @@ function worldTransfers(w, winter) {
         if (wantsOut && (gap >= 3 || rr === 2) && R() < .3) kind = 'sale';
         else if (!e[13] && age >= 18 && age <= 21 && rr === 2 && (e[11] == null || e[11] < 8) && R() < (prospect ? .38 : .22)) kind = 'loan';
         else if (f < -1.4 && age >= 24 && R() < .06) kind = 'sale';
+        else if (MK && !c.parent && age >= 30 && rr === 2 && (e[11] || 0) < 6 && (e[8] || 0) >= wAvg(c) && R() < .18) kind = 'vloan';
         if (kind && fresh(e) && !(f < -1.6 && R() < .2)) kind = null;
+        if (kind === 'vloan') { market.push([e, c, 'loan', { vet: 1 }]); continue; }
         if (kind) market.push([e, c, kind, kind === 'sale' && wantsOut && o >= 78 ? { req: 1 } : null]);
         continue;
       }
@@ -416,13 +421,18 @@ function worldTransfers(w, winter) {
         else if (age === 22 && rr === 2 && o < c.str - 4 && R() < .35) kind = 'loan';
         else if (f < -1.2 && age >= 23 && R() < .25) kind = 'sale';
         else if (age >= 31 && gap < 0 && R() < .1) kind = 'sale';
+        // 베테랑 임대: 선발에서 밀린 노장은 주급이라도 아끼려고 임대 보낸다 (팔리지 않는 고주급 선수)
+        else if (MK && !c.parent && age >= 30 && (rr === 2 || (rr === 1 && age >= 33)) && (e[8] || 0) >= wAvg(c) * 1.05 && R() < (rr === 2 ? .3 : .1)) { kind = 'loan'; vet = 1; }
         else if (R() < .02) kind = 'sale';
       }
       if (kind && kind !== 'free' && fresh(e) && !(f < -1.4 && R() < .25)) kind = null; // 막 데려온 선수는 반 시즌 만에 내보내지 않는다 (아주 부진하면 예외)
+      if (!kind) vet = 0;
       // 바이아웃: 팔 생각이 없어도, 선수가 원하고 더 큰 구단이 금액을 내면 떠난다
       let flag = null;
       if (MK && !kind && wantsOut && !c.parent && ct >= 1 && !fresh(e)) { const bo = MK.buyout(w, e, c); if (bo && gap >= 2 && R() < .4) { kind = 'sale'; flag = { bo: bo * 1e4 }; } }
       if (kind === 'sale' && wantsOut && o >= 78 && !flag) flag = { req: 1 };
+      if (vet) flag = Object.assign(flag || {}, { vet: 1 });
+      if (kind === 'sale' && rr === 2 && age >= 22 && MK && MK.persona(e).pt > .55) flag = Object.assign(flag || {}, { pt: 1 }); // 출전 시간을 찾아 떠난다
       if (kind) market.push([e, c, kind, flag]);
     }
   }
@@ -437,10 +447,10 @@ function worldTransfers(w, winter) {
     let range = byStr.slice(i0, i1);
     if (range.length > 48) { const pickd = []; for (let k = 0; k < 48; k++) pickd.push(range[(R() * range.length) | 0]); range = [...new Set(pickd)]; }
     const back = e[22] != null && e[21] != null && stamp - e[21] <= 3 ? e[22] : null, lr = w._lret.get(e);
-    const cand = range.filter(c => c !== from && c.id !== back && c.id !== lr && (!c.parent || e[3] <= 21) && C.sqN(c) < 31 && (!fee || c.cash >= fee * (fee >= 2e7 ? .55 : 1)) && (kind === 'loan' || wageRoom(c, wk(c))) && (!MK || MK.canJoin(w, e, from, c, kind)));
+    const cand = range.filter(c => c !== from && c.id !== back && c.id !== lr && (!c.parent || e[3] <= 21) && C.sqN(c) < 31 && (!fee || c.cash >= fee * (fee >= 2e7 ? .55 : 1)) && (kind === 'loan' || wageRoom(c, wk(c))) && (!MK || (MK.canJoin(w, e, from, c, kind) && MK.bigGate(w, e, c, kind) && MK.starGate(w, e, from, c, kind))));
     if (!cand.length) return null;
     const nat = e[5], age = e[3], o = e[2];
-    return wpick(cand, c => Math.exp((c.str - lo) * (kind === 'loan' ? .05 : .22)) * (c.str >= topS - .6 ? .4 : c.str >= topS - 1.6 ? .7 : 1) * (c.nat === nat ? 2 : 1) * (from && c.nat === from.nat ? 1.5 : 1) * need(c, e[1]) * (c.sq.length < 25 ? 1.4 : c.sq.length > 28 ? .5 : 1)
+    return wpick(cand, c => Math.exp((c.str - lo) * (kind === 'loan' ? .05 : .12)) * (MK ? MK.appeal(w, e, from, c, kind) : 1) * (c.str >= topS - .6 ? .4 : c.str >= topS - 1.6 ? .7 : 1) * (c.nat === nat ? 2 : 1) * (from && c.nat === from.nat ? 1.5 : 1) * need(c, e[1]) * (c.sq.length < 25 ? 1.4 : c.sq.length > 28 ? .5 : 1)
       * (age >= 30 && o >= 72 ? (RETIRE_LG[c.nat] || 1) : 1) * (kind === 'loan' && from && c.nat === from.nat ? 1.6 : 1)
       * (kind !== 'loan' && o >= 76 && age <= 30 && from ? Math.exp(clamp(lvOf(c) - lvOf(from), -12, 4) * .25) : 1) * (MK ? MK.weight(w, e, c) : 1));
   };
@@ -448,24 +458,32 @@ function worldTransfers(w, winter) {
   for (const [e, c, kind, flag] of market) {
     const o = e[2], age = e[3], f = e[9] || 0, gap = o - c.str;
     let lo, hi; const L = lvl(o);
-    if (kind === 'loan') { lo = L - 4; hi = L + 1; }
+    const vet = flag && flag.vet, pt = flag && flag.pt;
+    if (kind === 'loan' && vet) { lo = L - 10; hi = L - 1; }
+    else if (kind === 'loan') { lo = L - 4; hi = L + 1; }
+    else if (pt) { lo = L - 9; hi = L; } // 벤치 탈출: 한두 단계 아래 구단·하부 리그라도 주전으로
     else if (gap >= 3) { lo = Math.max(c.str + 1, L - 3); hi = L + 4; }
     else if (kind === 'free' && o >= 78 && age <= 32) { lo = L - 3; hi = L + 3; }
     else if (f < -.9 || age >= 31) { lo = L - 8; hi = L + 1; }
     else { lo = L - 4; hi = L + 3; }
-    const fee = kind === 'sale' ? (flag && flag.bo ? flag.bo : Math.round(feeOf(w, e, c))) : kind === 'loan' && o >= 70 ? Math.round(C.aiFee(o, age, natOf(w, c), 3) * .06) : 0;
+    const fee = kind === 'sale' ? (flag && flag.bo ? flag.bo : Math.round(feeOf(w, e, c))) : kind === 'loan' && o >= 70 && !vet ? Math.round(C.aiFee(o, age, natOf(w, c), 3) * .06) : 0;
     if (flag && flag.bo) { lo = Math.max(lo, c.str + 1); hi = Math.max(hi, lo + 3); }
     const wk = d => Math.round(aiWage(d, o, age) * (kind === 'free' ? rnd(1.05, 1.25) : kind === 'sale' ? rnd(1, 1.2) : 1) / 50) * 50;
     let d = pickClub(lo, hi, e, c, kind, fee, wk);
     if (!d && kind === 'sale' && !(flag && flag.bo)) d = pickClub(L - 7, L + 2, e, c, kind, fee * .8, wk);
-    if (!d && kind === 'loan') d = pickClub(L - 8, L + 3, e, c, kind, 0, wk);
+    if (!d && kind === 'loan') d = pickClub(vet ? L - 16 : L - 8, vet ? L : L + 3, e, c, kind, 0, wk);
     if (!d && kind === 'free') d = pickClub(L - 10, L + 2, e, c, kind, 0, wk) || (age < 33 || o >= 65 ? pickClub(L - 25, L, e, c, kind, 0, wk) : null);
     // 실력 있는 선수는 연봉을 깎아서라도 새 팀을 찾는다 (아직 뛸 수 있는데 갈 곳이 없어 은퇴하는 일 방지)
     let cut = 1;
     if (!d && kind === 'free' && o >= 68 && age <= 35) { const wk2 = x => Math.max(50, Math.round(wk(x) * .45 / 50) * 50); d = pickClub(L - 30, L + 2, e, c, kind, 0, wk2); if (d) cut = .45; }
     if (!d) {
-      if (kind === 'free') { stat.rel++; if (faOk(e)) { txLog(w, e, c, null, 'rel', 0); faAdd(w, e, c); } else { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, age >= 30 ? 'ret' : 'rel', 0); } }
+      if (kind === 'free') { stat.rel++; if (faOk(e)) { txLog(w, e, c, null, 'rel', 0); faAdd(w, e, c); } else { if (C._ps && C._ps[e[0]]) C._ps[e[0]].ret = C._year + 1; txLog(w, e, c, null, age >= 30 ? 'ret' : 'rel', 0); C.retHook(w, e, c); } }
       else {
+        // 팔려고 했지만 살 구단이 없는 노장(29세+, 계약 남음): 주급 일부라도 아끼려고 임대 보낸다
+        if (kind === 'sale' && age >= 29 && e[6] >= 1 && !c.parent && MK && R() < .55) {
+          const d2 = pickClub(L - 12, L, e, c, 'loan', 0, wk);
+          if (d2) { const ws = vetShare(e, d2); e[7] = c.id; stat.loan++; w._moved.add(e); txLog(w, e, c, d2, 'loan', 0); tag(`vt|ws:${ws}`); d2.sq.push(e); continue; }
+        }
         c.sq.push(e); c.wb += e[8] || 0;
         // 팔려고 했지만 살 구단이 없으면: 계약이 1년 남은 쓸 만한 선수는 연장해서 공짜로 잃지 않게 한다
         if (kind === 'sale' && e[6] <= 1 && (o >= 74 || o >= c.str - 3) && R() < .85) { const ow = e[8] || 0, nw = Math.round(aiWage(c, o, age) * rnd(.9, 1.15) / 50) * 50; c.wb += nw - ow; e[8] = nw; e[6] = ctFor(age); txLog(w, e, c, c, 'ext', 0, ow); stat.ext++; }
@@ -475,8 +493,10 @@ function worldTransfers(w, winter) {
     const paid = kind === 'sale' && d.cash < fee && !(flag && flag.bo) && fee < 2e7 ? Math.round(fee * .8) : fee;
     big(e, c, d, kind, paid); w._moved.add(e);
     const pay = (k) => { if (MK) tag(MK.deal(w, e, c, d, k, paid, Object.assign({ stamp }, flag || {}))); else { d.cash -= paid; c.cash += paid; } };
-    if (kind === 'loan') { e[7] = c.id; stat.loan++; txLog(w, e, c, d, 'loan', paid); pay('loan'); }
-    else { e[6] = cut < 1 ? Math.min(2, ctFor(age)) : ctFor(age); e[8] = cut < 1 ? Math.max(50, Math.round(wk(d) * cut / 50) * 50) : wk(d); d.wb += e[8]; txLog(w, e, c, d, kind === 'sale' ? 'buy' : 'free', paid); pay(kind === 'sale' ? 'buy' : 'free'); stat[kind]++; e[21] = stamp; e[22] = c.id; }
+    if (kind === 'loan') { e[7] = c.id; stat.loan++; txLog(w, e, c, d, 'loan', paid); if (vet) tag(`vt|ws:${vetShare(e, d)}`); else pay('loan'); }
+    else { e[6] = cut < 1 ? Math.min(2, ctFor(age)) : ctFor(age); e[8] = cut < 1 ? Math.max(50, Math.round(wk(d) * cut / 50) * 50) : wk(d); d.wb += e[8]; txLog(w, e, c, d, kind === 'sale' ? 'buy' : 'free', paid); pay(kind === 'sale' ? 'buy' : 'free'); stat[kind]++; e[21] = stamp; e[22] = c.id;
+      // 이적 동기 표시: 출전 시간 / 구단 이름값
+      if (MK) { const extra = []; if (pt && d.str < c.str) extra.push('pt'); else { const S1 = MK.statOf(w, d), S0 = MK.statOf(w, c); if (S1.brand >= 55 && d.str <= c.str + .5 && S1.s >= S0.s - 3) extra.push('br'); } if (extra.length) { const r = lastRow(); if (r) r[11] = [r[11], ...extra].filter(Boolean).join('|'); } } }
     d.sq.push(e);
   }
   w.lastTx = stat.free + stat.sale + stat.loan; w.txStat = stat;
@@ -784,7 +804,7 @@ function applyPromotion(w, tables) {
       for (let j = 0; j < rel.length; j++) {
         const [rid, ul] = rel[j], [pid, dl] = pro[j] || [];
         if (!pid) break;
-        ul.clubs = ul.clubs.filter(x => x !== rid).concat(pid); w.clubs[pid].lg = ul.id; moves[pid] = 1.4;
+        ul.clubs = ul.clubs.filter(x => x !== rid).concat(pid); w.clubs[pid].lg = ul.id; moves[pid] = 1.4; { const P = w.promoH = w.promoH || {}; (P[pid] = P[pid] || []).push(w.year - 2000); }
         dl.clubs = dl.clubs.filter(x => x !== pid).concat(rid); w.clubs[rid].lg = dl.id; moves[rid] = -2.2;
       }
     }
@@ -802,7 +822,7 @@ C.applyPromotion = applyPromotion;
 const MGRNAT = ['ESP', 'ITA', 'GER', 'POR', 'ENG', 'FRA', 'NED', 'ARG', 'BRA'];
 const pd = t => { const [y, m, d] = String(t).split('-').map(Number); return C.day(y, m, d); };
 // 감독이 구단을 옮겨도 따라가는 값 (사람 자체의 정보)
-const KEEP = ['n', 'nat', 'b', 'f', 'f2', 'build', 'def', 'q', 'r', 'rep', 'pc', 'lic', 'rh', 'tro'];
+const KEEP = ['n', 'nat', 'b', 'f', 'f2', 'build', 'def', 'q', 'r', 'rep', 'pc', 'lic', 'rh', 'tro', 'pid', 'ex', 'leg'];
 const carry = (src, dst) => { for (const k of KEEP) if (src[k] != null) dst[k] = Array.isArray(src[k]) ? src[k].slice() : src[k]; return dst; };
 // 명성 단계 (FM식): 무명 · 지역적 · 국내적 · 대륙적 · 세계적
 C.REPT = [[83, '세계적'], [65, '대륙적'], [45, '국내적'], [25, '지역적'], [0, '무명']];
@@ -865,7 +885,7 @@ C.mgrOf = (w, id, d) => {
 // 세계적 감독은 작은 구단을 맡지 않는다 (무직이 길어질수록 눈높이를 낮춘다)
 const fitScore = (x, want, c, d) => { const idle = x.out != null && d != null ? Math.max(0, (d - x.out) / 365) : 0; const hi = want + 22 + idle * 10;
   if ((x.rep || 0) > hi) return null; if ((x.rep || 0) < want - (want >= 60 ? 10 : 22)) return null;
-  return -Math.abs((x.rep || 0) - (want + 6)) + (x.q || 0) * 10 + (x.nat === c.nat ? 4 : 0) + N(0, 4); };
+  return -Math.abs((x.rep || 0) - (want + 6)) + (x.q || 0) * 10 + (x.nat === c.nat ? 4 : 0) + (x.leg && (x.leg === c.id || x.leg === c.parent) ? 9 : 0) + N(0, 4); };
 function hire(w, id, d, depth, exclude) {
   const c = w.clubs[id], want = C.mgrWant(w, c), P = w.mgrFree = w.mgrFree || [];
   let best = null, bs = -1e9;
@@ -888,7 +908,8 @@ function hire(w, id, d, depth, exclude) {
       return N2;
     }
   }
-  // 새 얼굴: 구단 수준보다 조금 낮은 명성의 지도자
+  // 새 얼굴: 은퇴 선수 출신 지도자가 있으면 먼저 (친정·같은 나라 우선), 없으면 구단 수준보다 조금 낮은 명성의 지도자
+  { const X = coachFor(w, c, want, d != null ? d : (w.cal ? w.cal.d : 0)); if (X) { mnews(w, { d, k: 'exp', club: id, n: X.n, pid: X.pid }); return (w.mgr[id] = C.mgrFill(w, X, c)); } }
   const nat = R() < .7 ? c.nat : pick(MGRNAT), r = seeded('mb|' + id + '|' + (d || 0));
   const M = { n: genName(nat), nat, b: (w.year || 2026) - 34 - Math.floor(r() * 24), d0: d != null ? d : (w.cal ? w.cal.d : 0), g: 0, w: 0, dr: 0, l: 0 };
   M.rep = clamp(Math.round(want - 12 + (r() - .5) * 14), 3, 72);
@@ -929,8 +950,46 @@ C.mgrTrophy = (w, id, kind, k) => {
   M.rep = clamp(Math.round((M.rep + g * Math.min(1, (100 - M.rep) / 30)) * 10) / 10, 1, 99); M.tro = (M.tro || 0) + 1;
 };
 // 해마다 (8월 1일): 무직 감독 명성 하락·은퇴, 성적 부진·눈높이 차이로 여름 교체, 오래 쉰 명장 재취업
+// ---------- 은퇴 선수 → 지도자 (v37) ----------
+// 은퇴한 선수 일부는 1~4년 지도자 수업(라이선스) 뒤 감독이 된다. 선수 시절 기록(pid)은 그대로 이어진다.
+// 아이콘급 레전드·국가대표 출신은 이름값(명성)을 안고 시작하고, 부상으로 일찍 은퇴한 하부 리그 선수도 지역 구단 감독으로 출발할 수 있다.
+const peakOf = P => { let pk = 0, g = 0, n = 0; for (const row of String((P && P.h) || '').split(';')) { if (!row) continue; const f = row.split(','); pk = Math.max(pk, +f[6] || 0); g += +f[3] || 0; n++; } return { pk, g, n }; };
+const capsOf = P => { let n = 0; for (const t of String((P && P.c) || '').split(';')) { const f = t.split('|'); if (f[1] && f[1].startsWith('nt:')) n += +f[2] || 0; } return n; };
+C.retHook = (w, e, c) => {
+  try {
+    const ps = w.ps || C._ps, pid = String(e[0]), P = ps && ps[pid]; if (!P) return;
+    const age = e[3], { pk, n } = peakOf(P), lg = C.legOf ? C.legOf(w, pid) : [], tier = lg.length ? lg[0][1] : 0, caps = capsOf(P);
+    const r = seeded('coach|' + pid);
+    let p = .012 + (pk >= 80 ? .05 : 0) + (pk >= 85 ? .08 : 0) + (tier >= 2 ? .12 : tier ? .05 : 0) + (caps >= 20 ? .05 : 0);
+    if (age < 31 && pk < 72) p = .025; // 부상 등으로 일찍 은퇴한 하부 리그 선수: 지역 구단 지도자로
+    if (n < 3 && pk < 70) p *= .4;
+    if (r() > p) return;
+    const Q = w.coachQ = w.coachQ || [];
+    if (Q.length >= 400 || Q.some(x => x.pid === pid)) return;
+    const ny = w._cqY === w.year ? (w._cqN || 0) : 0; if (ny >= 70 && !(tier >= 2 || pk >= 82)) return; w._cqY = w.year; w._cqN = ny + 1; // 해마다 지도자 입문은 많아야 70명 정도 (이름값 있는 선수는 예외)
+    const rep = clamp(Math.round(6 + Math.max(0, pk - 62) * 1.25 + (tier === 3 ? 18 : tier === 2 ? 10 : tier ? 4 : 0) + Math.min(10, caps / 8) + (r() - .5) * 8), 3, 62);
+    const pc = caps >= 10 ? 'I' : pk >= 70 ? 'P' : 'S';
+    Q.push({ pid, n: P.n, nat: P.nat || e[5], b: (w.year || 2026) - age, pk, rep, pc, leg: lg.length ? lg[0][0] : null, last: c ? c.id : null, ready: (w.year || 2026) + 1 + Math.floor(r() * (age < 31 ? 3 : 4)), q: Math.round(clamp((r() - .5) * 1.1 + (pk - 76) * .012, -.55, .6) * 100) / 100 });
+  } catch (err) { /* 무시 */ }
+};
+const coachM = (w, x, d) => ({ n: x.n, nat: x.nat, b: x.b, pid: x.pid, pc: x.pc, rep: x.rep, q: x.q, ex: 1, leg: x.leg, d0: d, g: 0, w: 0, dr: 0, l: 0, rh: [[w.year || 2026, x.rep]] });
+// 준비된 지도자 중 이 구단에 맞는 사람 (레전드로 대접받던 친정·같은 나라 우선)
+function coachFor(w, c, want, d) {
+  const Q = w.coachR; if (!Q || !Q.length) return null;
+  let best = null, bs = 0;
+  for (const x of Q) { if (x.rep > want + 8 || x.rep < want - 26) continue; const home = x.leg === c.id || x.leg === c.parent ? 6 : x.last === c.id ? 2.5 : 1, nat = x.nat === c.nat ? 3 : .6; const sc = home * nat * (1 + R()); if (sc > bs) { bs = sc; best = x; } }
+  if (!best || R() < .35) return null;
+  Q.splice(Q.indexOf(best), 1);
+  return coachM(w, best, d);
+}
+C.mgrByPid = (w, pid) => { pid = String(pid); for (const id in w.mgr || {}) if (w.mgr[id].pid === pid) return Object.assign({ club: id }, w.mgr[id]); const f = (w.mgrFree || []).find(x => x.pid === pid); if (f) return Object.assign({ club: null }, f); for (const id in w.mgrH || {}) for (const m of w.mgrH[id]) if (m.pid === pid) return Object.assign({ club: null }, m); const q = (w.coachQ || []).concat(w.coachR || []).find(x => x.pid === pid); return q ? { n: q.n, pending: q.ready, club: null } : null; };
 C.mgrYear = (S, d) => {
   const w = S.w, P = w.mgrFree = w.mgrFree || [], out = [];
+  // 지도자 수업을 마친 은퇴 선수: 이름값 있는 사람은 감독 시장(무직 풀)으로, 나머지는 '준비된 지도자'로 하위 구단 자리를 기다린다
+  { const Q = w.coachQ || [], Rd = w.coachR = w.coachR || [];
+    for (const x of Q.slice()) if (x.ready <= (w.year || 2026)) { Q.splice(Q.indexOf(x), 1); if (x.rep >= 34) { const M = coachM(w, x, null); M.out = d; P.push(M); out.push(['debut', M]); } else Rd.push(x); }
+    if (Rd.length > 250) Rd.splice(0, Rd.length - 250);
+    for (const x of Rd.slice()) if ((w.year || 2026) - x.ready > 6) Rd.splice(Rd.indexOf(x), 1); }
   for (const x of P.slice()) { C.mgrFill(w, x); const idle = x.out != null ? (d - x.out) / 365 : 0, age = x.b ? w.year - x.b : 55;
     if (idle > 1) x.rep = clamp((x.rep || 30) - 2, 1, 99);
     if (age >= 75 || idle > 4.5 || (age >= 69 && R() < .3)) { P.splice(P.indexOf(x), 1); if ((x.rep || 0) >= 72) out.push(['retire', x]); } }
