@@ -6,15 +6,20 @@ const { R, rnd, rint, clamp, N, pick, wpick, shuffle } = C;
 const GM = G.TCG = {};
 
 const evCount = () => { const f = C.cfg.events; return f === 'off' ? 0 : f === 'low' ? (R() < .5 ? 1 : 0) : f === 'high' ? (R() < .5 ? 3 : 2) : (R() < .55 ? 2 : 1); };
+// 데이터셋: 'fc27' (기본) / 'tm' (FC27 + Transfermarkt 게임 이전 기록). 'tm'은 data_tm.js가 먼저 불러와져 있어야 한다
+const dsBegin = ds => { const tm = ds === 'tm' && C.TM && G.TMD; if (C.TM) C.TM.apply(!!tm); return tm ? 'tm' : 'fc27'; };
+const dsEnd = (S, ds) => { if (ds === 'tm') { S.ds = 'tm'; C.TM.seed(S.w); if (C.legAll) C.legAll(S.w); } return S; };
+GM.dsBegin = dsBegin;
 GM.newGame = function (opt) {
   C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   const dk = C.diffKey(opt.difficulty || 'normal'); C.curDiff = dk;
+  const ds = dsBegin(opt.ds);
   const w = C.buildWorld();
   const p = C.newPlayer(Object.assign({ year: w.year }, opt, { difficulty: dk }));
   const S = { v: 1, diff: dk, w, p, car: { club: null, status: 'youth', contract: 0, wage: 0, trust: 50, years: 0, focus: 'balance', intensity: 'normal' }, hist: [], flags: {}, phase: 'academy', vh: [], trophies: [], awards: [], evLog: [], created: Date.now() };
   S.academies = academyOptions(S);
   C.calInit(S);
-  return S;
+  return dsEnd(S, ds);
 };
 // ---------- 실존 선수로 시작 ----------
 const realRef = () => C.dayOf(C.START_YEAR, 8, 1);
@@ -27,10 +32,11 @@ GM.realList = function () {
   return out.sort((a, b) => b.o - a.o);
 };
 const FCMAP = { pace: 'sprint', positioning: 'attPos', freeKick: 'fkAcc', marking: 'defAware', gkPositioning: 'gkPos' };
-GM.newGameReal = function (idx, diff) {
+GM.newGameReal = function (idx, diff, dsk) {
   const F = G.FC27, P = F.P[idx]; if (!P) return null;
   C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
   const dk = C.diffKey(diff || 'normal'); C.curDiff = dk;
+  const ds = dsBegin(dsk);
   const w = C.buildWorld();
   const fc = F.clubs[P[4]]; const c = fc && w.clubs[fc[0]];
   if (!c || c.lite || !c.lg || !w.lg[c.lg]) return null;
@@ -61,7 +67,7 @@ GM.newGameReal = function (idx, diff) {
     hist: [], flags: { real: idx }, phase: 'training', vh: [], trophies: [], awards: [], evLog: [], created: Date.now(), clubsJoined: [{ club: c.id, y: w.year, type: youth ? 'youth' : 'pro' }] };
   C.calInit(S);
   pushValue(S);
-  return S;
+  return dsEnd(S, ds);
 };
 function academyOptions(S) {
   const w = S.w, nat = S.p.nat;
@@ -362,8 +368,9 @@ GM.saveHof = function (S, sum) {
   } catch (e) { }
 };
 // ---------- 관전(시뮬레이션) 모드: 내 선수 없이 세계만 진행 ----------
-GM.newWorld = function (startLg) {
+GM.newWorld = function (startLg, dsk) {
   C.psDirty = true; C.psGen = (C.psGen || 0) + 1;
+  const ds = dsBegin(dsk);
   const w = C.buildWorld();
   const S = { v: 1, mode: 'world', w, p: { name: '', nat: 'ENG', pos: 'ST', age: 0, a: {}, mods: [], hid: { inj: 1, lon: 1, pot: 0, peak: 27 }, traits: [], money: 0, rep: 0, morale: 60, weak: 1, skill: 1, num: 0 },
     car: { club: null, status: 'none', trust: 50 }, hist: [], flags: {}, phase: 'world', vh: [], trophies: [], awards: [], evLog: [], ws: [], created: Date.now() };
@@ -371,9 +378,9 @@ GM.newWorld = function (startLg) {
   if (C.mgrSeed) C.mgrSeed(w);
   if (C.rankInit) C.rankInit(w, true);
   if (C.crInit) C.crInit(w, true);
-  if (C.legSeed) C.legSeed(w);
+  if (C.legSeed && ds !== 'tm') C.legSeed(w);
   S.startLg = startLg || null;
-  return S;
+  return dsEnd(S, ds);
 };
 // 관전 모드 시작일: 고른 리그의 개막 직전까지 조용히 진행 (유럽식 리그는 바로, 캘린더 리그는 다음 해 개막 전까지)
 GM.worldStartDay = function (S, lgId) {

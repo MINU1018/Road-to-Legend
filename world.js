@@ -166,15 +166,19 @@ function namePools() {
     if (t.length > 3) continue;
     add(lang, t[0], t.slice(1).join(' ')); add('@' + p[5], t[0], t.slice(1).join(' '));
   }
-  for (const k in NPOOL) { NPOOL[k] = NPOOL[k].map(x => [...x]); if (k[0] === '@' && (NPOOL[k][0].length < 40 || NPOOL[k][1].length < 40)) delete NPOOL[k]; }
+  // 국적별 실제 이름 빈도 (Transfermarkt, data_names.js): 그 나라 풀을 넓힌다 (한국·북한·중국은 성이 앞)
+  const TMN = WD.NAMES_TM || {};
+  for (const nat in TMN) { const [fs, ls, mo] = TMN[nat]; for (const f of fs) add('@' + nat, f, null); for (const l of ls) add('@' + nat, null, l); if (mo) { const P = NPOOL['@' + nat]; for (const m of mo) P[2].add(m); } }
+  for (const k in NPOOL) { const tm = k[0] === '@' && TMN[k.slice(1)]; NPOOL[k] = NPOOL[k].map(x => [...x]); if (k[0] === '@' && !tm && (NPOOL[k][0].length < 40 || NPOOL[k][1].length < 40)) delete NPOOL[k]; }
   return NPOOL;
 }
 function genName(nat) {
-  const lang = (NAT[nat] && WD.NAMES[NAT[nat][1]]) ? NAT[nat][1] : 'en';
-  const NP = namePools(), [fs, ls, mono] = (NP['@' + nat] && R() < .85) ? NP['@' + nat] : NP[lang]; // 그 나라 선수 이름이 충분하면 그 나라 풀을 주로 쓴다
+  const known = !!(NAT[nat] && WD.NAMES[NAT[nat][1]]), lang = known ? NAT[nat][1] : 'en';
+  // 그 나라 실제 이름 풀이 있으면 주로 그것을 (언어권 풀이 없는 나라 — 북한 등 — 는 항상 그 나라 풀)
+  const NP = namePools(), own = NP['@' + nat], [fs, ls, mono] = own && (!known || R() < (WD.NAMES_TM && WD.NAMES_TM[nat] ? .95 : .85)) ? own : NP[lang];
   let nm = '';
   for (let k = 0; k < 12; k++) {
-    nm = (mono.length > 20 && (lang === 'br' || lang === 'pt') && R() < .1) ? pick(mono) : pick(fs) + ' ' + pick(ls);
+    nm = ((mono || []).length > 20 && (lang === 'br' || lang === 'pt') && R() < .1) ? pick(mono) : pick(fs) + ' ' + pick(ls);
     if (!USEDN.has(nm)) break;
   }
   USEDN.add(nm);
@@ -308,7 +312,7 @@ function txLog(w, e, from, to, kind, fee, oldWage) { if (!w._tx) return; const r
 C.txLog = txLog;
 const natOf = (w, c) => c && c.lg && w.lg[c.lg] ? w.lg[c.lg].nation : (c ? c.nat : '');
 // 이적료 (무작위성 없는 기준값): 가치 × 남은 계약
-const feeOf = (w, e, from) => C.aiFee(e[2], e[3], natOf(w, from), Math.max(0, e[6]), undefined, e[11] ? { rt: (e[12] || 660) / 100, apps: e[11], of: 38 } : null);
+const feeOf = (w, e, from) => C.aiFee(e[2], e[3], natOf(w, from), Math.max(0, e[6]), undefined, e[11] ? { rt: (e[12] || 660) / 100, apps: e[11], of: 38 } : null) * (C.vfOf ? C.vfOf(w, e[0]) : 1);
 // ---------- 세계 이적 시장 ----------
 // 1) 임대 복귀 2) 재정 갱신 3) 선수별 결정: 연장·재계약(주급 인상/삭감)·판매(계약 1년 남은 스타 포함)·임대·방출
 // 4) 큰 선수부터 행선지: 예산(이적료)·주급 감당 가능한 구단만, 상위 구단 선호

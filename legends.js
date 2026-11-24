@@ -14,6 +14,7 @@ C.LEGT = TIER;
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 // 시작 시점 현역의 게임 이전 기록 (이름으로 그 구단 스쿼드에서 찾는다)
 C.legSeed = function (w) {
+  if (w.ds === 'tm' && C.TM) return C.TM.legSeed(w); // FC27+TFMKT: 실제 기록 (저장하지 않고 불러올 때 다시 만든다)
   const A = (G.FC27 && G.FC27.LEG_ACT) || {}; w.legPre = {};
   for (const cid in A) { const c = w.clubs[cid]; if (!c || !c.sq) continue;
     for (const [nm, y0, apps, g, tp] of A[cid]) { const k = norm(nm); const e = c.sq.find(x => norm(C.pName ? C.pName(w, x) : x[0]).includes(k)); if (!e) continue;
@@ -80,12 +81,16 @@ function scoreClub(w, cid, M, TR, s) {
       const dup = k === 'lg2' && tr.some(z => z[0] === y && z[1] === 'up') ? .3 : 1;
       tp += TV[k] * fac * dup * (k === 'up' || k === 'lg2' ? 1 : often) * (main ? 1 : .35); won.push([y, k]); if (main) key++; }
     sc += tp;
-    let y0 = null;
-    if (P) { const yrs = Math.max(0, 2026 - P[0]); sc += yrs * sw + P[1] / 100 + P[2] / 40 + P[3] * fac * .5; y0 = P[0]; }
-    const one = !!A.one && !P && nSea >= 6; if (one) sc += 1.5;
+    let y0 = null, preN = 0, y1p = null;
+    // P: 근사 [입단 해, 출전, 골, 우승 점수, OVR] / 실제(TM) [첫 시즌, 출전, 골, 도움, 우승 점수, 시즌 가중, 시즌 수, 마지막 시즌, 원클럽]
+    const tm = P && P.length >= 9;
+    if (tm) { sc += P[5] * sw + P[1] / 100 + P[2] / 40 + P[3] / 80 + P[4] * fac * often; y0 = P[0]; preN = P[6]; y1p = P[7]; }
+    else if (P) { const yrs = Math.max(0, 2026 - P[0]); sc += yrs * sw + P[1] / 100 + P[2] / 40 + P[3] * fac * .5; y0 = P[0]; preN = yrs; }
+    if (tm && !A.oN && /^\d+$/.test(pid) && G.FC27.P[+pid]) { const q0 = G.FC27.P[+pid][11]; sc += clamp((q0 - 78) / 4, 0, 2.5) * (s >= 55 ? 1 : .5); }
+    const one = tm ? !!P[8] && (!A.apps || !!A.one) && preN + nSea >= 6 : !!A.one && !P && nSea >= 6; if (one) sc += 1.5;
     if (sc < T * .6) continue;
     const special = key > 0 || nSea >= 5 || (A.rtN >= 40 && rt >= 7.3) || P;
-    const tot = nSea + (P ? Math.max(0, 2026 - P[0]) : 0);
+    const tot = nSea + preN;
     // 시즌 수 하한: 레전드는 주역으로 우승·승격을 이끌었다면 2시즌, 아니면 4시즌 / 아이콘은 6시즌
     let tier = sc >= T * 1.7 ? 3 : sc >= T ? 2 : sc >= T * .72 && special ? 1 : 0;
     if (tier === 3 && tot < 6) tier = 2;
@@ -93,7 +98,7 @@ function scoreClub(w, cid, M, TR, s) {
     if (tier === 1 && tot < 2) tier = 0;
     if (!tier) continue;
     const ys = [...A.ys.keys()].sort((a, b) => a - b);
-    out.push({ pid, sc: Math.round(sc * 10) / 10, tier, apps: A.apps + (P ? P[1] : 0), g: A.g + (P ? P[2] : 0), a: A.a, rt, won, y0: y0 != null ? y0 : ys.length ? 2000 + ys[0] : null, y1: ys.length ? 2000 + ys[ys.length - 1] : null, nSea: nSea + (P ? Math.max(0, 2026 - P[0]) : 0), one, pre: !!P });
+    out.push({ pid, sc: Math.round(sc * 10) / 10, tier, apps: A.apps + (P ? P[1] : 0), g: A.g + (P ? P[2] : 0), a: A.a + (tm ? P[3] : 0), rt, won, y0: y0 != null ? y0 : ys.length ? 2000 + ys[0] : null, y1: ys.length ? 2000 + ys[ys.length - 1] : y1p, nSea: nSea + preN, one, pre: !!P, tm });
   }
   out.sort((a, b) => b.sc - a.sc);
   return { T, s, fac, often, list: out };

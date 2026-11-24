@@ -313,6 +313,20 @@ function careerSec() {
   const list = h('div', { class: 'in', style: { display: 'grid', gap: '2px' } });
   if (!spells.length) list.append(h('div', { class: 'empty' }, '아직 기록이 없습니다.'));
   spells.slice().reverse().forEach(sp => list.append(h('div', { style: { display: 'grid', gridTemplateColumns: '28px 1fr 44px 44px', gap: '10px', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--line)' } }, crest({ id: sp.club, c1: sp.c.c1, c2: sp.c.c2, short: sp.c.short }, 24), h('div', null, h('div', { style: { fontWeight: 600, fontSize: '13px' } }, sp.name + (sp.status === 'loan' ? ' (임대)' : sp.youth ? ' (유스)' : '')), h('div', { class: 'mute', style: { fontSize: '11px' } }, `${sp.from}년 7월 - ${sp.to}년 6월`)), h('span', { class: 'num', style: { textAlign: 'right' } }, sp.apps), h('span', { class: 'num', style: { textAlign: 'right' } }, second(sp)))));
+  // FC27+TFMKT 실존 선수: 게임 이전 실제 경력 (Transfermarkt, 2025/26은 구단만)
+  const real = s.ds === 'tm' && C.TM && C.TM.on() && s.flags && s.flags.real != null ? String(s.flags.real) : null;
+  if (real) { const pp = C.TM.prePath(s.w, real), R = C.TM.rec(real);
+    if (pp === undefined) { U.tmWait(['TMH', C.TM.shardOf(C.TM.keyOf(real))]); list.append(h('div', { class: 'mute', style: { fontSize: '12px', marginTop: '10px' } }, '게임 이전 경력을 불러오는 중…')); }
+    else if (pp && pp.length) {
+      const sl = y => `${y + 2000}/${String(y + 2001).slice(2)}`, w = s.w;
+      list.append(h('div', { class: 'lbl', style: { marginTop: '10px' } }, '게임 이전 경력 (실제 기록)'));
+      pp.slice().reverse().forEach(x => { const y1 = x.y1 == null ? 25 : x.y1, A = R.car.filter(r => r.t === x.cid && r.y - 2000 >= x.y0 && r.y - 2000 <= y1), c = w.clubs[x.cid], par = !c && C.TM.teamParent(x.cid);
+        list.append(h('div', { style: { display: 'grid', gridTemplateColumns: '28px 1fr 44px 44px', gap: '10px', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--line)' } }, crest(c || (par && w.clubs[par]) || null, 24),
+          h('div', null, h('div', { style: { fontWeight: 600, fontSize: '13px' } }, C.TM.teamName(w, x.cid) + (x.loan ? ' (임대)' : '')), h('div', { class: 'mute', style: { fontSize: '11px' } }, x.y0 === y1 ? sl(x.y0) : `${sl(x.y0)} – ${sl(y1)}`)),
+          h('span', { class: 'num', style: { textAlign: 'right' } }, A.reduce((t, r) => t + r.ap, 0)), h('span', { class: 'num', style: { textAlign: 'right' } }, A.reduce((t, r) => t + r.g, 0)))); });
+      const cp = C.TM.caps(real); if (cp) list.append(h('div', { class: 'mute', style: { fontSize: '12px', padding: '6px 0' } }, `게임 이전 A매치 ${cp[0]}경기 ${cp[1]}골`));
+      const tr = C.TM.preTrophies(w, real) || []; if (tr.length) list.append(h('div', { class: 'mute', style: { fontSize: '12px', padding: '2px 0 6px' } }, '게임 이전 우승: ' + tr.map(t => `${t.name} ${t.y}/${String(t.y + 1).slice(2)}`).join(' · ')));
+    } }
   const nt = U.ntTotals('A'), ntY = U.ntTotals('Y');
   list.append(h('div', { class: 'lbl', style: { marginTop: '10px' } }, '국가대표 팀'), h('div', { style: { display: 'grid', gridTemplateColumns: '28px 1fr 44px 44px', gap: '10px', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--line)' } }, natCrest(s.p.nat, 22), h('div', { style: { fontWeight: 600, fontSize: '13px' } }, C.natName(s.p.nat) + ' A대표팀'), h('span', { class: 'num', style: { textAlign: 'right' } }, nt.apps), h('span', { class: 'num', style: { textAlign: 'right' } }, second(nt))),
     ntY.apps ? h('div', { style: { display: 'grid', gridTemplateColumns: '28px 1fr 44px 44px', gap: '10px', alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--line)' } }, natCrest(s.p.nat, 22), h('div', { style: { fontWeight: 600, fontSize: '13px' } }, C.natName(s.p.nat) + ' 연령별 대표팀'), h('span', { class: 'num', style: { textAlign: 'right' } }, ntY.apps), h('span', { class: 'num', style: { textAlign: 'right' } }, second(ntY))) : null);

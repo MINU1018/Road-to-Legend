@@ -124,7 +124,7 @@ function countUp(el, a, b, dur = 900, fmt = v => Math.round(v)) {
   requestAnimationFrame(step);
 }
 U.countUp = countUp;
-function toast(msg) { const t = h('div', { class: 'toast' }, msg); document.body.append(t); setTimeout(() => t.remove(), 2200); }
+function toast(msg, ms) { const t = h('div', { class: 'toast' }, msg); document.body.append(t); setTimeout(() => t.remove(), ms || 2200); return t; }
 U.toast = toast;
 let confParts = [], confRun = false;
 function confetti(n = 160, colors) {
@@ -338,6 +338,8 @@ U.POSXY = POSXY;
 function render() {
   // 새 화면을 먼저 다 만든 뒤 한 번에 교체한다 (비운 채로 그리면 높이가 0이 되며 깜빡이고 스크롤이 맨 위로 튄다)
   const app = $('#app'), frag = document.createDocumentFragment();
+  // 진행 중인 게임 화면은 그 게임의 데이터셋 생년월일로 (실존 선수 고르기 화면에서 바꿨을 수 있다)
+  if (C.TM && S && S.w && scr !== 'real' && scr !== 'create' && (S.ds !== 'tm' || C.TM.has('TMD'))) C.TM.apply(S.ds === 'tm');
   if (scr === 'home') frag.append(viewHome());
   else if (scr === 'create') frag.append(viewCreate());
   else if (scr === 'academy') frag.append(viewAcademy());
@@ -364,7 +366,7 @@ U.stay = function () {
 };
 U.go = (s, t) => { if (s === 'settings' && scr !== 'settings') prevScr = scr; scr = s; if (t) tab = t; U._keepY = null; render(); scrollTo(0, 0); };
 U.back = () => U.go(prevScr === 'settings' ? 'home' : prevScr);
-U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; o.w.txKeys = []; } repairSave(o); S = o; S.w.ps = S.w.ps || {}; if (S.w.cal) S.w.cal.dirty = 1; chKeys = null; await flushCal(S, true); await flushArch(S, true); await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
+U.loadSave = async o => { delete o.viewOnly; await purgeMx(S); if (o.w) { o.w.mxKeys = []; o.w.txKeys = []; } if (o.ds === 'tm' && !(await U.dsPrep('tm'))) return; if (C.TM) C.TM.apply(o.ds === 'tm'); repairSave(o); U.dsAfter(o); S = o; S.w.ps = S.w.ps || {}; if (S.w.cal) S.w.cal.dirty = 1; chKeys = null; await flushCal(S, true); await flushArch(S, true); await kvSet('save', GM.serialize(S) || JSON.stringify(o)); await kvSet('ps', JSON.stringify(S.w.ps)); hasSave = true; U.go('game', S.mode === 'world' ? 'wsim' : 'career'); };
 U.clearSave = async () => { await purgeMx(S); S = null; await kvDel('save'); await kvDel('ps'); hasSave = false; U.go('home'); };
 U.setTab = t => { tab = t; U._keepY = null; render(); scrollTo(0, 0); };
 U.curTab = () => tab;
@@ -376,7 +378,7 @@ function repairSave(o) {
   if (o.w && C.mgrFill) { for (const x of o.w.mgrFree || []) C.mgrFill(o.w, x); for (const id in o.w.mgr || {}) C.mgrFill(o.w, o.w.mgr[id], o.w.clubs[id]); } // 명성·실력 (v36)
   if (o.w && C.rankInit && !o.w.rank) C.rankInit(o.w); // 국가대표 랭킹 (v35)
   if (o.w && C.crInit && !o.w.cr) C.crInit(o.w); // 세계 구단 랭킹 (v37)
-  if (o.w && C.legSeed && !o.w.legPre) { C.legSeed(o.w); if (C.legAll) C.legAll(o.w); } // 구단 레전드 (v37)
+  if (o.w && C.legSeed && !o.w.legPre) { C.legSeed(o.w); if (C.legAll && o.ds !== 'tm') C.legAll(o.w); } // 구단 레전드 (v37) · TFMKT는 실제 기록을 불러올 때마다 다시 만든다 (저장 안 함)
   // 난이도는 커리어별. 예전 저장은 당시 설정값을 새 난이도로 옮기고, 재능 한계가 없으면 성장 한계 기준으로 만든다
   if (!o.diff) o.diff = C.diffKey(C.cfg.difficulty);
   C.curDiff = o.diff;
@@ -393,17 +395,39 @@ function repairSave(o) {
   if (o.ss && o.w && o.w.cal) { o.ss.tables = {}; const LS = o.ss.lgId && o.w.cal.lg[o.ss.lgId]; if (LS) o.ss.tables[o.ss.lgId] = LS.tb; }
 }
 U.startWorld = async function () {
-  if (S && S.phase !== 'retired') {
-    const ok = await overlay(close => [h('div', { class: 'head' }, h('h2', null, '관전 모드 시작'), h('span', { class: 'mute' }, '진행 중인 저장을 덮어씁니다.')), h('div', { class: 'body' }, h('p', { class: 'mute' }, '먼저 설정에서 저장 파일로 내보내 두면 나중에 다시 불러올 수 있습니다.'), h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' } }, h('button', { class: 'btn ghost', onclick: () => close(false) }, '취소'), h('button', { class: 'btn gold', onclick: () => close(true) }, '시작')))]);
-    if (!ok) return;
-  }
-  await purgeMx(S); S = GM.newWorld(); hasSave = true; U.save(); U.go('game', 'wsim');
+  const d = { ds: C.cfg.dataset || 'fc27' }, busy = S && S.phase !== 'retired';
+  const ok = await overlay(close => [h('div', { class: 'head' }, h('h2', null, '관전 모드 시작'), h('span', { class: 'mute' }, busy ? '진행 중인 저장을 덮어씁니다.' : '내 선수 없이 세계 축구만 진행합니다.')), h('div', { class: 'body' }, dsPicker(d), busy ? h('p', { class: 'mute' }, '먼저 설정에서 저장 파일로 내보내 두면 나중에 다시 불러올 수 있습니다.') : null, h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' } }, h('button', { class: 'btn ghost', onclick: () => close(false) }, '취소'), h('button', { class: 'btn gold', onclick: () => close(true) }, '시작')))]);
+  if (!ok) return;
+  if (!(await U.dsPrep(d.ds))) return;
+  await purgeMx(S); S = GM.newWorld(null, d.ds); hasSave = true; U.save(); U.go('game', 'wsim'); U.dsAfter(S);
 };
+// ---------- 데이터셋 (FC27 / FC27+TFMKT) ----------
+// TFMKT 자료는 큰 파일이라 필요할 때 불러온다: 핵심(data_tm.js)은 새 게임·불러오기 전에, 경력 상세는 바탕에서 차례로
+if (C.TM) C.TM.loader = file => new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = file; sc.async = true; sc.onload = () => res(); sc.onerror = () => rej(new Error(file)); document.head.append(sc); });
+U.dsPrep = async function (ds) {
+  if (ds !== 'tm' || !C.TM) return true;
+  if (C.TM.has('TMD')) return true;
+  const t = toast('Transfermarkt 데이터를 불러오는 중…', 60000);
+  try { await C.TM.need('TMD'); } catch (e) { toast('데이터를 불러오지 못했습니다. 연결을 확인하세요.'); return false; } finally { if (t && t.remove) t.remove(); }
+  return true;
+};
+// 시작 뒤 바탕에서 경력 상세를 미리 받아 둔다 (화면이 필요하면 그 조각을 먼저)
+U.dsAfter = s => { if (C.TM) C.TM.apply(!!(s && s.ds === 'tm')); if (s && s.ds === 'tm' && C.TM) setTimeout(() => C.TM.prefetch(600), 1500); };
+// 화면이 아직 없는 조각을 기다릴 때: 불러온 뒤 같은 화면이면 다시 그린다
+U.tmWait = function (keys) { if (!C.TM) return; const k = [...new Set(keys)].join(','); U._tmw = U._tmw || new Set(); if (U._tmw.has(k)) return; U._tmw.add(k); C.TM.need(...keys).then(() => { U._tmw.delete(k); U.stay(); }).catch(() => U._tmw.delete(k)); };
+const DSINFO = { fc27: ['FC27 ver.', 'FC27 데이터만 · 기록은 게임 시작(2026/27)부터'], tm: ['FC27+TFMKT ver.', '현재 명단·능력치는 FC27, 게임 이전 경력·이적·부상·시장가치·구단 역사는 Transfermarkt (2024/25까지, 2025/26은 구단만) · 추가 데이터 약 4MB'] };
+function dsPicker(d) {
+  const box = h('div', { class: 'diffpick dspick' });
+  const draw = () => { box.innerHTML = ''; for (const k of ['fc27', 'tm']) { const [n, ds] = DSINFO[k]; box.append(h('button', { class: d.ds === k ? 'on' : '', onclick: () => { d.ds = k; C.cfg.dataset = k; U.kvSet && U.kvSet('cfg', JSON.stringify(C.cfg)); draw(); if (d.onch) d.onch(k); } }, h('b', null, n), h('span', { class: 'm' }, ds))); } };
+  draw();
+  return h('div', { class: 'diffsec' }, h('h3', { style: { margin: '0 0 6px' } }, '데이터셋'), box);
+}
+U.dsPicker = dsPicker;
 U.boot = async function () {
   await U.loadSettings();
   if (C.logos && C.logos.probe) C.logos.probe(() => render());
   const t = await kvGet('save');
-  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; await loadSide(S); repairSave(S); } }
+  if (t) { const o = GM.parse(t); if (o && o.w && o.p) { S = o; hasSave = true; await loadSide(S); if (o.ds === 'tm') await U.dsPrep('tm'); if (C.TM) C.TM.apply(o.ds === 'tm'); repairSave(S); U.dsAfter(S); } }
   U.hof = GM.parse(await kvGet('hof') || '[]') || [];
   // 이전 버전에서 은퇴한 현재 커리어는 상세 기록 보관을 채워 둔다
   if (S && S.phase === 'retired' && U.hof[0] && !U.hof[0].id && U.hof[0].name === S.p.name) { const id = 'c' + Date.now(); await archiveCareer(id); U.hof[0].id = id; await kvSet('hof', JSON.stringify(U.hof)); }
@@ -464,7 +488,7 @@ function hofBlock() {
       h('td', null, flag(e.nat, 20)), h('td', { class: 'o' }, h('b', null, e.name), ' ', h('span', { class: 'mute' }, `${e.pos} · ${e.retireAge}세 은퇴 · ${e.lastClub}`)),
       h('td', null, e.letter ? h('span', { class: 'chip gold', style: { marginRight: '4px' } }, e.letter) : null, h('span', { class: 'chip gold' }, e.grade)), h('td', null, '최고 ', ovrb(e.peak)), h('td', { class: 'num' }, `${e.apps}경기 ${e.goals}골 ${e.assists}도움`), h('td', { class: 'num' }, `우승 ${e.tp}`), h('td', { class: 'num' }, e.bd ? `발롱도르 ${e.bd}회` : ''), h('td', null, e.id ? h('button', { class: 'btn ghost sm', onclick: () => U.exportArchive(e.id) }, '내보내기') : null)))))));
 }
-function newCareer() { draft = { name: '', num: 9, foot: 'R', nat: 'KOR', pos: 'ST', height: 180, style: 0, q: '', diff: 'normal' }; U.go('create'); }
+function newCareer() { draft = { name: '', num: 9, foot: 'R', nat: 'KOR', pos: 'ST', height: 180, style: 0, q: '', diff: 'normal', ds: C.cfg.dataset || 'fc27' }; U.go('create'); }
 // 상단 탭: 마우스 드래그·휠로 가로 스크롤, 양끝 페이드, 선택 탭 자동 노출
 let tabScroll = 0, tabDrag = null, tabDragInit = false;
 function dragTabs(nav) {
@@ -587,7 +611,7 @@ function diffPicker(d) {
 }
 function viewCreate() {
   const d = draft || (draft = { name: '', num: 9, foot: 'R', nat: 'KOR', pos: 'ST', height: 180, style: 0, q: '', diff: 'normal' });
-  if (!d.diff) d.diff = 'normal';
+  if (!d.diff) d.diff = 'normal'; if (!d.ds) d.ds = C.cfg.dataset || 'fc27';
   const w = h('div', { class: 'screen' });
   w.append(topbar(false));
   const box = h('div', { class: 'panel' });
@@ -624,11 +648,12 @@ function viewCreate() {
   };
   drawPos();
   const s3 = h('section', null, h('h3', null, '포지션'), pitch, h('div', { class: 'lbl' }, '플레이 성향'), styles);
-  box.append(h('div', { class: 'ph' }, h('h2', { style: { fontSize: '22px' } }, '선수 만들기'), h('span', { class: 'mute' }, '시작 능력치는 무작위, 성장은 당신의 선택과 활약에 달려 있습니다')), h('div', { class: 'cgrid' }, s1, s2, s3), diffPicker(d),
-    h('div', { class: 'cfoot' }, h('button', { class: 'btn ghost', onclick: () => U.go('home') }, '뒤로'), h('button', { class: 'btn', onclick: () => {
+  box.append(h('div', { class: 'ph' }, h('h2', { style: { fontSize: '22px' } }, '선수 만들기'), h('span', { class: 'mute' }, '시작 능력치는 무작위, 성장은 당신의 선택과 활약에 달려 있습니다')), h('div', { class: 'cgrid' }, s1, s2, s3), diffPicker(d), dsPicker(d),
+    h('div', { class: 'cfoot' }, h('button', { class: 'btn ghost', onclick: () => U.go('home') }, '뒤로'), h('button', { class: 'btn', onclick: async () => {
       if (!d.name.trim()) { toast('이름을 입력하세요.'); nameIn.focus(); return; }
-      purgeMx(S); S = GM.newGame({ name: d.name.trim(), num: d.num, foot: d.foot, nat: d.nat, pos: d.pos, height: d.height, style: d.style, difficulty: d.diff });
-      U.go('academy');
+      if (!(await U.dsPrep(d.ds))) return;
+      purgeMx(S); S = GM.newGame({ name: d.name.trim(), num: d.num, foot: d.foot, nat: d.nat, pos: d.pos, height: d.height, style: d.style, difficulty: d.diff, ds: d.ds });
+      U.dsAfter(S); U.go('academy');
     } }, '선수 확정')));
   w.append(h('div', { class: 'wrap create' }, box));
   return w;
@@ -638,6 +663,11 @@ function viewCreate() {
 let rdraft = null, rIndex = null;
 function viewReal() {
   const d = rdraft || (rdraft = { q: '', pos: '', diff: 'normal', pick: null });
+  if (!d.ds) d.ds = C.cfg.dataset || 'fc27';
+  // 나이는 데이터셋의 생년월일 기준 (TFMKT는 Transfermarkt 생년월일)
+  d.onch = async k => { if (!(await U.dsPrep(k))) return; if (C.TM) C.TM.apply(k === 'tm'); rIndex = null; U.stay(); };
+  if (C.TM && (d.ds !== 'tm' || C.TM.has('TMD')) && C.TM.on() !== (d.ds === 'tm')) { C.TM.apply(d.ds === 'tm'); rIndex = null; }
+  else if (d.ds === 'tm' && C.TM && !C.TM.has('TMD')) U.dsPrep('tm').then(ok => { if (ok) { C.TM.apply(true); rIndex = null; U.stay(); } });
   const w = h('div', { class: 'screen' }); w.append(topbar(false));
   const fold = t => (U.fold ? U.fold(t) : String(t).toLowerCase());
   if (!rIndex) { rIndex = GM.realList(); for (const x of rIndex) x.f = fold(x.n + ' ' + x.club); }
@@ -664,11 +694,12 @@ function viewReal() {
   const box = h('div', { class: 'panel' },
     h('div', { class: 'ph' }, h('h2', { style: { fontSize: '22px' } }, '실존 선수로 시작'), h('span', { class: 'mute' }, 'FC27 데이터의 선수를 골라 그 나이·능력치·구단에서 커리어를 이어갑니다')),
     h('div', { class: 'realgrid' }, h('section', null, h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 170px)', gap: '8px' } }, qIn, posSel), list), h('section', null, info)),
-    diffPicker(d),
-    h('div', { class: 'cfoot' }, h('button', { class: 'btn ghost', onclick: () => U.go('home') }, '뒤로'), h('button', { class: 'btn', onclick: () => {
+    diffPicker(d), dsPicker(d),
+    h('div', { class: 'cfoot' }, h('button', { class: 'btn ghost', onclick: () => U.go('home') }, '뒤로'), h('button', { class: 'btn', onclick: async () => {
       if (d.pick == null) { toast('선수를 고르세요.'); return; }
-      const nS = GM.newGameReal(d.pick, d.diff); if (!nS) { toast('이 선수로는 시작할 수 없습니다.'); return; }
-      purgeMx(S); S = nS; hasSave = true; U.save(); U.go('game', 'career'); setTimeout(() => toast(`${S.p.name} · ${club(S.car.club).name}에서 시작`), 250);
+      if (!(await U.dsPrep(d.ds))) return;
+      const nS = GM.newGameReal(d.pick, d.diff, d.ds); if (!nS) { toast('이 선수로는 시작할 수 없습니다.'); return; }
+      purgeMx(S); S = nS; hasSave = true; U.save(); U.dsAfter(S); U.go('game', 'career'); setTimeout(() => toast(`${S.p.name} · ${club(S.car.club).name}에서 시작`), 250);
     } }, '이 선수로 시작')));
   w.append(h('div', { class: 'wrap create' }, box));
   return w;

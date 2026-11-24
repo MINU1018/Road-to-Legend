@@ -140,6 +140,8 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .diffpick button .mute { font-size: 11px; }
 .diffpick button.on { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
 @media (max-width: 760px) { .diffpick { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dspick { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dspick button { align-content: start; } .dspick button .m { font-size: 12px; color: var(--mute, #8b94a3); line-height: 1.5; }
+@media (max-width: 560px) { .dspick { grid-template-columns: minmax(0, 1fr); } }
 .realgrid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 .realgrid > section { padding: 16px 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
 .realgrid > section + section { border-left: 1px solid var(--line); }
@@ -981,7 +983,7 @@ button.tsi:hover{background:var(--panel2)}.tsi.more{grid-template-columns:1fr;co
 .pfcr{display:grid;grid-template-columns:24px minmax(0,1fr) 44px 44px;gap:8px;align-items:center;padding:7px 0;font-size:13px;text-align:center}.pfcr > div{display:grid;text-align:left;min-width:0}.pfcr b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pfcr small{font-size:11px}.pfcr .segtag{justify-self:start;margin:1px 0}
 .pfcrs{display:flex;gap:2px}
 .pftr{display:grid;gap:10px}.pftg{background:var(--panel2);border-radius:10px;overflow:hidden}.pftgh{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line)}.pftgh > div{display:grid}.pftgh small{font-size:11px}
-.pftr1{display:grid;grid-template-columns:22px 16px minmax(0,1fr) auto;gap:6px;align-items:center;padding:6px 10px;font-size:12.5px;border-bottom:1px solid var(--line)}.pftr1:last-child{border-bottom:0}.pftr1 small{font-size:11px}
+.pftr1{display:grid;grid-template-columns:22px 16px minmax(0,1fr) auto;gap:6px;align-items:center;padding:6px 10px;font-size:12.5px;border-bottom:1px solid var(--line)}.pftr1:last-child{border-bottom:0}.pftr1.lng small{grid-column:3/-1}.pftr1 small{font-size:11px}
 .pfab p{margin:0 0 6px;font-size:13px;line-height:1.6;color:var(--fg)}
 /* ===== 조추첨 ===== */
 .drhead h2{margin:2px 0}.drbody{display:grid;gap:14px}
@@ -1198,6 +1200,7 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="data_crank.js"></script>
 <script src="data_legends.js"></script>
 <script src="data_world.js"></script>
+<script src="data_names.js"></script>
 <script src="data_ext.js"></script>
 <script src="profiles.js"></script>
 <script src="core.js"></script>
@@ -1213,6 +1216,7 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="rank.js"></script>
 <script src="crank.js"></script>
 <script src="legends.js"></script>
+<script src="tm.js"></script>
 <script src="matchstats.js"></script>
 <script src="calendar.js"></script>
 <script src="wnews.js"></script>

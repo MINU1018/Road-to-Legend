@@ -93,6 +93,19 @@ function leaders(s, list, kind) {
   return h('table', { class: 'ltable' }, h('thead', null, h('tr', null, h('th', null, '#'), h('th', null, '선수'), h('th', null, kind === 'g' ? '골' : '도움'))),
     h('tbody', null, ...list.map((x, i) => h('tr', { class: x[4] ? 'me' : '' }, h('td', null, i + 1), h('td', null, h('div', { style: { display: 'grid', gap: '1px' } }, h('b', { class: x[5] ? 'lnk' : '', style: { fontWeight: x[4] ? 800 : 600 }, onclick: x[5] ? () => U.openPlayer(x[5]) : x[4] ? () => U.setTab('profile') : null }, x[0] + (x[4] ? ' (나)' : '')), h('span', { class: 'mute', style: { fontSize: '11px' } }, clubCell(w, x[1], 14)))), h('td', null, h('b', null, x[2]), h('span', { class: 'mute', style: { fontSize: '11px', marginLeft: '4px' } }, kind === 'g' ? `${x[3]}도움` : `${x[3]}골`))))));
 }
+// FC27+TFMKT: 게임 이전 리그 자료 — 2025/26 최종 순위와 역대 우승 (첫 시즌이 끝나기 전에도 볼 수 있게)
+function preLeague(s, root, lg) {
+  if (s.ds !== 'tm' || !C.TM || !C.TM.on()) return;
+  const w = s.w, S6 = C.TM.s26(); if (!S6) return;
+  const cy = C.calType && C.calType(lg.nation) === 'cy', T6 = S6.T[lg.id], lb = cy ? '2025' : '2025/26';
+  if (T6 && T6.length) root.append(h('div', { class: 'sec' }, h('h3', null, `${lg.name} ${lb} 최종 순위`, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 게임 이전 시즌' + (S6.LGX[lg.id] ? ' · ' + S6.LGX[lg.id] : ''))),
+    h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, ...['#', '구단', '경기', '승', '무', '패', '득실', '승점'].map(x => h('th', null, x)))),
+      h('tbody', null, ...T6.map((r, i) => h('tr', null, h('td', null, i + 1), h('td', { class: 'l' }, w.clubs[r[0]] ? clubCell(w, r[0]) : r[0]), h('td', null, r[1] || '-'), h('td', null, r[1] ? r[2] : '-'), h('td', null, r[1] ? r[3] : '-'), h('td', null, r[1] ? r[4] : '-'), h('td', null, r[1] ? (r[5] - r[6] > 0 ? '+' : '') + (r[5] - r[6]) : '-'), h('td', null, h('b', null, r[7])))))))));
+  const hon = C.TM.honours(lg.id).slice().reverse(), sc = S6.SCORERS[lg.id];
+  if (hon.length) root.append(h('div', { class: 'sec' }, h('h3', null, '역대 우승 (게임 이전)', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ' 기록이 남은 시즌의 최종 1위')),
+    h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, h('th', null, '시즌'), h('th', null, '우승'), h('th', null, '득점왕'))),
+      h('tbody', null, ...hon.map(([y, c]) => h('tr', null, h('td', null, cy ? String(y) : C.wLabel(y)), h('td', null, w.clubs[c] ? clubCell(w, c) : c), h('td', { class: 'mute' }, y === 2025 && sc ? `${sc[0]} ${sc[2]}골` : ''))))))));
+}
 function leagueView(s, root) {
   const w = s.w, v = wv();
   const nats = nationList(s);
@@ -109,7 +122,7 @@ function leagueView(s, root) {
     sel(v.lg, lgs.map(l => [l.id, `${l.tier}부 · ${l.name}`]), x => { v.lg = x; v.season = null; rerender(); }, true),
     opts.length ? sel(v.season, opts, x => { v.season = x; rerender(); }) : null));
   if (!lg) return;
-  if (!v.season) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, `${lg.name} 기록은 첫 시즌이 끝난 뒤 쌓입니다.`))); return; }
+  if (!v.season) { root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, `${lg.name} 기록은 첫 시즌이 끝난 뒤 쌓입니다.`))); preLeague(s, root, lg); return; }
   const data = archOf(w, v.season).lg[v.lg], rows = data.t, myId = userClubOf(s, v.season);
   const label = v.season, isLive = v.season === LIVE;
   const LS = isLive && w.cal.lg[v.lg];
@@ -153,9 +166,13 @@ function leagueView(s, root) {
       root.append(h('div', { class: 'mute', style: { fontSize: '12px', padding: '0 4px' } }, data.md ? '모든 숫자는 이 리그 경기 기록(득점자·도움·출전 명단)을 더한 값입니다. 경기 결과 탭에서 경기별로 확인할 수 있습니다.' : '하부 리그(명단 없는 구단)는 팀 득점을 바탕으로 한 추정 기록입니다.'));
     } else root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, isLive ? '아직 기록이 없습니다.' : '기록 없음')));
   } else {
-    const lh = (w.hist.lg[v.lg] || []).slice(-20).reverse();
-    const top = y => { for (const lb in w.arch || {}) { const a = w.arch[lb].lg[v.lg]; if (a && (a.sl || lb) === y) return a.sc && a.sc[0] ? `${a.sc[0][0]} ${a.sc[0][2]}골` : ''; } return ''; };
-    root.append(h('div', { class: 'sec' }, h('h3', null, '역대 우승'), lh.length ? h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, h('th', null, '시즌'), h('th', null, '우승'), h('th', null, '득점왕'))), h('tbody', null, ...lh.map(x => h('tr', null, h('td', null, x.y), h('td', null, clubCell(w, x.c)), h('td', { class: 'mute' }, top(x.y))))))) : h('div', { class: 'empty' }, '아직 없습니다.')));
+    let lh = (w.hist.lg[v.lg] || []).slice(-20).reverse();
+    const top0 = y => { for (const lb in w.arch || {}) { const a = w.arch[lb].lg[v.lg]; if (a && (a.sl || lb) === y) return a.sc && a.sc[0] ? `${a.sc[0][0]} ${a.sc[0][2]}골` : ''; } return ''; };
+    // FC27+TFMKT: 게임 이전 우승 (Transfermarkt 시즌 순위 1위 · 2025/26 결과)
+    const S6 = s.ds === 'tm' && C.TM && C.TM.on() ? C.TM.s26() : null, sc26 = S6 && S6.SCORERS[v.lg];
+    const top = y => y === '__26' && sc26 ? `${sc26[0]} ${sc26[2]}골` : top0(y);
+    if (S6) { const cy = C.calType && C.calType(lg.nation) === 'cy'; lh = lh.concat(C.TM.honours(v.lg).slice().reverse().map(([y, c]) => ({ y: cy ? String(y) : C.wLabel(y), c, pre: 1, k: y === 2025 ? '__26' : '' }))); }
+    root.append(h('div', { class: 'sec' }, h('h3', null, '역대 우승'), lh.length ? h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, h('th', null, '시즌'), h('th', null, '우승'), h('th', null, '득점왕'))), h('tbody', null, ...lh.map(x => h('tr', { class: x.pre ? 'pre' : '' }, h('td', null, x.y, x.pre ? h('small', { class: 'mute' }, ' 게임 전') : null), h('td', null, w.clubs[x.c] ? clubCell(w, x.c) : x.c), h('td', { class: 'mute' }, x.pre ? (x.k ? top(x.k) : '') : top(x.y))))))) : h('div', { class: 'empty' }, '아직 없습니다.')));
   }
 }
 // ---------- 선수 기록: 이 리그 이 시즌에 뛴 모든 선수 (진행 중이면 지금까지) ----------

@@ -1109,6 +1109,7 @@ function rollover(S) {
   const st = w.mxPending && w.mxPending[lb]; if (st) st._dirty = 1;
   amFinalize(S);
   w.year++; sidesReset();
+  if (w.vf && C.TM) C.TM.vfYear(w); // FC27+TFMKT 시장가치 보정은 해마다 옅어진다
   if (C.newSeasonForm) C.newSeasonForm(w);
   curStore(w); curArch(w);
   // 유럽식 대륙 대회

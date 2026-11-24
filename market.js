@@ -128,7 +128,7 @@ MK.ambition = (e, base) => { const p = MK.persona(e); let a = base * (.45 + p.am
 MK.buyout = (w, e, c) => {
   const n = natOf(w, c); if (e[24] != null && e[24] !== 0) return e[24];
   const p = n === 'ESP' ? 1 : n === 'POR' ? .55 : .04; if (R() > p) { e[24] = 0; return 0; }
-  const v = C.aiFee(e[2], e[3], n, Math.max(1, e[6] || 2)), big = c.str >= 82;
+  const v = C.aiFee(e[2], e[3], n, Math.max(1, e[6] || 2)) * (C.vfOf ? C.vfOf(w, e[0]) : 1), big = c.str >= 82;
   const mult = big && e[2] >= 82 ? 6 + R() * 8 : big ? 3 + R() * 3 : 1.6 + R() * 2.2;
   e[24] = Math.max(100, Math.round(v * mult / 1e4 / 100) * 100); return e[24];
 };

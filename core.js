@@ -335,7 +335,8 @@ C.aiFee = (ovr, age, nation, ct, noise, perf) => {
 const CFG_DEFAULT = {
   currency: 'KRW', rates: { KRW: 1500, USD: 1.08, GBP: .85, JPY: 162 }, wageMode: 'week',
   difficulty: 'normal', moments: 'normal', events: 'normal', injuries: 'normal', showOdds: true,
-  anim: 'full', confetti: true, ceremonies: true, simSpeed: 'auto', autoSave: true
+  anim: 'full', confetti: true, ceremonies: true, simSpeed: 'auto', autoSave: true,
+  dataset: 'fc27' // 새 게임 데이터셋: fc27 / tm (FC27 + Transfermarkt 게임 이전 기록)
 };
 C.CFG_DEFAULT = CFG_DEFAULT;
 C.cfg = JSON.parse(JSON.stringify(CFG_DEFAULT));
