@@ -172,10 +172,13 @@ function namePools() {
   for (const k in NPOOL) { const tm = k[0] === '@' && TMN[k.slice(1)]; NPOOL[k] = NPOOL[k].map(x => [...x]); if (k[0] === '@' && !tm && (NPOOL[k][0].length < 40 || NPOOL[k][1].length < 40)) delete NPOOL[k]; }
   return NPOOL;
 }
+const ENN = new Set(['ENG', 'USA', 'AUS', 'IRL', 'SCO', 'WAL', 'NZL', 'CAN', 'NIR', 'JAM', 'TRI', 'RSA']);
 function genName(nat) {
   const known = !!(NAT[nat] && WD.NAMES[NAT[nat][1]]), lang = known ? NAT[nat][1] : 'en';
   // 그 나라 실제 이름 풀이 있으면 주로 그것을 (언어권 풀이 없는 나라 — 북한 등 — 는 항상 그 나라 풀)
-  const NP = namePools(), own = NP['@' + nat], [fs, ls, mono] = own && (!known || R() < (WD.NAMES_TM && WD.NAMES_TM[nat] ? .95 : .85)) ? own : NP[lang];
+  // 영어권이 아닌데 언어권이 'en'으로 잡힌 나라(북한 등)는 항상 그 나라 풀
+  const enMis = lang === 'en' && !ENN.has(nat);
+  const NP = namePools(), own = NP['@' + nat], [fs, ls, mono] = own && (!known || enMis || R() < (WD.NAMES_TM && WD.NAMES_TM[nat] ? .95 : .85)) ? own : NP[lang];
   let nm = '';
   for (let k = 0; k < 12; k++) {
     nm = ((mono || []).length > 20 && (lang === 'br' || lang === 'pt') && R() < .1) ? pick(mono) : pick(fs) + ' ' + pick(ls);
@@ -186,6 +189,12 @@ function genName(nat) {
 }
 const FOREIGN = WD.FOREIGN.default.split(',').map(s => { const [c, k] = s.split(':'); return [c, +k]; });
 function genNat(clubNat) { if (R() < .62) return clubNat; return wpick(FOREIGN, f => f[1])[0]; }
+// 시드 고정 이름 (명단 없는 구단·대표팀 가상 선수): 같은 r이면 같은 이름, 그 나라 풀 우선
+C.nameR = (nat, r) => {
+  const known = !!(NAT[nat] && WD.NAMES[NAT[nat][1]]), lang = known ? NAT[nat][1] : 'en';
+  const NP = namePools(), own = NP['@' + nat], tm = WD.NAMES_TM && WD.NAMES_TM[nat], [fs, ls] = own && (!known || tm || r() < .9) ? own : NP[lang];
+  return fs[Math.floor(r() * fs.length)] + ' ' + ls[Math.floor(r() * ls.length)];
+};
 C.genName = genName; C.seeded = seeded;
 
 // ---------- 시즌 경과 (AI 스쿼드) ----------
@@ -451,7 +460,7 @@ function worldTransfers(w, winter) {
     let range = byStr.slice(i0, i1);
     if (range.length > 48) { const pickd = []; for (let k = 0; k < 48; k++) pickd.push(range[(R() * range.length) | 0]); range = [...new Set(pickd)]; }
     const back = e[22] != null && e[21] != null && stamp - e[21] <= 3 ? e[22] : null, lr = w._lret.get(e);
-    const cand = range.filter(c => c !== from && c.id !== back && c.id !== lr && (!c.parent || e[3] <= 21) && C.sqN(c) < 31 && (!fee || c.cash >= fee * (fee >= 2e7 ? .55 : 1)) && (kind === 'loan' || wageRoom(c, wk(c))) && (!MK || (MK.canJoin(w, e, from, c, kind) && MK.bigGate(w, e, c, kind) && MK.starGate(w, e, from, c, kind))));
+    const cand = range.filter(c => c !== from && c.id !== back && c.id !== lr && (!c.parent || e[3] <= 21) && C.sqN(c) < 31 && (!fee || c.cash >= fee * (fee >= 2e7 ? .55 : 1)) && (kind === 'loan' || wageRoom(c, wk(c))) && (!MK || (MK.canJoin(w, e, from, c, kind) && MK.bigGate(w, e, c, kind) && MK.starGate(w, e, from, c, kind))) && !C.rivalBlock(w, e, from, c, kind));
     if (!cand.length) return null;
     const nat = e[5], age = e[3], o = e[2];
     return wpick(cand, c => Math.exp((c.str - lo) * (kind === 'loan' ? .05 : .12)) * (MK ? MK.appeal(w, e, from, c, kind) : 1) * (c.str >= topS - .6 ? .4 : c.str >= topS - 1.6 ? .7 : 1) * (c.nat === nat ? 2 : 1) * (from && c.nat === from.nat ? 1.5 : 1) * need(c, e[1]) * (c.sq.length < 25 ? 1.4 : c.sq.length > 28 ? .5 : 1)
@@ -521,7 +530,7 @@ function refillSquad(c, w, pool, winter) {
     const L = pool[pos]; if (!L) return false;
     const cand = [];
     const stamp = winter ? w.year * 2 + 1 : (w.year + 1) * 2;
-    for (let k = 0; k < 40; k++) { const x = L[(R() * L.length) | 0]; if (!x || x.c === c || x.c.str >= c.str - .5 || !x.c.sq.includes(x.e) || x.e[7] || (w._moved && w._moved.has(x.e)) || (C.mkt && !C.mkt.canJoin(w, x.e, x.c, c, 'buy'))) continue;
+    for (let k = 0; k < 40; k++) { const x = L[(R() * L.length) | 0]; if (!x || x.c === c || x.c.str >= c.str - .5 || !x.c.sq.includes(x.e) || x.e[7] || (w._moved && w._moved.has(x.e)) || (C.mkt && !C.mkt.canJoin(w, x.e, x.c, c, 'buy')) || C.rivalBlock(w, x.e, x.c, c, 'buy')) continue;
       if (x.e[21] != null && (stamp - x.e[21] <= 1 || (x.e[22] === c.id && stamp - x.e[21] <= 3))) continue; /* 막 이적한 선수·직전 구단으로 되돌아가는 경우 제외 */ if (Math.abs(x.e[2] - lv) <= 3 && x.e[3] <= 31) cand.push(x); }
     if (!cand.length) return false;
     const x = cand.sort((a, b) => b.e[2] - a.e[2])[0];
@@ -895,6 +904,13 @@ function hire(w, id, d, depth, exclude) {
   let best = null, bs = -1e9;
   for (const x of P) { if (x.n === exclude || x.last === id || (d != null && x.out != null && d - x.out < 14)) continue; const sc = fitScore(x, want, c, d); if (sc != null && sc > bs) { bs = sc; best = x; } }
   if (best) { P.splice(P.indexOf(best), 1); return (w.mgr[id] = C.mgrFill(w, carry(best, { d0: d != null ? d : (w.cal ? w.cal.d : 0), g: 0, w: 0, dr: 0, l: 0 }), c)); }
+  // 대표팀 감독을 데려온다 (명성이 맞고 1년 이상 재임, 가끔): 그 대표팀은 새 감독을 뽑는다
+  if (want >= 58 && depth < 2 && w.ntm && R() < .18) {
+    let nb = null, ns = -1e9;
+    for (const nat in w.ntm) { const M = w.ntm[nat]; if (M.n === exclude || d - (M.d0 || 0) < 365) continue; const r = M.rep || 0; if (r < want - 6 || r > want + 18) continue; const sc = r + (M.q || 0) * 10 + (M.nat === c.nat ? 4 : 0) + N(0, 3); if (sc > ns) { ns = sc; nb = nat; } }
+    if (nb) { const M = w.ntm[nb]; const H = (w.ntmH[nb] = w.ntmH[nb] || []); H.push(Object.assign({}, M, { d1: d, why: `${c.name} 부임`, club: NTK(nb) })); delete w.ntm[nb];
+      const N2 = w.mgr[id] = C.mgrFill(w, carry(M, { d0: d != null ? d : 0, g: 0, w: 0, dr: 0, l: 0, vnt: nb }), c); const rep2 = ntHire(w, nb, d, M.n); mnews(w, { d, k: 'rep', club: NTK(nb), n: rep2 && rep2.n, old: M.n, to: id }); return N2; }
+  }
   // 빅클럽: 더 작은 구단에서 잘하는 감독을 데려온다
   if (want >= 52 && depth < 2) {
     let pb = null, ps = -1e9;
@@ -927,6 +943,43 @@ C.mgrChange = (w, id, d, why) => {
   const pct = M.g ? (M.w * 3 + M.dr) / (M.g * 3) : 0;
   if (M.r || (M.rep || 0) >= 30 || (M.g >= 20 && pct > .45)) toPool(w, M, id, d, why === '경질' ? -3 : 0);
   return hire(w, id, d, 0, M.n);
+};
+// ---------- 시즌 중 경질 (v39) ----------
+// 라운드마다 모든 리그(2군 제외)에서: 구단 전력으로 본 기대 승점(경기당)과 실제의 차이, 강등권·빅클럽 순위 하락, 최근 연패로 '압박'(M.pr)이 쌓이고
+// 좋은 결과로 풀린다. 압박이 구단 인내심(구단마다 다름, 빅클럽은 짧게) × 감독 입지(명성·우승·재임)보다 커지면 경질 가능성이 생긴다
+const patOf = (w, c) => { const r = seeded('pat|' + c.id)(); const L = w.lg[c.lg] || {}; return (.75 + r * .55) * ((c.str || 60) >= 80 ? .8 : (c.str || 60) >= 74 ? .9 : 1) * ((L.tier || 1) >= 3 ? 1.12 : 1); };
+C.mgrPat = patOf;
+C.mgrJudge = (S, LS, d) => {
+  const w = S.w, lg = w.lg[LS.id]; if (!lg || !w.mgr) return [];
+  const n = LS.dates.length, ri = LS.ri, rows = C.sortTable(LS.tb), nc = rows.length; if (nc < 6 || ri < 3) return [];
+  const avg = rows.reduce((t, r) => t + ((w.clubs[r.id] || {}).str || 60), 0) / nc;
+  const byStr = rows.map(r => r.id).sort((a, b) => ((w.clubs[b] || {}).str || 0) - ((w.clubs[a] || {}).str || 0));
+  const relN = Math.max(2, Math.round(nc / 7)), out = [], sk = (w.mgrSk = w.mgrSk || {});
+  rows.forEach((r, pos) => {
+    const c = w.clubs[r.id], M = w.mgr[r.id]; if (!c || !M || c.parent || !r.p) return;
+    const ex = byStr.indexOf(r.id), str = c.str || 60;
+    const want = clamp(1.37 + (str - avg) * .065 + (ex === 0 ? .15 : 0), .55, 2.45), ppg = r.pts / r.p;
+    let dfc = want - ppg;
+    if (pos >= nc - relN && ex < nc - relN - 1) dfc += .22 + (ex < nc / 2 ? .15 : 0); // 강등권 (원래 강등권 전력이 아니면)
+    if (ex <= 2 && pos >= 6 && ri >= 10) dfc += .18; // 우승 후보가 중위권
+    const fm = M.fm || '', ls = (fm.slice(-5).match(/L/g) || []).length;
+    let pr = (M.pr || 0) * .84 + Math.max(0, dfc - .18) * 2.3 + (ls >= 4 ? .6 : ls >= 3 ? .15 : 0);
+    if (dfc < -.12) pr -= .45; if (fm.endsWith('WW')) pr -= .25;
+    M.pr = Math.round(Math.max(0, pr) * 100) / 100;
+    if (ri < 7 || ri > n - 2 || (M.g || 0) < 10) return; // 시즌 초·막판, 부임 직후는 기다린다
+    const ten = (d - (M.d0 || d)) / 365, mw = C.mgrWant(w, c);
+    const sec = 1 + Math.min(.8, (M.tro || 0) * .15) + (ten >= 3 ? .25 : 0) + clamp(((M.rep || 30) - mw) / 50, -.2, .5) + (M.leg === c.id ? .3 : 0);
+    const key = r.id + ':' + LS.label, nth = sk[key] || 0; if (nth >= 2 || (nth && (M.g || 0) < 14)) return;
+    const thr = 3.4 * patOf(w, c) * sec * (nth ? 1.5 : 1); // 이번 시즌 두 번째 경질은 더 참는다
+    if (M.pr <= thr) return;
+    if (R() > .13 + Math.min(.35, (M.pr - thr) * .1)) return;
+    sk[key] = (sk[key] || 0) + 1;
+    const old = M.n, NM = C.mgrChange(w, r.id, d, '경질');
+    if (NM) NM.pr = 0;
+    out.push({ id: r.id, pos, ex, row: r, old, NM });
+  });
+  if (Object.keys(sk).length > 4000) w.mgrSk = {};
+  return out;
 };
 // 리그 종료: 기대 순위(전력 순)보다 잘하면 명성·실력이 오르고, 못하면 내려간다. 우승·강등은 크게
 C.mgrLeagueEnd = (w, lid, rows) => {
@@ -1019,17 +1072,91 @@ C.mgrYear = (S, d) => {
   for (const x of P) delete x._pref;
   return { res, out };
 };
-// 감독 한 명의 경력 (이름 기준): 지난 재임 + 현재 + 시장
+// ---------- 국가대표 감독 (v39) ----------
+// 2026-09 기준 실제 감독 (월드컵 뒤 교체 반영). 목록에 없는 나라는 처음 필요할 때 뽑는다 (자국 지도자 선호)
+// [대표팀, 이름, 감독 국적, 출생 연도, 명성]
+const NTMGR = [['ARG', 'Lionel Scaloni', 'ARG', 1978, 86], ['BRA', 'Carlo Ancelotti', 'ITA', 1959, 96], ['ESP', 'Luis de la Fuente', 'ESP', 1961, 84], ['ENG', 'Thomas Tuchel', 'GER', 1973, 90], ['FRA', 'Zinedine Zidane', 'FRA', 1972, 92],
+  ['GER', 'Jürgen Klopp', 'GER', 1967, 95], ['POR', 'Jorge Jesus', 'POR', 1954, 80], ['NED', 'Xavi Hernández', 'ESP', 1980, 78], ['BEL', 'Mark van Bommel', 'NED', 1977, 60], ['CRO', 'Slaven Bilić', 'CRO', 1968, 64], ['ITA', 'Roberto Mancini', 'ITA', 1964, 84],
+  ['URU', 'Diego Forlán', 'URU', 1979, 45], ['MEX', 'Rafael Márquez', 'MEX', 1979, 52], ['USA', 'Mauricio Pochettino', 'ARG', 1972, 84], ['CAN', 'Jesse Marsch', 'USA', 1973, 62], ['COL', 'Néstor Lorenzo', 'ARG', 1966, 62], ['PAR', 'Gustavo Alfaro', 'ARG', 1962, 60],
+  ['AUT', 'Ralf Rangnick', 'GER', 1958, 76], ['SUI', 'Murat Yakin', 'SUI', 1974, 62], ['NOR', 'Ståle Solbakken', 'NOR', 1968, 58], ['SWE', 'Graham Potter', 'ENG', 1975, 70], ['TUR', 'Vincenzo Montella', 'ITA', 1974, 68], ['BIH', 'Sergej Barbarez', 'BIH', 1971, 45],
+  ['JPN', 'Hajime Moriyasu', 'JPN', 1968, 60], ['KOR', 'Robert Moreno', 'ESP', 1977, 48], ['AUS', 'Tony Popović', 'AUS', 1973, 55], ['IRN', 'Amir Ghalenoei', 'IRN', 1963, 50], ['IRQ', 'Graham Arnold', 'AUS', 1963, 50], ['KSA', 'Georgios Donis', 'GRE', 1969, 50],
+  ['QAT', 'Julen Lopetegui', 'ESP', 1966, 74], ['UZB', 'Fabio Cannavaro', 'ITA', 1973, 58], ['JOR', 'Badou Zaki', 'MAR', 1959, 46], ['EGY', 'Hossam Hassan', 'EGY', 1966, 48], ['MAR', 'Mohamed Ouahbi', 'MAR', 1976, 45], ['ALG', 'Brahim Hemdani', 'ALG', 1978, 34],
+  ['TUN', 'Moïne Chaâbani', 'TUN', 1981, 40], ['SEN', 'Patrick Vieira', 'FRA', 1976, 62], ['CIV', 'Hervé Renard', 'FRA', 1968, 70], ['NGA', 'Éric Chelle', 'MLI', 1977, 44], ['COD', 'Sébastien Desabre', 'FRA', 1976, 46], ['NZL', 'Darren Bazeley', 'ENG', 1972, 36],
+  ['PAN', 'Thomas Christiansen', 'DEN', 1973, 44], ['CUW', 'Dick Advocaat', 'NED', 1947, 70]];
+// 이름난 대표팀 감독의 전술 성향 [포메이션, 공격, 수비, 지도력]
+const NTSTY = {"Lionel Scaloni": ["4-4-2", "점유율", "중간 블록", 0.5], "Carlo Ancelotti": ["4-3-3", "역습", "중간 블록", 0.6], "Luis de la Fuente": ["4-3-3", "점유율", "전방 압박", 0.45], "Thomas Tuchel": ["4-2-3-1", "점유율", "중간 블록", 0.5], "Zinedine Zidane": ["4-3-3", "중앙 침투", "중간 블록", 0.5], "Jürgen Klopp": ["4-3-3", "직선적", "전방 압박", 0.6], "Jorge Jesus": ["4-2-3-1", "측면 공략", "전방 압박", 0.4], "Xavi Hernández": ["4-3-3", "점유율", "전방 압박", 0.3], "Roberto Mancini": ["4-3-3", "점유율", "중간 블록", 0.45], "Mauricio Pochettino": ["4-2-3-1", "직선적", "전방 압박", 0.4], "Ralf Rangnick": ["4-4-2", "직선적", "전방 압박", 0.4], "Hervé Renard": ["4-3-3", "역습", "중간 블록", 0.35], "Julen Lopetegui": ["4-3-3", "점유율", "중간 블록", 0.3], "Graham Potter": ["3-4-2-1", "점유율", "중간 블록", 0.35], "Vincenzo Montella": ["4-2-3-1", "점유율", "중간 블록", 0.3], "Hajime Moriyasu": ["3-4-2-1", "역습", "중간 블록", 0.35], "Marcelo Bielsa": ["4-3-3", "직선적", "전방 압박", 0.4], "Patrick Vieira": ["4-3-3", "점유율", "중간 블록", 0.2]};
+// 대표팀이 원하는 감독 명성 (FIFA 랭킹): 1위 ≈ 88, 20위 ≈ 55, 100위 ≈ 37
+C.ntWant = (w, nat) => { const rk = C.rankOf ? C.rankOf(w, nat) : null; return clamp(Math.round(rk ? 88 - Math.log(rk.rank) * 11 : 30), 12, 90); };
+C.ntmSeed = w => {
+  if (w.ntm) return; w.ntm = {}; w.ntmH = w.ntmH || {}; const d = w.cal ? w.cal.d : 0;
+  const busy = new Set(Object.values(w.mgr || {}).map(M => M.n));
+  for (const [nat, n, mn, b, rep] of NTMGR) { if (busy.has(n)) continue; const P = w.mgrFree || [], k = P.findIndex(x => x.n === n), prev = k >= 0 ? P.splice(k, 1)[0] : null, sty = NTSTY[n];
+    w.ntm[nat] = C.mgrFill(w, Object.assign(prev ? carry(prev, {}) : {}, sty ? { f: sty[0], build: sty[1], def: sty[2], q: sty[3] } : {}, { n, nat: mn, b, rep, r: 1, d0: d - 60, g: 0, w: 0, dr: 0, l: 0, nt: nat })); }
+};
+const NTK = nat => 'NT:' + nat;
+C.isNTKey = k => typeof k === 'string' && k.startsWith('NT:');
+// 대표팀 감독 고르기: 무직 감독(자국 출신 우대) → 자국 구단 감독 (그 구단은 새 감독을 뽑는다) → 새 얼굴
+function ntHire(w, nat, d, exclude) {
+  const want = C.ntWant(w, nat), P = w.mgrFree = w.mgrFree || [];
+  let best = null, bs = -1e9;
+  for (const x of P) { if (x.n === exclude || x.lastNt === nat || (x.out != null && d - x.out < 10)) continue; const r = x.rep || 0; if (r > want + 18 || r < want - 16) continue;
+    const sc = -Math.abs(r - want) + (x.q || 0) * 8 + (x.nat === nat ? 9 : 0) + N(0, 4); if (sc > bs) { bs = sc; best = x; } }
+  let M = null, via = null;
+  if (best) { P.splice(P.indexOf(best), 1); M = carry(best, {}); }
+  else if (R() < .55) { // 자국 리그 구단 감독을 데려온다
+    let pb = null, ps = -1e9;
+    for (const k in w.mgr) { const X = w.mgr[k], c = w.clubs[k]; if (!c || c.parent || X.nat !== nat || X.n === exclude) continue; const r = X.rep || 0; if (r < want - 8 || r > want + 20 || d - (X.d0 || 0) < 200) continue; const sc = r + (X.q || 0) * 10 + N(0, 3); if (sc > ps) { ps = sc; pb = k; } }
+    if (pb) { const X = w.mgr[pb]; (w.mgrH[pb] = w.mgrH[pb] || []).push(Object.assign({}, X, { d1: d, why: `${C.natName(nat)} 대표팀 부임`, club: pb })); delete w.mgr[pb]; M = carry(X, {}); via = pb; const rep2 = hire(w, pb, d, 1, X.n); mnews(w, { d, k: 'rep', club: pb, n: rep2 && rep2.n, old: X.n, to: NTK(nat) }); }
+  }
+  if (!M) { const mn = R() < .8 ? nat : pick(MGRNAT), r = seeded('ntm|' + nat + '|' + d); M = { n: genName(mn), nat: mn, b: (w.year || 2026) - 40 - Math.floor(r() * 22), rep: clamp(Math.round(want - 8 + (r() - .5) * 12), 5, 80) }; }
+  Object.assign(M, { d0: d, g: 0, w: 0, dr: 0, l: 0, nt: nat, fm: '' }); if (via) M.via = via;
+  return (w.ntm[nat] = C.mgrFill(w, M));
+}
+C.ntMgrOf = (w, nat, d) => { if (!w.ntm) C.ntmSeed(w); let M = w.ntm[nat]; if (!M) M = ntHire(w, nat, d != null ? d : (w.cal ? w.cal.d : 0), null); return M; };
+// 대표팀 감독 교체 (경질·사임·클럽행). 떠난 감독은 시장으로
+C.ntChange = (w, nat, d, why) => {
+  const M = w.ntm && w.ntm[nat]; if (!M) return null;
+  const H = (w.ntmH[nat] = w.ntmH[nat] || []); H.push(Object.assign({}, M, { d1: d, why: why || '', club: NTK(nat) })); if (H.length > 25) H.shift();
+  delete w.ntm[nat];
+  if (!/부임$/.test(why || '')) toPool(w, Object.assign(M, { lastNt: nat }), null, d, why === '경질' ? -2 : 0);
+  return ntHire(w, nat, d, M.n);
+};
+C.ntRes = (w, nat, gf, ga, d) => { const M = C.ntMgrOf(w, nat, d); if (!M) return; const res = gf > ga ? 'W' : gf < ga ? 'L' : 'D'; M.g++; if (res === 'W') M.w++; else if (res === 'D') M.dr++; else M.l++; M.fm = ((M.fm || '') + res).slice(-8); };
+// 국제 대회가 끝나면: 랭킹으로 본 기대 성적보다 크게 못하면 경질, 월드컵·대륙 대회 뒤에는 계약 만료·사임도. 좋은 성적이면 명성이 오른다
+C.ntJudge = (S, T) => {
+  const w = S.w, d = w.cal ? w.cal.d : 0, out = []; if (!T || !T.g) return out;
+  const teams = [].concat(...T.g.map(g => g.t || [])); if (!teams.length) return out;
+  const big = T.k === 'WC' || /EURO|COPA|AFC|AFCON|GOLD/.test(T.k);
+  // 도달 단계: 조별리그 탈락 -1, 토너먼트 i라운드 탈락 i, 우승 = 라운드 수
+  const reach = nat => { if (T.w === nat) return T.ko.length; for (let i = T.ko.length - 1; i >= 0; i--) if (T.ko[i].m.some(m => m[0] === nat || m[1] === nat)) return i; return -1; };
+  const ranked = teams.slice().sort((a, b) => ((C.rankOf(w, a) || { rank: 300 }).rank) - ((C.rankOf(w, b) || { rank: 300 }).rank));
+  const nko = T.ko.length;
+  for (const nat of teams) {
+    const M = C.ntMgrOf(w, nat, d); if (!M) continue;
+    const ex = ranked.indexOf(nat), n = ranked.length, expR = ex < n / 16 ? nko - 1 : ex < n / 8 ? nko - 2 : ex < n / 4 ? nko - 3 : ex < n / 2 ? 0 : -1; // 기대: 상위 1/16 결승권 … 하위 절반 조별리그
+    const got = reach(nat), gap = expR - got, ten = (d - (M.d0 || d)) / 365;
+    M.rep = clamp(Math.round(((M.rep || 30) + clamp(-gap, -3, 3) * (big ? 2.2 : 1) + (T.w === nat ? (T.k === 'WC' ? 10 : 5) : 0)) * 10) / 10, 1, 99);
+    if (T.w === nat) M.tro = (M.tro || 0) + 1;
+    let p = 0; if (gap >= 2) p = big ? .75 : .35; else if (gap >= 1) p = big ? .3 : .1;
+    if (big && ten >= 3.5) p += .25; if (T.w === nat) p = big && ten >= 5 ? .15 : 0; if (ten < .7) p *= .3;
+    if (R() < p) { const old = M.n, why = gap >= 1 ? '경질' : '계약 만료'; const NM = C.ntChange(w, nat, d, why); out.push({ nat, old, NM, why, got, T }); }
+  }
+  return out;
+};
+// 감독 한 명의 경력 (이름 기준): 지난 재임 + 현재 + 시장 (대표팀은 club = 'NT:나라')
 C.mgrCareer = (w, name) => {
   const st = []; for (const id in (w.mgrH || {})) for (const m of w.mgrH[id]) if (m.n === name) st.push(Object.assign({ club: id }, m));
+  for (const nat in (w.ntmH || {})) for (const m of w.ntmH[nat]) if (m.n === name) st.push(Object.assign({}, m, { club: NTK(nat) }));
+  for (const nat in (w.ntm || {})) if (w.ntm[nat].n === name) { const c0 = Object.assign({}, w.ntm[nat], { club: NTK(nat) }); st.push(c0); }
   let cur = null; for (const id in (w.mgr || {})) if (w.mgr[id].n === name) { cur = Object.assign({ club: id }, w.mgr[id]); st.push(cur); }
+  if (!cur) cur = st.find(m => C.isNTKey(m.club) && w.ntm && w.ntm[m.club.slice(3)] && w.ntm[m.club.slice(3)].n === name && m.d1 == null) || null;
   const free = (w.mgrFree || []).find(x => x.n === name) || null;
   st.sort((a, b) => (a.d0 || 0) - (b.d0 || 0));
   const base = cur || free || st[st.length - 1] || null; if (base) C.mgrFill(w, base, cur ? w.clubs[cur.club] : null);
   return { st, cur, free, base };
 };
 // 감독 이름 목록 (검색용)
-C.mgrAll = w => { const m = new Map(); for (const id in (w.mgrH || {})) for (const x of w.mgrH[id]) m.set(x.n, { n: x.n, nat: x.nat }); for (const x of w.mgrFree || []) m.set(x.n, { n: x.n, nat: x.nat }); for (const id in (w.mgr || {})) m.set(w.mgr[id].n, { n: w.mgr[id].n, nat: w.mgr[id].nat, club: id }); return [...m.values()]; };
+C.mgrAll = w => { const m = new Map(); for (const id in (w.mgrH || {})) for (const x of w.mgrH[id]) m.set(x.n, { n: x.n, nat: x.nat }); for (const x of w.mgrFree || []) m.set(x.n, { n: x.n, nat: x.nat }); for (const k in (w.ntm || {})) m.set(w.ntm[k].n, { n: w.ntm[k].n, nat: w.ntm[k].nat, club: NTK(k) }); for (const id in (w.mgr || {})) m.set(w.mgr[id].n, { n: w.mgr[id].n, nat: w.mgr[id].nat, club: id }); return [...m.values()]; };
 
 // ---------- 더비·관중 ----------
 const DERBY = [['ENG_MUN', 'ENG_MCI', '맨체스터 더비'], ['ENG_LIV', 'ENG_EVE', '머지사이드 더비'], ['ENG_ARS', 'ENG_TOT', '북런던 더비'], ['ENG_LIV', 'ENG_MUN', '노스웨스트 더비'], ['ENG_NEW', 'ENG_SUN', '타인위어 더비'],
@@ -1039,7 +1166,25 @@ const DERBY = [['ENG_MUN', 'ENG_MCI', '맨체스터 더비'], ['ENG_LIV', 'ENG_E
   ['FRA_PSG', 'FRA_OM', '르 클라시크'], ['FRA_ASM', 'FRA_NIC', '코트다쥐르 더비'], ['POR_SLB', 'POR_SCP', '리스본 더비'], ['POR_FCP', 'POR_SLB', '오 클라시쿠'],
   ['NED_AJA', 'NED_FEY', '더 클라시커'], ['SCO_CEL', 'SCO_RAN', '올드 펌 더비'], ['TUR_GS', 'TUR_FB', '인터콘티넨탈 더비'], ['ARG_BOC', 'ARG_RIV', '수페르클라시코']];
 const DMAP = new Map(); for (const [a, b, n] of DERBY) { DMAP.set(a + '|' + b, n); DMAP.set(b + '|' + a, n); }
+// 라이벌 관계 (data_rivals.js): 강도 1~3. 강도 2 이상은 더비로도 친다
+const RIV = new Map();
+for (const [a, b, n, k] of ((G.FC27 || {}).RIVALS || [])) { RIV.set(a + '|' + b, k); RIV.set(b + '|' + a, k); if (k >= 2 && !DMAP.has(a + '|' + b)) { DMAP.set(a + '|' + b, n || '라이벌전'); DMAP.set(b + '|' + a, n || '라이벌전'); } else if (n && k >= 2) { DMAP.set(a + '|' + b, n); DMAP.set(b + '|' + a, n); } }
 C.derbyOf = (a, b) => DMAP.get(a + '|' + b) || null;
+C.rivalOf = (a, b) => RIV.get(a + '|' + b) || 0;
+C.rivalsOf = id => { const out = []; for (const [k, v] of RIV) { const [a, b] = k.split('|'); if (a === id) out.push([b, v]); } return out.sort((x, y) => y[1] - x[1]); };
+// 라이벌 구단으로 직접 보내지 않기 (v39): 핵심(팀 내 OVR 상위 4명·전력 이상)·유망주(21세 이하 고잠재)·주전은 강도에 따라 거의 막고,
+// 못 뛰는 선수는 크게 신경 쓰지 않는다. 2군은 1군 기준. 같은 선수·같은 구단·같은 해에는 같은 결과 (시드)
+C.rivalBlock = (w, e, from, to, kind) => {
+  if (!from || !to || from === to) return false;
+  const a = from.parent || from.id, b = to.parent || to.id, k = RIV.get(a + '|' + b); if (!k) return false;
+  const base = (w.clubs[a] || from), st = base.str || from.str || 60, sq = base.sq || from.sq || [];
+  const above = sq.filter(x => x !== e && x[2] > e[2]).length;
+  const core = above < 4 || e[2] >= st + 1, prospect = e[3] <= 21 && ((e[4] || 0) >= 84 || e[2] >= st - 4), starter = e[2] >= st - 2;
+  let p = core ? [0, .6, .9, .98][k] : prospect ? [0, .5, .85, .96][k] : starter ? [0, .35, .7, .92][k] : [0, .05, .15, .3][k];
+  if (kind === 'free') p *= [0, .6, .75, .9][k]; // 계약 만료 선수는 선수가 고른다 (그래도 꺼린다)
+  if (kind === 'loan') p = Math.max(p, k >= 2 ? .75 : .35);
+  return seeded('riv|' + e[0] + '|' + b + '|' + (w.year || 0))() < p;
+};
 // 관중 (추정): 홈 구단 규모(수입·전력)로 경기장 크기를 어림하고, 상대·대회 비중에 따라 채운다
 C.attend = (w, home, away, key, big) => {
   const c = w.clubs[home]; if (!c) return 0;

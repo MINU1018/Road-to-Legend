@@ -376,6 +376,7 @@ GM.newWorld = function (startLg, dsk) {
     car: { club: null, status: 'none', trust: 50 }, hist: [], flags: {}, phase: 'world', vh: [], trophies: [], awards: [], evLog: [], ws: [], created: Date.now() };
   C.calInit(S);
   if (C.mgrSeed) C.mgrSeed(w);
+  if (C.ntmSeed) C.ntmSeed(w); // 대표팀 감독 (v39)
   if (C.rankInit) C.rankInit(w, true);
   if (C.crInit) C.crInit(w, true);
   if (C.legSeed && ds !== 'tm') C.legSeed(w);

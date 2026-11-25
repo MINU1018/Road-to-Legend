@@ -6,12 +6,11 @@ const { R, N, rint, clamp, pick, wpick, shuffle } = C;
 const WD = G.FMWORLD;
 
 // ---------- 이름 (명단이 없는 구단용, 시드 고정) ----------
+// 대표팀 가상 선수(NT_)는 항상 그 나라 사람, 구단은 82%가 자국 선수. 이름은 그 나라 이름 풀 (data_names.js)
 function liteName(c, i, y) {
   const r = C.seeded(c.id + '|nm|' + i + '|' + Math.floor((y + i) / 4));
-  const nat = r() < .82 ? c.nat : pick(['BRA', 'ARG', 'FRA', 'ESP', 'NGA', 'SEN', 'COL', 'POR', 'SRB', 'JPN']);
-  const lang = (C.NAT[nat] && WD.NAMES[C.NAT[nat][1]]) ? C.NAT[nat][1] : 'en';
-  const [fs, ls] = WD.NAMES[lang];
-  return fs[Math.floor(r() * fs.length)] + ' ' + ls[Math.floor(r() * ls.length)];
+  const nt = String(c.id).startsWith('NT_'), nat = nt || r() < .82 ? c.nat : pick(['BRA', 'ARG', 'FRA', 'ESP', 'NGA', 'SEN', 'COL', 'POR', 'SRB', 'JPN']);
+  return C.nameR ? C.nameR(nat, r) : (() => { const lang = (C.NAT[nat] && WD.NAMES[C.NAT[nat][1]]) ? C.NAT[nat][1] : 'en'; const [fs, ls] = WD.NAMES[lang]; return fs[Math.floor(r() * fs.length)] + ' ' + ls[Math.floor(r() * ls.length)]; })();
 }
 const LITEPOS = ['ST', 'ST', 'LW', 'RW', 'CAM', 'CM', 'CM', 'CDM', 'LB', 'RB', 'CB', 'CB', 'GK', 'ST', 'CM', 'RW'];
 function squadOf(w, c, y) {

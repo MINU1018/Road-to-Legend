@@ -577,6 +577,10 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .fxlist { display: grid; gap: 4px; }
 .fx { display: grid; grid-template-columns: 36px minmax(0, 1fr) 64px minmax(0, 1fr) 36px; gap: 10px; align-items: center; width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
 .fx:hover { border-color: var(--mute); }
+.mfgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.mfrow .fx { grid-template-columns: 150px minmax(0, 1fr) 64px minmax(0, 1fr) 36px; }
+.mfrow .fx .fr { font-size: 11.5px; line-height: 1.35; text-align: left; }
+@media (max-width: 640px) { .mfrow .fx { grid-template-columns: minmax(0, 1fr) 54px minmax(0, 1fr) 30px; } .mfrow .fx .fr { grid-column: 1 / -1; } }
 .fx.me { box-shadow: inset 3px 0 0 var(--gold); }
 .fx .fh { justify-self: end; min-width: 0; overflow: hidden; display: flex; justify-content: flex-end; }
 .fx .fh .cc, .fx .fa .cc { min-width: 0; }
@@ -1199,6 +1203,7 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="data_rank.js"></script>
 <script src="data_crank.js"></script>
 <script src="data_legends.js"></script>
+<script src="data_rivals.js"></script>
 <script src="data_world.js"></script>
 <script src="data_names.js"></script>
 <script src="data_ext.js"></script>
@@ -1236,6 +1241,7 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="ui_match.js"></script>
 <script src="ui_draw.js"></script>
 <script src="ui_db.js"></script>
+<script src="ui_mfind.js"></script>
 <script src="ui_pprof.js"></script>
 <script src="ui_explore.js"></script>
 <script src="ui_cal.js"></script>

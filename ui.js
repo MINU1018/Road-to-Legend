@@ -518,10 +518,10 @@ const ico = (k, sz = 18) => svg(`<svg width="${sz}" height="${sz}" viewBox="0 0 
 function navGroups() {
   if (S && S.mode === 'world') return [
     ['관전', [['wsim', '홈', 'home'], ['sched', '일정', 'cal'], ['news', '뉴스', 'news']]],
-    ['세계 축구', [['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
+    ['세계 축구', [['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['mfind', '경기 탐색', 'play'], ['db', '선수·팀', 'search']]]];
   return [
-    ['내 커리어', [['career', '홈', 'home'], ['profile', '선수 프로필', 'user'], ['attrs', '능력치', 'bars'], ['records', '시즌 기록', 'list'], ['mx', '경기 탐색', 'play'], ['value', '이적·가치', 'coin'], ['trophies', '트로피', 'cup'], ['ach', '도전과제', 'star'], ['inj', '부상', 'plus']]],
-    ['세계 축구', [['news', '뉴스', 'news'], ['sched', '일정', 'cal'], ['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['db', '선수·팀', 'search']]]];
+    ['내 커리어', [['career', '홈', 'home'], ['profile', '선수 프로필', 'user'], ['attrs', '능력치', 'bars'], ['records', '시즌 기록', 'list'], ['mx', '내 경기', 'play'], ['value', '이적·가치', 'coin'], ['trophies', '트로피', 'cup'], ['ach', '도전과제', 'star'], ['inj', '부상', 'plus']]],
+    ['세계 축구', [['news', '뉴스', 'news'], ['sched', '일정', 'cal'], ['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['mfind', '경기 탐색', 'play'], ['db', '선수·팀', 'search']]]];
 }
 U.navGroups = navGroups;
 const TABNAME = () => { const m = {}; for (const [, l] of navGroups()) for (const [k, n] of l) m[k] = n; return m; };
@@ -731,7 +731,7 @@ function viewGame() {
   const w = h('div', { class: 'screen' }); w.append(topbar(true));
   if (S && S.viewOnly) w.append(h('div', { class: 'wrap' }, h('div', { class: 'archbar' }, h('span', null, h('b', null, `${S.p.name}`), ` · 보관된 은퇴 선수 기록을 보는 중입니다 (읽기 전용)`), h('span', { style: { display: 'flex', gap: '6px' } }, h('button', { class: 'btn ghost sm', onclick: () => U.exportSave(S) }, '내보내기'), h('button', { class: 'btn sm', onclick: () => U.closeArchive() }, '나가기')))));
   setAtmo(S && S.car && S.car.club ? club(S.car.club) : null);
-  if (S && S.mode === 'world' && !['wsim', 'sched', 'news', 'table', 'rank', 'txm', 'hist', 'db'].includes(tab)) tab = 'wsim';
+  if (S && S.mode === 'world' && !['wsim', 'sched', 'news', 'table', 'rank', 'txm', 'hist', 'mfind', 'db'].includes(tab)) tab = 'wsim';
   if (S && S.mode !== 'world' && tab === 'wsim') tab = 'career';
   const page = tab === 'career' ? viewHub() : U.pages[tab] ? U.pages[tab]() : h('div', { class: 'empty' }, '준비 중');
   w.append(h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, page)));

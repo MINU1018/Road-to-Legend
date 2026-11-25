@@ -170,7 +170,9 @@ async function lgRound(S, LS, d, hooks) {
   }
   LS.ri++;
   w.cal.dirty = 1;
-  if (C.wn) C.wn.round(S, LS, d, h);
+  // 감독 경질 (모든 리그): 기대치·인내심에 따라
+  const sacks = C.mgrJudge ? C.mgrJudge(S, LS, d) : [];
+  if (C.wn) { for (const x of sacks) C.wn.sack(S, LS, d, x); C.wn.round(S, LS, d, h); }
   if (LS.ri >= LS.dates.length) lgFinalize(S, LS);
 }
 // 득점·도움·평점 순위 (진행 중에도 쓴다)
@@ -734,6 +736,7 @@ async function intlDay(S, T, d, hooks) {
     h.rows.push([stage, a, b, ga, gb, r.ev, r.ln, pw || null, d]);
     addAgg(h.agg, a, r.P[0]); addAgg(h.agg, b, r.P[1]);
     if (C.rankMatch) C.rankMatch(w, a, b, ga, gb, C.rankImp(T.k, stage), pw, ko);
+    if (C.ntRes) { C.ntRes(w, a, ga, gb, d); C.ntRes(w, b, gb, ga, d); }
     if (C.wn) C.wn.match(S, { k: 'I', comp: T.k, name: `${T.n} ${T.y}`, stage, a, b, ga, gb, pw, P: r.P, d, nat: 1, sa: T.str[a], sb: T.str[b], fin: stage === '결승', ref: { mk: 'I', sk: T.k, ri: h.rows.length - 1, d, a, b } });
     return { m: [a, b, ga, gb, pw], win };
   };
@@ -777,6 +780,8 @@ function intlFinalize(S, T) {
   (w.hist.nt[T.k] = w.hist.nt[T.k] || []).push({ y: T.y, c: T.w });
   writeC(w, 'nt:' + T.k, h.agg || {});
   if (C.wn) C.wn.intlEnd(S, T, h);
+  // 대표팀 감독 평가 (기대 성적 대비)
+  if (C.ntJudge) { const L = C.ntJudge(S, T); if (C.wn && C.wn.ntSack) for (const x of L) C.wn.ntSack(S, x); }
   if (C.news && S.mode !== 'world' && (T.k === 'WC' || C.TDEF[T.k].conf === C.confOf(p.nat))) C.news(S, `${T.y} ${T.n}: ${C.natName(T.w)} 우승 (결승 상대 ${C.natName(T.ru)})`, 'intl', T.k === 'WC');
   // 내 대회 결과
   if (S.mode !== 'world' && ss && ss.on && (T.k === 'WC' || C.TDEF[T.k].conf === C.confOf(p.nat) || C.TDEF[T.k].guest === C.confOf(p.nat))) {
@@ -926,6 +931,7 @@ async function amDay(S, d, hooks) {
     h.rows.push([f.stage, f.a, f.b, ga, gb, r.ev, r.ln, pw || null, d]);
     addAgg(h.agg, f.a, r.P[0]); addAgg(h.agg, f.b, r.P[1]);
     if (C.rankMatch) C.rankMatch(w, f.a, f.b, ga, gb, C.rankImp(f.c, f.stage), pw, false);
+    if (C.ntRes) { C.ntRes(w, f.a, ga, gb, d); C.ntRes(w, f.b, gb, ga, d); }
     f.r = [ga, gb];
     if (f.c === 'UNL' && U_) {
       if (f.g != null && U_.g[f.g]) { const g = U_.g[f.g]; addRes(g.tb, f.a, f.b, ga, gb); g.m.push([f.a, f.b, ga, gb]); }

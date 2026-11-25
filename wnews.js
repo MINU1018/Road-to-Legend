@@ -128,28 +128,30 @@ function bigH(w, x, sc, ws, b) {
 }
 function best(list) { let b = null; for (const p of list || []) if (real(p.id) && p.min !== 0 && (!b || p.rt > b.rt)) b = p; return b; }
 
+// ---------- 대표팀 감독 교체 뉴스 ----------
+function ntSack(S, x) {
+  const w = S.w, rk = C.rankOf ? C.rankOf(w, x.nat) : null; if (!rk || rk.rank > 70) return;
+  const NM = x.NM, via = NM && NM.via && w.clubs[NM.via] ? `${w.clubs[NM.via].name}를 이끌던 ` : '';
+  push(S, { gl: rk.rank <= 20 ? 1 : 0, c: 'sack', imp: rk.rank <= 15 ? 3 : 2, h: `${C.natName(x.nat)} 대표팀, ${x.old} 감독 ${x.why === '경질' ? '경질' : '결별'}… 후임 ${NM ? NM.n : '미정'}`, s: `${x.T.y} ${x.T.n} 뒤 결정. ${via}${NM ? `${C.natName(NM.nat)} 출신 ${NM.n} 감독(${C.mgrTier(NM.rep)} 명성)이 지휘봉을 잡는다.` : ''}`, nat: x.nat });
+}
+// ---------- 감독 경질 뉴스 (결정은 C.mgrJudge) ----------
+function sack(S, LS, d, x) {
+  const w = S.w, lg = w.lg[LS.id], c = w.clubs[x.id]; if (!lg || !c) return;
+  const note = lgNote(w, LS.id) || (c.str || 0) >= 74 || (lg.tier || 1) <= 1 && NEWSLG.has(lg.nation);
+  if (!note && !(S.car && S.car.club === x.id)) return;
+  const m = meta(w), r = x.row, NM = x.NM, newM = NM ? NM.n : '', ri = LS.ri;
+  const via = NM && NM.via && w.clubs[NM.via] ? `${w.clubs[NM.via].name}을 이끌던 ` : NM && NM.vnt ? `${C.natName(NM.vnt)} 대표팀을 이끌던 ` : '', tierN = NM && NM.rep != null && C.mgrTier ? `${C.mgrTier(NM.rep)} 명성의 ` : '';
+  const why = x.pos >= LS.tb.length - Math.max(2, Math.round(LS.tb.length / 7)) ? '강등권 추락' : x.ex <= 2 ? '우승 경쟁 이탈' : '부진';
+  push(S, { d, c: 'sack', imp: (c.str || 0) >= 80 && BIG5.includes(lg.nation) ? 3 : 2, h: `${cn(w, x.id)}, ${x.old ? x.old + ' ' : ''}감독 경질… ${lg.name} ${x.pos + 1}위 ${why}`, s: `${ri}라운드까지 ${r.w}승 ${r.d}무 ${r.l}패 (승점 ${r.pts}). 구단은 "새로운 동력이 필요하다"고 밝혔다.`, cl: [x.id], lg: LS.id });
+  m.q.push({ d: d + rint(2, 6), n: { c: 'sack', imp: 1, h: `${cn(w, x.id)}, ${newM ? newM + ' ' : '새 '}감독 선임 발표`, s: `${via}${tierN}${newM || '새'} 감독이 시즌 도중 지휘봉을 잡는다. "목표는 반등"이라고 말했다.`, cl: [x.id].concat(NM && NM.via ? [NM.via] : []), lg: LS.id } });
+}
 // ---------- 라운드가 끝날 때 (리그 순위) ----------
 function round(S, LS, d, h) {
   const w = S.w; if (!lgNote(w, LS.id)) return;
   const lg = w.lg[LS.id], m = meta(w), ri = LS.ri, n = LS.dates.length;
   const rows = C.sortTable(LS.tb);
   if (!rows.length) return;
-  // 감독 경질: 강팀이 기대보다 크게 처진 경우
-  if (ri >= 8 && ri <= n - 4) {
-    const byStr = lg.clubs.slice().sort((a, b) => ((w.clubs[b] || {}).str || 0) - ((w.clubs[a] || {}).str || 0));
-    for (let ex = 0; ex < Math.min(6, byStr.length); ex++) {
-      const id = byStr[ex], pos = rows.findIndex(r => r.id === id); if (pos < 0) continue;
-      const MM = C.mgrOf ? C.mgrOf(w, id, d) : null, ten = MM ? (d - (MM.d0 || d)) / 365 : 0;
-      const keep = MM && MM.r ? (ten >= 4 || (MM.q || 0) >= .45 ? .12 : .4) : 1; // 실제 명장·장기 집권 감독은 쉽게 자르지 않는다
-      if (pos - ex < 6 || pos < 7 || m.sack[id] === LS.label || R() > .16 * keep) continue;
-      m.sack[id] = LS.label;
-      const r = rows[pos];
-      const oldM = C.mgrOf ? (C.mgrOf(w, id, d) || {}).n : '', NM = C.mgrChange ? C.mgrChange(w, id, d, '경질') : null, newM = NM ? NM.n : '';
-      const via = NM && NM.via && w.clubs[NM.via] ? `${w.clubs[NM.via].name}을 이끌던 ` : '', tierN = NM && NM.rep != null && C.mgrTier ? `${C.mgrTier(NM.rep)} 명성의 ` : '';
-      push(S, { d, c: 'sack', imp: ex < 3 && BIG5.includes(lg.nation) ? 3 : 2, h: `${cn(w, id)}, ${oldM ? oldM + ' ' : ''}감독 경질… ${lg.name} ${pos + 1}위 부진`, s: `${ri}라운드까지 ${r.w}승 ${r.d}무 ${r.l}패 (승점 ${r.pts}). 구단은 "새로운 동력이 필요하다"고 밝혔다.`, cl: [id], lg: LS.id });
-      m.q.push({ d: d + rint(2, 6), n: { c: 'sack', imp: 1, h: `${cn(w, id)}, ${newM ? newM + ' ' : '새 '}감독 선임 발표`, s: `${via}${tierN}${newM || '새'} 감독이 시즌 도중 지휘봉을 잡는다. "목표는 반등"이라고 말했다.`, cl: [id].concat(NM && NM.via ? [NM.via] : []), lg: LS.id } });
-    }
-  }
+  // 감독 경질은 C.mgrJudge(world.js)가 정하고 뉴스는 sack()
   // 무패 행진
   if ([10, 15, 20, 25, 30].includes(ri)) for (const r of rows.slice(0, 4)) if (r.l === 0 && r.p >= ri - 1) {
     const k = r.id + ':' + LS.label + ':' + ri; if (m.unb[k]) continue; m.unb[k] = 1;
@@ -357,7 +359,12 @@ function day(S, d) {
   if (w.mgrNews && w.mgrNews.length) { for (const x of w.mgrNews.splice(0)) {
     if (x.k === 'exp') { const c = w.clubs[x.club]; if (!c) continue; const P = (w.ps || {})[x.pid], lg = C.legOf ? C.legOf(w, x.pid).find(z => z[0] === x.club || z[0] === c.parent) : null; if ((c.str || 0) < 66 && !lg) continue;
       push(S, { d, c: 'sack', imp: lg ? 2 : 1, h: lg ? `${c.name} 레전드 ${x.n}, 감독으로 친정 복귀` : `${c.name}, 선수 출신 ${x.n} 감독 선임`, s: P ? `현역 시절 ${String(P.h || '').split(';').filter(Boolean).length}시즌을 뛰고 은퇴한 뒤 지도자로 첫발을 뗀다.` : '', cl: [x.club], lg: c.lg, p: x.pid ? [x.pid] : [] }); continue; }
-    if (x.k !== 'rep') continue; const c = w.clubs[x.club], to = w.clubs[x.to]; if (!c || !to || (c.str || 0) < 62 || !x.n) continue;
+    if (x.k !== 'rep') continue;
+    // 대표팀이 끼면 'NT:나라' (구단 ↔ 대표팀 이동)
+    const ntA = C.isNTKey && C.isNTKey(x.club), ntB = C.isNTKey && C.isNTKey(x.to), nmK = k => C.isNTKey && C.isNTKey(k) ? `${C.natName(k.slice(3))} 대표팀` : (w.clubs[k] || {}).name;
+    if (ntA || ntB) { const nat = (ntA ? x.club : x.to).slice(3), rk = C.rankOf ? C.rankOf(w, nat) : null, oc = w.clubs[ntA ? x.to : x.club]; if (!x.n || ((!rk || rk.rank > 50) && (!oc || (oc.str || 0) < 70))) continue;
+      push(S, { d, c: 'sack', imp: 2, h: ntB ? `${C.natName(nat)} 대표팀, ${nmK(x.club)} ${x.old} 감독 선임` : `${nmK(x.to)}, ${C.natName(nat)} 대표팀 ${x.old} 감독 선임`, s: `${nmK(x.club)}의 새 감독은 ${x.n}.`, cl: [x.club, x.to].filter(k => w.clubs[k]), nat }); continue; }
+    const c = w.clubs[x.club], to = w.clubs[x.to]; if (!c || !to || (c.str || 0) < 62 || !x.n) continue;
     push(S, { d, c: 'sack', imp: 1, h: `${c.name}, 새 감독 ${x.n} 선임`, s: `${x.old} 감독이 ${to.name}로 떠난 자리를 채운다.`, cl: [x.club, x.to], lg: c.lg }); } }
   // 마감일 정리
   if (m.dl && m.dl.d === d) { const q = m.dl; m.dl = null; if (q.n >= 5) push(S, { d, c: 'transfer', imp: 2, h: `이적시장 마감일, 하루에만 ${q.n.toLocaleString()}건 거래`, s: (q.fee ? `오늘 이적료 합계 ${C.fmtEUR(q.fee * 1e4)}. ` : '') + (q.top.length ? '주요 거래: ' + q.top.map(r => `${pn(r[0])} → ${cn(w, r[2]) || '-'}`).join(', ') : ''), p: q.top.map(r => r[0]), cl: [] }); }
@@ -411,5 +418,5 @@ function faSign(S, e, c, idle, d) {
   const L = w.lg[c.lg] || {};
   push(S, { d, c: 'transfer', imp: e[2] >= 78 ? 3 : 2, h: pv('fas', [() => `[오피셜] 무소속 ${pn(pid)}, ${c.name} 입단`, () => `${c.name}, 자유계약 ${pn(pid)} 영입`, () => `${Math.max(1, Math.round(idle / 7))}주 만에 새 팀 찾은 ${pn(pid)}… 행선지는 ${c.name}`])(), s: `${L.name || ''} · 이적료 없음 · ${e[6]}년 계약 · OVR ${e[2]} · ${e[3]}세`, p: [pid], cl: [c.id], lg: c.lg });
 }
-C.wn = { faSign, match, round, lgEnd, cupEnd, contEnd, intlEnd, yearEnd, windowOpen, day, ceremony, push, REC0, meta, injury, injBack, summerStories };
+C.wn = { faSign, match, round, sack, ntSack, lgEnd, cupEnd, contEnd, intlEnd, yearEnd, windowOpen, day, ceremony, push, REC0, meta, injury, injBack, summerStories };
 })(typeof window !== 'undefined' ? window : globalThis);

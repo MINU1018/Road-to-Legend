@@ -80,6 +80,9 @@ T.name = pid => { const x = T.legP(String(pid)); return x ? x[0] : null; };
 T.teamName = (w, k) => { if (!k) return ''; const c = w && w.clubs[k]; if (c) return c.name; const N = G.TMH && G.TMH.N && G.TMH.N[k]; if (Array.isArray(N)) return N[0]; return N || ''; };
 T.teamParent = k => { const N = G.TMH && G.TMH.N && G.TMH.N[k]; return Array.isArray(N) ? N[1] : null; };
 T.isYouth = k => !!k && k[0] === 'y';
+// 연령별 유스 팀 (U19·Primavera 등): 시즌표에 보이지만 통산에는 넣지 않는다. 그 밖의 'y' 팀(B팀·II 등)은 2군
+const YRX = /\bU ?-?(1[4-9]|2[0-3])\b|Youth|Primavera|Juvenil|Juniors?\b|Academy|Jugend|Sub-?\d{2}|Reserves?\b|Under ?\d{2}/i;
+T.isYouthTeam = k => T.isYouth(k) && YRX.test(T.teamName(null, k));
 // ---------- 선수 기록 ----------
 // undefined = 아직 조각을 못 불러옴, null = 기록 없음
 T.rec = function (pid) {
@@ -132,10 +135,11 @@ T.preSeasons = function (w, pid, lblOf) {
   const R = T.rec(pid); if (!R) return R;
   const by = new Map(), get = (y, k, club) => { const key = y; let sn = by.get(key); if (!sn) by.set(key, sn = { y: y - 2000, label: lblOf(club, y - 2000, k), wl: C.wLabel(y), items: [], pre: 1 }); return sn; };
   for (const r of R.car) { if (r.y >= 2025) continue; const sn = get(r.y, r.k, r.t);
-    sn.items.push({ key: 'T', cat: 'all', name: T.isYouth(r.t) ? '유스·2군' : '공식전 전체', club: r.t, apps: r.ap, g: r.g, a: r.a, rt: null, min: null, cs: 0, mom: 0, pre: 1, youth: T.isYouth(r.t) ? 1 : 0 }); }
+    const yt = T.isYouthTeam(r.t);
+    sn.items.push({ key: 'T', cat: 'all', name: yt ? '유스 (통산 제외)' : T.isYouth(r.t) ? '2군' : '공식전 전체', club: r.t, apps: r.ap, g: r.g, a: r.a, rt: null, min: null, cs: 0, mom: 0, pre: 1, youth: yt ? 1 : 0 }); }
   // 2025/26: 시즌 초(9월)와 겨울 뒤(3월) 소속
   const c1 = T.clubAt(R, D(2025, 9, 1)), c2 = T.clubAt(R, D(2026, 3, 1));
-  for (const cl of [...new Set([c1, c2])]) if (cl) { const sn = get(2025, null, cl); sn.items.push({ key: 'T', cat: 'all', name: '공식전 전체', club: cl, apps: null, g: null, a: null, rt: null, min: null, cs: 0, mom: 0, pre: 1, nd: 1, youth: T.isYouth(cl) ? 1 : 0 }); }
+  for (const cl of [...new Set([c1, c2])]) if (cl) { const sn = get(2025, null, cl); sn.items.push({ key: 'T', cat: 'all', name: '공식전 전체', club: cl, apps: null, g: null, a: null, rt: null, min: null, cs: 0, mom: 0, pre: 1, nd: 1, youth: T.isYouthTeam(cl) ? 1 : 0 }); }
   return [...by.values()].sort((a, b) => a.y - b.y);
 };
 // 게임 이전 부상 [{d, n, t, cid}]

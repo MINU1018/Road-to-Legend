@@ -57,8 +57,9 @@ MD.callUps = (w, cid, d) => {
 MD.natSide = (w, nat, pools, y) => {
   const pl = pools && pools[nat];
   let sq = pl ? pl.all.slice().sort((a, b) => b[2] - a[2]).slice(0, 26).map(e => ({ id: String(e[0]), n: C.pName(w, e), pos: e[1], ovr: e[2] })) : [];
-  if (sq.length < 16) { // 명단 데이터가 적은 나라: 가상 선수로 채움 (시드 고정)
-    const fake = C.squadOf(w, { id: 'NT_' + nat, nat, str: 66, lite: true }, y).map(x => ({ id: '~NT_' + nat + '~' + x.n, n: x.n, pos: x.pos, ovr: x.ovr }));
+  if (sq.length < 16) { // 명단 데이터가 적은 나라: 그 나라 이름의 가상 선수로 채움 (시드 고정, 실력은 FIFA 랭킹 기준)
+    const rk = C.rankOf ? C.rankOf(w, nat) : null, st = rk ? clamp(Math.round(80 - Math.log(rk.rank) * 5.2), 50, 76) : 58;
+    const fake = C.squadOf(w, { id: 'NT_' + nat, nat, str: st, lite: true }, y).map(x => ({ id: '~NT_' + nat + '~' + x.n, n: x.n, pos: x.pos, ovr: Math.round(x.ovr), age: x.age, fake: 1 }));
     sq = sq.concat(fake.slice(0, 18 - sq.length));
   }
   return { key: nat, sq };
@@ -141,7 +142,7 @@ function recAfter(cx, kind, sides, P, ev, ga, gb, nmOf0) {
     if (lg) for (const [k, on] of [['lW', res === 'W'], ['lU', res !== 'L'], ['lL', res === 'L'], ['lN', res !== 'W']]) streak(R, k, on, d);
     if (home) { streak(R, 'hU', res !== 'L', d); if (C.attend) { const n = C.attend(w, id, opp, C.MD.attKey(id, opp, ga, gb, ev.filter(e => 'gpo'.includes(e[0])).map(e => e[1])), false); if (!R.att || n > R.att[0]) R.att = [n, opp, d]; } }
     // 감독 성적
-    const M = C.mgrOf ? C.mgrOf(w, id, d) : null; if (M) { M.g++; if (res === 'W') M.w++; else if (res === 'D') M.dr++; else M.l++; }
+    const M = C.mgrOf ? C.mgrOf(w, id, d) : null; if (M) { M.g++; if (res === 'W') M.w++; else if (res === 'D') M.dr++; else M.l++; M.fm = ((M.fm || '') + res).slice(-6); }
     // 선수 기록
     const goals = ev.filter(e => e[2] === s && (e[0] === 'g' || e[0] === 'p')), fst = goals.slice().sort((a, b) => a[1] - b[1])[0];
     if (fst && fst[3] !== 'ME' && (!R.fg || fst[1] < R.fg[0])) R.fg = [fst[1], fst[3], nmOf(fst[3]), d, opp];
