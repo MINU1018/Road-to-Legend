@@ -522,7 +522,7 @@ function navGroups() {
     ['관전', [['wsim', '홈', 'home'], ['sched', '일정', 'cal'], ['news', '뉴스', 'news']]],
     ['세계 축구', [['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['mfind', '경기 탐색', 'play'], ['db', '선수·팀', 'search']]]];
   return [
-    S && S.wc ? ['내 커리어', [['career', '홈', 'home'], ['rel', '관계', 'user'], ['profile', '선수 프로필', 'user'], ['attrs', '능력치', 'bars'], ['records', '시즌 기록', 'list'], ['mx', '내 경기', 'play'], ['value', '이적·가치', 'coin'], ['trophies', '트로피', 'cup'], ['inj', '부상', 'plus']]] :
+    S && S.wc ? ['내 커리어', [['career', '홈', 'home'], ['profile', '내 선수', 'user'], ['mx', '내 경기', 'play']]] :
     ['내 커리어', [['career', '홈', 'home'], ['profile', '선수 프로필', 'user'], ['attrs', '능력치', 'bars'], ['records', '시즌 기록', 'list'], ['mx', '내 경기', 'play'], ['value', '이적·가치', 'coin'], ['trophies', '트로피', 'cup'], ['ach', '도전과제', 'star'], ['inj', '부상', 'plus']]],
     ['세계 축구', [['news', '뉴스', 'news'], ['sched', '일정', 'cal'], ['table', '대회', 'cup'], ['rank', '파워랭킹', 'bars'], ['txm', '이적시장', 'swap'], ['hist', '시상·역사', 'award'], ['mfind', '경기 탐색', 'play'], ['db', '선수·팀', 'search']]]];
 }
@@ -1009,6 +1009,8 @@ function eventBlock() {
   const head = h('div', { style: { display: 'flex', gap: '14px', alignItems: 'center' } }, h('div', { class: 'ico' }, icon(b.icon, 28)), h('div', null, h('div', { class: 'lbl' }, b.cross ? h('span', { class: 'chip gold' }, `중요 분기점 · ${S.p.age}세`) : S.phase === 'preEvents' ? '프리시즌' : '시즌 중반'), h('h2', null, b.title)));
   el.append(head, h('p', { class: 'mute', style: { margin: 0 } }, b.desc));
   const opts = h('div', { class: 'opts' });
+  // 월드 커리어: 결과 미리보기·확률·색 없이 갈림길만 (선택하면 보이지 않는 확률로 갈린다)
+  if (S.wc) { el.classList.add('wcneu'); b.opts.forEach((o, i) => opts.append(h('button', { class: 'opt', onclick: () => pickEvent(i, opts) }, watermark(club(S.car.club), 96, 'wm-opt'), h('div', { class: 't' }, o.label), h('div', { class: 'd' }, o.desc)))); el.append(opts); return el; }
   b.opts.forEach((o, i) => {
     const outs = h('div', { class: 'outs' }, ...o.out.map((x, j) => h('div', { class: 'out ' + (x.good > 0 ? 'good' : x.good < 0 ? 'bad' : ''), 'data-j': j }, h('span', null, x.chip), C.cfg.showOdds && !S.wc ? h('span', { class: 'p' }, Math.round(x.p * 100) + '%') : null)));
     opts.append(h('button', { class: 'opt', onclick: () => pickEvent(i, opts) }, watermark(club(S.car.club), 96, 'wm-opt'), h('div', { class: 't' }, o.label), h('div', { class: 'd' }, o.desc), outs));
@@ -1021,6 +1023,14 @@ async function pickEvent(i, optsEl) {
   const b = S.pend[0];
   const o0 = C.ovrOf(S.p);
   const log = GM.resolve(S, i);
+  if (S.wc) {
+    [...optsEl.children].forEach((c, k) => { if (k !== i) c.style.opacity = '.35'; c.style.pointerEvents = 'none'; });
+    optsEl.children[i].classList.add('picked');
+    optsEl.parentNode.append(h('div', { class: 'result neu' }, h('b', null, log.chip), log.text ? h('span', { class: 'mute', style: { fontSize: '13px' } }, log.text) : null,
+      log.six && log.six.length ? h('div', { class: 'chg' }, ...log.six.map(([k, v]) => h('span', { class: 'chip' }, `${k} ${v > 0 ? '+' : ''}${v}`))) : null,
+      h('button', { class: 'btn sm', style: { justifySelf: 'start' }, onclick: () => { busy = false; render(); } }, '계속')));
+    busy = false; return;
+  }
   // 결과 룰렛 연출
   const btn = optsEl.children[i]; const chips = [...btn.querySelectorAll('.out')];
   [...optsEl.children].forEach((c, k) => { if (k !== i) c.style.opacity = '.35'; c.style.pointerEvents = 'none'; });
@@ -1186,7 +1196,9 @@ async function runTo(target) {
   const stage = h('div', { class: 'mstage' });
   const tick = h('div', { class: 'ticker' });
   const txTk = h('div', { class: 'txtick', style: { display: 'none' } });
-  live.append(dayTxt, prog, ...(pro ? [pro] : []), yth, txTk, stage, tick);
+  // 월드 커리어: 내가 뛴 경기는 따로 (출전 시간·평점이 바로 보이게), 팀 전체 결과는 그 아래
+  const mine = S.wc && U.wcMyRow ? h('div', { class: 'wcml live' }) : null, mineH = mine ? h('div', { class: 'lbl', style: { display: 'none' } }, '내가 뛴 경기') : null;
+  live.append(dayTxt, prog, ...(pro ? [pro] : []), yth, txTk, stage, ...(mine ? [mineH, mine, h('div', { class: 'lbl' }, '팀 경기 결과 (미출전 포함)')] : []), tick);
   const ss = S.ss, w = S.w, d0 = w.cal.d, span = Math.max(1, target - d0);
   const total = C.userFixtures(S).filter(f => !f.done && f.d <= target).length;
   let n = 0;
@@ -1211,6 +1223,7 @@ async function runTo(target) {
     match: async m => {
       if (S.newsQ && S.newsQ.length) { const big = S.newsQ.filter(x => x.big && x.k !== 'transfer'); S.newsQ = []; for (const x of big) { toast(x.t); if (x.k === 'mile' || x.k === 'hat') confetti(50); } }
       n++; tick.prepend(tickRow(m)); upd();
+      if (mine && m.played) { mineH.style.display = ''; mine.prepend(U.wcMyRow(m)); }
       // 월드 커리어: 관계 반영, 중계할 경기·대화 사건은 그날 진행이 끝난 뒤 (경기 기록이 저장된 다음) 보여 준다
       if (S.wc && U.wcAfterMatch) { U.wcAfterMatch(m); if (U.wcPending()) return; }
       const sp = normSpeed(st.speed);

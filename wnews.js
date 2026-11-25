@@ -140,9 +140,14 @@ function sack(S, LS, d, x) {
   const note = lgNote(w, LS.id) || (c.str || 0) >= 74 || (lg.tier || 1) <= 1 && NEWSLG.has(lg.nation);
   if (!note && !(S.car && S.car.club === x.id)) return;
   const m = meta(w), r = x.row, NM = x.NM, newM = NM ? NM.n : '', ri = LS.ri;
+  // 감독대행 평가 결과 (v40)
+  if (x.kind === 'ctUp') { push(S, { d, c: 'sack', imp: (c.str || 0) >= 78 ? 2 : 1, h: `${cn(w, x.id)}, 감독대행 ${newM} 정식 감독 선임`, s: `대행으로 ${x.rec}. 구단은 "선수단의 신뢰를 얻었다"며 정식 계약을 맺었다.`, cl: [x.id], lg: LS.id }); return; }
+  if (x.kind === 'ctEnd') { const via = NM && NM.via && w.clubs[NM.via] ? `${w.clubs[NM.via].name}을 이끌던 ` : NM && NM.vnt ? `${C.natName(NM.vnt)} 대표팀을 이끌던 ` : '';
+    push(S, { d, c: 'sack', imp: (c.str || 0) >= 78 ? 2 : 1, h: `${cn(w, x.id)}, ${newM} 감독 선임 · 대행 체제 마감`, s: `${x.old} 대행은 ${x.rec}${x.perf > .2 ? '로 선전했지만 구단은 이름값 있는 감독을 택했다' : '로 마쳤다'}. ${via}${NM && NM.rep != null && C.mgrTier ? C.mgrTier(NM.rep) + ' 명성의 ' : ''}${newM} 감독이 지휘봉을 잡는다.`, cl: [x.id].concat(NM && NM.via ? [NM.via] : []), lg: LS.id }); return; }
   const via = NM && NM.via && w.clubs[NM.via] ? `${w.clubs[NM.via].name}을 이끌던 ` : NM && NM.vnt ? `${C.natName(NM.vnt)} 대표팀을 이끌던 ` : '', tierN = NM && NM.rep != null && C.mgrTier ? `${C.mgrTier(NM.rep)} 명성의 ` : '';
   const why = x.pos >= LS.tb.length - Math.max(2, Math.round(LS.tb.length / 7)) ? '강등권 추락' : x.ex <= 2 ? '우승 경쟁 이탈' : '부진';
   push(S, { d, c: 'sack', imp: (c.str || 0) >= 80 && BIG5.includes(lg.nation) ? 3 : 2, h: `${cn(w, x.id)}, ${x.old ? x.old + ' ' : ''}감독 경질… ${lg.name} ${x.pos + 1}위 ${why}`, s: `${ri}라운드까지 ${r.w}승 ${r.d}무 ${r.l}패 (승점 ${r.pts}). 구단은 "새로운 동력이 필요하다"고 밝혔다.`, cl: [x.id], lg: LS.id });
+  if (NM && NM.ct) { m.q.push({ d: d + 1, n: { c: 'sack', imp: 1, h: `${cn(w, x.id)}, ${newM} 코치 감독대행 체제`, s: `당분간 ${newM} 코치가 팀을 이끈다. 구단은 몇 경기를 지켜본 뒤 정식 감독을 정할 계획이다.`, cl: [x.id], lg: LS.id } }); return; }
   m.q.push({ d: d + rint(2, 6), n: { c: 'sack', imp: 1, h: `${cn(w, x.id)}, ${newM ? newM + ' ' : '새 '}감독 선임 발표`, s: `${via}${tierN}${newM || '새'} 감독이 시즌 도중 지휘봉을 잡는다. "목표는 반등"이라고 말했다.`, cl: [x.id].concat(NM && NM.via ? [NM.via] : []), lg: LS.id } });
 }
 // ---------- 라운드가 끝날 때 (리그 순위) ----------

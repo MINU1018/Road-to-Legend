@@ -966,6 +966,8 @@ C.mgrJudge = (S, LS, d) => {
     let pr = (M.pr || 0) * .84 + Math.max(0, dfc - .18) * 2.3 + (ls >= 4 ? .6 : ls >= 3 ? .15 : 0);
     if (dfc < -.12) pr -= .45; if (fm.endsWith('WW')) pr -= .25;
     M.pr = Math.round(Math.max(0, pr) * 100) / 100;
+    // 감독대행: 정해진 경기 수를 채우거나 시즌이 끝나 가면 정식 선임 여부를 정한다 (대행은 압박으로 경질하지 않는다)
+    if (M.ct) { if ((M.g || 0) >= (M.ctN || 6) || ri >= n - 1) { const x = ctDecide(w, c, M, d, want); if (x) out.push(Object.assign({ id: r.id, pos, ex, row: r }, x)); } return; }
     if (ri < 7 || ri > n - 2 || (M.g || 0) < 10) return; // 시즌 초·막판, 부임 직후는 기다린다
     const ten = (d - (M.d0 || d)) / 365, mw = C.mgrWant(w, c);
     const sec = 1 + Math.min(.8, (M.tro || 0) * .15) + (ten >= 3 ? .25 : 0) + clamp(((M.rep || 30) - mw) / 50, -.2, .5) + (M.leg === c.id ? .3 : 0);
@@ -974,13 +976,45 @@ C.mgrJudge = (S, LS, d) => {
     if (M.pr <= thr) return;
     if (R() > .13 + Math.min(.35, (M.pr - thr) * .1)) return;
     sk[key] = (sk[key] || 0) + 1;
-    const old = M.n, NM = C.mgrChange(w, r.id, d, '경질');
+    const old = M.n, NM = C.mgrSack(w, r.id, d, n - ri);
     if (NM) NM.pr = 0;
-    out.push({ id: r.id, pos, ex, row: r, old, NM });
+    out.push({ id: r.id, pos, ex, row: r, old, NM, kind: 'sack' });
   });
   if (Object.keys(sk).length > 4000) w.mgrSk = {};
   return out;
 };
+// ---------- 감독대행 (v40) ----------
+// 시즌 도중 경질되면 곧바로 새 감독을 앉히기보다 코치에게 임시로 맡기는 경우가 많다. 대행은 몇 경기(4~9) 뒤 평가:
+// 성적이 좋으면 정식 감독이 될 수 있지만, 구단이 원하는 이름값(명성)과 차이가 크면 성적이 좋아도 새 감독을 데려온다
+C.mgrSack = (w, id, d, left) => {
+  const c = w.clubs[id], M = C.mgrOf(w, id, d); if (!c || !M) return null;
+  const mw = C.mgrWant(w, c);
+  // 대행 확률: 남은 경기가 적으면 대행으로 시즌을 마치는 쪽, 빅클럽은 빨리 새 감독을 데려오는 편
+  const pCt = clamp(.62 + (left != null && left <= 10 ? .2 : 0) - (mw >= 75 ? .2 : 0), .2, .9);
+  if (R() >= pCt) return C.mgrChange(w, id, d, '경질');
+  const H = (w.mgrH = w.mgrH || {})[id] = (w.mgrH[id] || []); H.push(Object.assign({}, M, { d1: d, why: '경질', club: id })); if (H.length > 25) H.shift();
+  delete w.mgr[id];
+  const pct = M.g ? (M.w * 3 + M.dr) / (M.g * 3) : 0;
+  if (M.r || (M.rep || 0) >= 30 || (M.g >= 20 && pct > .45)) toPool(w, M, id, d, -3);
+  const nat = R() < .85 ? c.nat : pick(MGRNAT), r = seeded('ct|' + id + '|' + d);
+  const CT = { n: genName(nat), nat, b: (w.year || 2026) - 38 - Math.floor(r() * 18), d0: d, g: 0, w: 0, dr: 0, l: 0, ct: 1, ctN: rint(4, 9), rep: clamp(Math.round(mw * .45 + (r() - .5) * 14), 3, 52) };
+  return (w.mgr[id] = C.mgrFill(w, CT, c));
+};
+function ctDecide(w, c, M, d, want) {
+  const ppg = M.g ? (M.w * 3 + M.dr) / M.g : 0, perf = ppg - want, gap = C.mgrWant(w, c) - (M.rep || 0);
+  let p = clamp(.12 + perf * .85 + (M.g >= 8 && M.l <= 1 ? .1 : 0), 0, .85);
+  if (gap > 28) p *= .3; else if (gap > 15) p *= .6;
+  const rec = `${M.g}경기 ${M.w}승 ${M.dr}무 ${M.l}패`;
+  if (R() < p) {
+    M.ct = 0; M.ctUp = d; M.rep = clamp(Math.round((M.rep || 20) + 6 + Math.max(0, perf) * 10), 3, 80); M.d0 = M.d0 || d;
+    mnews(w, { d, k: 'ctUp', club: c.id, n: M.n });
+    return { kind: 'ctUp', NM: M, rec, perf };
+  }
+  const old = M.n, H = (w.mgrH = w.mgrH || {})[c.id] = (w.mgrH[c.id] || []); H.push(Object.assign({}, M, { d1: d, why: '대행 종료', club: c.id })); if (H.length > 25) H.shift();
+  delete w.mgr[c.id];
+  const NM = hire(w, c.id, d, 0, old); if (NM) NM.pr = 0;
+  return { kind: 'ctEnd', old, NM, rec, perf };
+}
 // 리그 종료: 기대 순위(전력 순)보다 잘하면 명성·실력이 오르고, 못하면 내려간다. 우승·강등은 크게
 C.mgrLeagueEnd = (w, lid, rows) => {
   const lg = w.lg[lid]; if (!lg || !w.mgr) return; const n = rows.length; if (n < 4) return;

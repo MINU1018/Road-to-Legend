@@ -142,7 +142,8 @@ GM.endSeason = function (S) {
   const six0 = WC.six(S.p);
   const bigInj = S.ss && (S.ss.injuries || []).some(x => (x.days || 0) >= 90);
   WC._S = S; WC._bigInj = bigInj;
-  try { const r = es0(S); if (S.wc.lastGrow) S.wc.lastGrow.six0 = six0; seasonRel(S, r); return r; } finally { WC._S = null; }
+  try { const r = es0(S); if (S.wc.lastGrow) S.wc.lastGrow.six0 = six0; seasonRel(S, r);
+    (S.wc.sixH = S.wc.sixH || []).push({ label: r.label, y: r.y, age: r.age, ovr: r.ovr1, six: WC.six(S.p).map(x => x[2]), ev: S.wc.lastGrow ? S.wc.lastGrow.ev : 0, v: S.value }); return r; } finally { WC._S = null; }
 };
 const fy0 = GM.freeYear;
 GM.freeYear = async function (S, onDay) { if (!S.wc) return fy0(S, onDay); WC._S = S; try { return await fy0(S, onDay); } finally { WC._S = null; } };
@@ -395,7 +396,7 @@ const WEV = {
   mentee: { w: S => S.p.age >= 28 && mateCands(S, 'mentee').length ? (has(S, 'leader') || has(S, 'mentor') ? 1.6 : .9) : 0, build: S => { const e = mateCands(S, 'mentee')[0]; const n = C.pName(S.w, e); return { title: `후배 ${n}의 부탁`, desc: `${e[3]}세 유망주 ${n}이 경기 운영을 가르쳐 달라고 합니다.`, icon: 'mentor', e, opts: [
     { label: '시간을 내 준다', desc: '아는 걸 나눈다', out: [O(1, `${n}이 당신을 따른다`, 1, {}, null, { mate: { k: 'mentee', v: .45 }, mgr: .05, lean: { mentor: .7, leader: .4 } })] },
     { label: '내 경기에 집중한다', desc: '나도 아직 경쟁 중이다', out: [O(1, '후배가 머쓱해했다', 0, {}, null, { mate: { k: 'mentee', v: -.05 } })] }] }; } },
-  press: { w: (S, m) => m && isBig(S, m) ? (has(S, 'media') ? 2 : has(S, 'quiet') ? .4 : 1.2) : (has(S, 'media') ? .6 : .2), build: (S, m) => { const win = m && m.gf > m.ga, loss = m && m.gf < m.ga; return { title: '경기 뒤 인터뷰', desc: m ? `${m.oppName}전 ${m.gf}-${m.ga} ${win ? '승리' : loss ? '패배' : '무승부'} 뒤 믹스트존에서 기자들이 붙잡습니다.` : '기자들이 인터뷰를 요청합니다.', icon: 'phone', opts: [
+  press: { w: (S, m) => !m || !m.played || (m.st && m.st.min < 20) ? 0 : isBig(S, m) ? (has(S, 'media') ? 2 : has(S, 'quiet') ? .4 : 1.2) : (has(S, 'media') ? .6 : .2), build: (S, m) => { const win = m && m.gf > m.ga, loss = m && m.gf < m.ga; return { title: '경기 뒤 인터뷰', desc: m ? `${m.oppName}전 ${m.gf}-${m.ga} ${win ? '승리' : loss ? '패배' : '무승부'} 뒤 믹스트존에서 기자들이 붙잡습니다.` : '기자들이 인터뷰를 요청합니다.', icon: 'phone', opts: [
     { label: '팀을 이야기한다', desc: '모범 답안', out: [O(1, '무난한 인터뷰', 0, {}, null, { mgr: .03, lean: { humble: .3 } })] },
     { label: loss ? '부진을 내 탓으로 돌린다' : '내 활약을 어필한다', desc: loss ? '책임을 진다' : '존재감을 드러낸다', out: loss ? [O(1, '팬들이 진정성을 높이 샀다', 1, {}, null, { fans: .08, lean: { leader: .4 } })] : [O(.6, '헤드라인을 장식했다', 1, { rep: 2 }, null, { fans: .04, lean: { media: .5 } }), O(1, '동료들이 눈살을 찌푸렸다', -1, {}, null, { mates: -.06, lean: { hot: .2 } })] },
     { label: loss ? '감독 선택을 비판한다' : '감독 전술에 의문을 던진다', desc: '하고 싶은 말을 한다', out: [O(.35, '팬들은 당신 편', 0, { rep: 1 }, null, { mgr: -.22, fans: .1, lean: { hot: .7 } }), O(1, '구단이 벌금을 매겼다', -1, { money: -Math.max(3000, (S.car.wage || 1000) * 2) }, null, { mgr: -.28, lean: { hot: .7 } })] }] }; } },

@@ -584,7 +584,7 @@ function clubRecords(s, root, id) {
   const mrow = (m, v) => m ? [h('span', null, h('span', { class: 'lnk', onclick: () => U.openMgr(m.n) }, m.n), ' ', flag(m.nat, 12)), v(m) + ` · ${dt(m.d0)} ~ ${m.d1 != null ? dt(m.d1) : '지금'}`] : [none, ''];
   grid.append(h('div', { class: 'sec crec' }, h('h3', null, '이적·감독'), h('div', { class: 'in' }, txL(R.buy, '최고 이적료 영입'), txL(R.sell, '최고 이적료 판매'),
     h('div', { class: 'crg', style: { marginTop: '10px' } }, ...[['최장수 감독', ...mrow(mLong, m => ym(len(m)))], ['최다 경기 지휘', ...mrow(mG, m => `${m.g}경기`)], ['최고 승률 (30경기 이상)', ...mrow(mW, m => `${(m.w / m.g * 100).toFixed(1)}% (${m.w}승 ${m.dr}무 ${m.l}패)`)],
-      cur ? ['현재 감독', h('span', null, h('span', { class: 'lnk', onclick: () => U.openMgr(cur.n) }, cur.n), ' ', flag(cur.nat, 12)), `${dt(cur.d0)}부터 · ${cur.g}경기 ${cur.w}승 ${cur.dr}무 ${cur.l}패`] : null].filter(Boolean).map(([k, v, sub]) => h('div', { class: 'crr' }, h('span', { class: 'mute' }, k), h('b', null, v), sub ? h('small', { class: 'mute' }, sub) : null))))));
+      cur ? [cur.ct ? '현재 감독 (대행)' : '현재 감독', h('span', null, h('span', { class: 'lnk', onclick: () => U.openMgr(cur.n) }, cur.n), ' ', flag(cur.nat, 12)), `${dt(cur.d0)}부터 · ${cur.g}경기 ${cur.w}승 ${cur.dr}무 ${cur.l}패`] : null].filter(Boolean).map(([k, v, sub]) => h('div', { class: 'crr' }, h('span', { class: 'mute' }, k), h('b', null, v), sub ? h('small', { class: 'mute' }, sub) : null))))));
   root.append(grid);
 }
 function clubSeason(s, root, id) {
@@ -761,7 +761,7 @@ function mgrBody(w, M, head) {
   const bar = (k, v, lo, hi) => h('div', { class: 'mgbar' }, h('span', { class: 'mute' }, k), h('div', { class: 'mgtrk' }, h('i', { style: { width: v + '%' } })), h('small', { class: 'mute' }, v < 40 ? lo : v > 66 ? hi : '보통'));
   const pf = C.mgrPref(M), pl = C.mgrPlan(M), yrs = w.cal ? Math.max(0, (w.cal.d - (M.d0 || 0)) / 365.25) : 0, age = M.b ? C.ymd(w.cal.d)[0] - M.b : null;
   return h('div', { class: 'in mgcard' },
-    head ? h('div', { class: 'mgtop' }, h('b', { class: 'lnk', style: { fontSize: '16px' }, onclick: () => U.openMgr(M.n) }, M.n), ' ', flag(M.nat, 14), h('div', { class: 'mute', style: { fontSize: '12px' } }, `${C.natName(M.nat)}${age ? ` · ${age}세` : ''}${M.rep != null ? ` · ${C.mgrTier(M.rep)} 명성` : ''} · 부임 ${yrs >= 1 ? Math.floor(yrs) + '년 ' : ''}${Math.floor((yrs % 1) * 12)}개월 · ${M.g}경기 ${M.w}승 ${M.dr}무 ${M.l}패`)) : null,
+    head ? h('div', { class: 'mgtop' }, h('b', { class: 'lnk', style: { fontSize: '16px' }, onclick: () => U.openMgr(M.n) }, M.n), ' ', flag(M.nat, 14), M.ct ? h('span', { class: 'chip', style: { marginLeft: '6px', fontSize: '10px' } }, '감독대행') : null, h('div', { class: 'mute', style: { fontSize: '12px' } }, `${C.natName(M.nat)}${age ? ` · ${age}세` : ''}${M.rep != null ? ` · ${C.mgrTier(M.rep)} 명성` : ''} · 부임 ${yrs >= 1 ? Math.floor(yrs) + '년 ' : ''}${Math.floor((yrs % 1) * 12)}개월 · ${M.g}경기 ${M.w}승 ${M.dr}무 ${M.l}패`)) : null,
     h('div', { class: 'mgrow' }, h('span', { class: 'lbl' }, '주 포메이션'), h('b', null, M.f), h('span', { class: 'mute' }, ` 보조 ${M.f2}`)),
     h('div', { class: 'mgrow' }, h('span', { class: 'lbl' }, '공격'), h('b', null, M.build), h('div', { class: 'mute', style: { fontSize: '12px' } }, pl.att)),
     h('div', { class: 'mgrow' }, h('span', { class: 'lbl' }, '수비'), h('b', null, M.def), h('div', { class: 'mute', style: { fontSize: '12px' } }, pl.def)),
@@ -975,7 +975,7 @@ function clubHistory(s, root, id) {
     h('div', { class: 'tlb' }, ...it.rows.map(([k, v, sub, cls, tag]) => h('div', { class: 'tlr' }, h('span', { class: 'mute' }, k), h('div', null, h('b', { class: cls || '' }, v), tag ? h('span', { class: 'chip ' + (tag === '강등' ? 'red' : 'gold'), style: { marginLeft: '6px' } }, tag) : null, sub ? h('div', { class: 'mute', style: { fontSize: '11.5px' } }, sub) : null)))))), more)));
   // 감독 연대기
   if (MG.length) root.append(h('div', { class: 'sec' }, h('h3', null, '역대 감독'), h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc' }, h('thead', null, h('tr', null, ...['감독', '기간', '경기', '승', '무', '패', '승률', '떠난 이유'].map(x => h('th', null, x)))),
-    h('tbody', null, ...MG.slice().reverse().map(m => h('tr', null, h('td', null, h('span', { class: 'lnk', onclick: () => U.openMgr(m.n) }, m.n), ' ', flag(m.nat, 12)), h('td', { class: 'mute' }, `${C.fmtDateY(m.d0 || 0)} ~ ${m.d1 != null ? C.fmtDateY(m.d1) : '현재'}`),
+    h('tbody', null, ...MG.slice().reverse().map(m => h('tr', null, h('td', null, h('span', { class: 'lnk', onclick: () => U.openMgr(m.n) }, m.n), ' ', flag(m.nat, 12), m.ct || m.why === '대행 종료' ? h('span', { class: 'mute', style: { fontSize: '11px' } }, ' (대행)') : m.ctUp ? h('span', { class: 'mute', style: { fontSize: '11px' } }, ' (대행 → 정식)') : null), h('td', { class: 'mute' }, `${C.fmtDateY(m.d0 || 0)} ~ ${m.d1 != null ? C.fmtDateY(m.d1) : '현재'}`),
       h('td', null, m.g || 0), h('td', null, m.w || 0), h('td', null, m.dr || 0), h('td', null, m.l || 0), h('td', null, m.g ? Math.round(m.w / m.g * 100) + '%' : '-'), h('td', { class: 'mute' }, m.d1 != null ? m.why || '' : ''))))))));
   if (root.children.length === n0) root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '첫 시즌이 끝나면 연혁과 우승 기록이 쌓입니다.')));
 }
