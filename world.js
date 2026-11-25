@@ -872,7 +872,7 @@ C.mgrSeed = (w, force) => {
 };
 // 실제 교체 일정: 그날 원래 감독(데이터에서 온 감독)이 아직 그 자리에 있으면 일어난다
 C.mgrDaily = (S, d, quiet) => {
-  const w = S.w, F = G.FC27 || {}, L = F.MGR_CHG; if (!L || w.mgrV < 2) return;
+  const w = S.w, F = G.FC27 || {}, L = F.MGR_CHG; if (!L || !(w.mgrV >= 2)) return; // 감독 배치 전(mgrSeed 전) 세계는 건너뛴다
   while ((w.mgrCi || 0) < L.length && pd(L[w.mgrCi][1]) <= d) {
     const [id, dt, why, row] = L[w.mgrCi++], M = w.mgr && w.mgr[id], c = w.clubs[id];
     if (!c || !M || !M.src) continue;

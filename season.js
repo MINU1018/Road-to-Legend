@@ -193,7 +193,7 @@ const ROLELABEL = { key: '핵심 선수', starter: '주전', rotation: '로테�
 C.ROLELABEL = ROLELABEL;
 function squadRole(S, clubId) {
   const p = S.p, c = S.w.clubs[clubId], slot = C.SLOT[p.pos];
-  const me = C.effOvr(p) + (S.car.trust - 50) * .06 + (S.car.formAdj || 0) + (S.car.bias || 0);
+  const me = C.effOvr(p) + (S.car.trust - 50) * .06 + (S.car.formAdj || 0) + (S.car.bias || 0) + (S.wc ? clamp(S.wc.rb || 0, -3, 3) : 0); // 월드 커리어: 감독과의 관계가 작은 치우침으로
   const riv = c.lite ? C.liteRivals(c, slot, S.w.year) : c.sq.filter(e => C.SLOT[e[1]] === slot).map(e => e[2]).sort((a, b) => b - a);
   const rank = riv.filter(v => v > me + .5).length;
   const n = C.SLOTN[slot];
@@ -273,8 +273,9 @@ function updateRole(S) {
     const gap = sr.me - (S.w.clubs[S.car.club].str - 10);
     ss.fteam = clamp(.36 * Math.exp(gap * .11), .035, .7);
     // 가끔 감독이 유스를 과감하게 기용하는 시즌 (깜짝 신성)
-    if (ss.breakout == null) { ss.breakout = gap > -17 && R() < .22; if (ss.breakout) { S.p.mods.push({ ovr: 5, seasons: 1, why: '겁 없는 신예' }); if (C.news) C.news(S, `감독, "${S.p.name}은 이번 시즌 1군에서 기회를 받을 것"`, 'youth', true); } }
+    if (ss.breakout == null) { ss.breakout = gap > -17 && R() < .22 && !(S.wc && S.p.age <= 15); if (ss.breakout) { S.p.mods.push({ ovr: 5, seasons: 1, why: '겁 없는 신예' }); if (C.news) C.news(S, `감독, "${S.p.name}은 이번 시즌 1군에서 기회를 받을 것"`, 'youth', true); } }
     if (ss.breakout) ss.fteam = clamp(ss.fteam * 2.6 + .12, 0, .8);
+    if (S.wc && S.p.age <= 15) { ss.fteam = 0; ss.breakout = false; } // 월드 커리어 아카데미(14·15세): 1군 기회 없음
   } else { const sr = squadRole(S, S.car.club); ss.role = sr.role; ss.sr = sr; }
 }
 C.updateRole = updateRole;
@@ -288,7 +289,7 @@ function setupNational(S, ss) {
   const pools = C.nationPools(S.w); ss.pools = pools;
   const pool = pools[p.nat];
   const g = C.NTG[p.pos];
-  const me = C.effOvr(p);
+  const me = C.effOvr(p) + (S.wc && S.wc.rel ? clamp((S.wc.rel.nt || 0) * 2, -2, 2) : 0); // 월드 커리어: 대표팀 감독과의 관계
   const arr = pool ? pool[g] : [];
   const rank = arr.filter(v => v > me).length;
   const [squadN, startN] = C.NTSLOTS[g];

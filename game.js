@@ -8,7 +8,10 @@ const GM = G.TCG = {};
 const evCount = () => { const f = C.cfg.events; return f === 'off' ? 0 : f === 'low' ? (R() < .5 ? 1 : 0) : f === 'high' ? (R() < .5 ? 3 : 2) : (R() < .55 ? 2 : 1); };
 // 데이터셋: 'fc27' (기본) / 'tm' (FC27 + Transfermarkt 게임 이전 기록). 'tm'은 data_tm.js가 먼저 불러와져 있어야 한다
 const dsBegin = ds => { const tm = ds === 'tm' && C.TM && G.TMD; if (C.TM) C.TM.apply(!!tm); return tm ? 'tm' : 'fc27'; };
-const dsEnd = (S, ds) => { if (ds === 'tm') { S.ds = 'tm'; C.TM.seed(S.w); if (C.legAll) C.legAll(S.w); } return S; };
+// 커리어 새 게임도 관전 모드와 같은 세계 준비 (감독·대표팀 감독·랭킹·레전드). v40 전에는 불러오기 때만 채워져 새 커리어 첫 진행에서 멈췄다
+const seedWorld = (w, ds) => { if (C.mgrSeed && !(w.mgrV >= 2)) C.mgrSeed(w); if (C.ntmSeed && !w.ntm) C.ntmSeed(w); if (C.rankInit && !w.rank) C.rankInit(w, true); if (C.crInit && !w.cr) C.crInit(w, true); if (C.legSeed && ds !== 'tm' && !w.legPre) C.legSeed(w); };
+GM.seedWorld = seedWorld;
+const dsEnd = (S, ds) => { if (S.mode !== 'world') seedWorld(S.w, ds === 'tm' ? 'tm' : 'fc27'); if (ds === 'tm') { S.ds = 'tm'; C.TM.seed(S.w); if (C.legAll) C.legAll(S.w); } return S; };
 GM.dsBegin = dsBegin;
 GM.newGame = function (opt) {
   C.psDirty = true; C.psGen = (C.psGen || 0) + 1;

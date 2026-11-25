@@ -646,6 +646,7 @@ function clubFx(s, id, src) {
   items.sort((a, b) => (a.d || 0) - (b.d || 0));
   return items;
 }
+U.clubFx = (s, id, src) => clubFx(s, id, src);
 function wdl(list) { const t = { n: 0, W: 0, D: 0, L: 0, gf: 0, ga: 0, cs: 0 }; for (const x of list) { if (x.pend) continue; t.n++; t[x.res]++; t.gf += x.gf; t.ga += x.gag; if (x.gag === 0) t.cs++; } return t; }
 function wdlBar(t, label) {
   const pc = k => t.n ? Math.round(t[k] / t.n * 100) : 0;

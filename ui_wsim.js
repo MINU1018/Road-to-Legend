@@ -178,6 +178,7 @@ function leagueMini(s, sv) {
       h('tbody', null, ...L.t.slice(0, 8).map((r, i) => h('tr', { class: U.isFollow('club', r[0]) ? 'me' : '' }, h('td', null, i + 1), h('td', null, clubChip(w, r[0], 14)), h('td', null, r[1]), h('td', null, r[5] - r[6] > 0 ? '+' + (r[5] - r[6]) : r[5] - r[6]), h('td', null, h('b', null, r[7]))))))) : h('div', { class: 'in mute' }, '아직 개막 전입니다.'),
     h('div', { class: 'in' }, h('button', { class: 'btn ghost sm', onclick: () => { U.st.wv = Object.assign(U.st.wv || {}, { mode: 'league', nat: w.lg[sv.lg].nation, lg: sv.lg, season: 'live' }); U.setTab('table'); } }, '전체 순위·기록')));
 }
+U.leagueMini = (s, sv) => leagueMini(s, sv);
 // 지난 시즌 한 줄 요약
 function lastSeasonCard(s) {
   const w = s.w, r = (s.ws || [])[(s.ws || []).length - 1]; if (!r) return null;

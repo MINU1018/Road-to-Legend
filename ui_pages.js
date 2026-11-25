@@ -358,14 +358,14 @@ U.pages.attrs = function () {
   const root = h('div', { class: 'wrap prof screen' });
   const o = C.ovrOf(p), e = C.effOvr(p);
   const isGK = p.pos === 'GK';
-  const face = isGK ? C.GKGROUPS.map(([k, l, a]) => [k, l, Math.round(p.a[a])]) : C.GROUPS.map(([k, l]) => [k, l, C.faceStats(p.a)[k]]);
+  const face = s.wc && C.WC ? C.WC.six(p) : isGK ? C.GKGROUPS.map(([k, l, a]) => [k, l, Math.round(p.a[a])]) : C.GROUPS.map(([k, l]) => [k, l, C.faceStats(p.a)[k]]);
   root.append(h('div', { class: 'sec' }, h('h3', null, h('span', null, `${p.name} · ${C.POSKO[p.pos]}`), h('span', { style: { display: 'flex', gap: '6px', alignItems: 'center' } }, h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, 'OVR'), ovrb(o))),
     h('div', { class: 'sub' }, `${C.STYLES[C.styleKey(p.pos)][p.style] ? C.STYLES[C.styleKey(p.pos)][p.style][0] + ' · ' : ''}약발 ${'★'.repeat(p.weak)} · 개인기 ${'★'.repeat(p.skill)} · 키 ${p.height}cm${(p.traits || []).length && C.shop ? ' · 특성: ' + p.traits.map(t => C.shop.TRAITS[t][0]).join(', ') : ''}`),
     h('div', { class: 'in' }, h('div', { class: 'face' }, ...face.map(([k, l, v]) => h('div', null, h('div', { class: 'lbl' }, k), h('div', { class: 'v', style: { color: U.barCol(v) } }, v), h('div', { class: 'mute', style: { fontSize: '11px' } }, l)))))));
   const mods = p.mods || [];
   root.append(h('div', { class: 'two' },
     h('div', { class: 'sec' }, h('h3', null, '상태'), h('div', { class: 'in', style: { display: 'grid', gap: '8px' } },
-      row('현재 경기력 (컨디션 반영)', String(e)), row('감독 신뢰', s.car.status === 'free' ? '-' : String(Math.round(s.car.trust))), row('명성', String(Math.round(p.rep))),
+      row('현재 경기력 (컨디션 반영)', String(e)), s.wc && C.WC ? row('감독', s.car.status === 'free' ? '-' : C.WC.mgrText((s.wc.rel.mgr || {}).v || 0)) : row('감독 신뢰', s.car.status === 'free' ? '-' : String(Math.round(s.car.trust))), row('명성', String(Math.round(p.rep))),
       ...(mods.length ? mods.map(m => row(m.why, `${m.ovr > 0 ? '+' : ''}${m.ovr} · ${m.seasons}시즌 남음`)) : [row('일시적 효과', '없음')]))),
     h('div', { class: 'sec' }, h('h3', null, '포지션별 능력치'), h('div', { class: 'in' }, posMap(p)))));
   // 그룹별 세부
@@ -376,7 +376,8 @@ U.pages.attrs = function () {
     const box = h('div', { class: 'grow' }, h('div', { class: 'g' }, h('div', { class: 'lbl' }, l), ...keys.map(k => { const v = Math.round(p.a[k]); const bar = h('i', { style: { width: '0%', background: U.barCol(v) } }); requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = v + '%')); return h('div', { class: 'arow' }, h('span', null, C.ALABEL[k]), h('span', { class: 'v' }, v), h('span'), h('div', { class: 'bar' }, bar)); })));
     grid.append(box);
   }
-  root.append(h('div', { class: 'sec' }, h('h3', null, '세부 능력치'), h('div', { class: 'sub' }, 'FC 시리즈 기준 35개 항목'), h('div', { class: 'in' }, grid)));
+  if (s.wc) root.append(h('div', { class: 'sec' }, h('h3', null, '능력치 방식'), h('div', { class: 'in mute', style: { fontSize: '13px', lineHeight: 1.6 } }, '월드 커리어에서는 위의 6개 대분류만 오르내립니다. 세부 능력치는 처음 정해진 개인 편차를 그대로 유지한 채 대분류와 함께 움직입니다. 성장은 다른 선수들과 같은 방식으로, 출전·활약·나이와 시즌마다의 갈림길(돌파·정체·슬럼프·늦게 피는 꽃·노쇠)에 따라 갈립니다.')));
+  else root.append(h('div', { class: 'sec' }, h('h3', null, '세부 능력치'), h('div', { class: 'sub' }, 'FC 시리즈 기준 35개 항목'), h('div', { class: 'in' }, grid)));
   // OVR 추이
   root.append(h('div', { class: 'sec' }, h('h3', null, 'OVR 추이'), h('div', { class: 'in' }, ovrChart())));
   return root;

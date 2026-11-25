@@ -460,6 +460,8 @@ function drawEvents(S, when, n) {
   return out;
 }
 C.drawEvents = drawEvents;
+// 월드 커리어(wcareer.js)가 사건 목록을 골라 쓰도록 노출
+C._EVENTS = EVENTS; C._balanceEvent = balanceEvent; C._drawCross = drawCross;
 function resolveEvent(S, b, oi) {
   const opt = b.opts[oi];
   const e = b.ev || EVENTS.find(x => x.id === b.id);

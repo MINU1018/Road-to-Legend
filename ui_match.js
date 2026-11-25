@@ -216,6 +216,14 @@ U.heatBox = function (pts, dir) {
       });
   return h('div', { class: 'hwrap' }, cv, sv, h('div', { class: 'hdir mute' }, dir || '공격 방향 →'));
 };
+// 월드 커리어 라이브 중계용: 경기 상세와 같은 통계(슈팅·점유율 등)를 만든다
+U.matchMs = function (o) {
+  const s = S(), w = s.w, d = o.d || { ev: [], ln: null };
+  const strOf = (id, x) => x != null ? x : o.nat ? 72 : (w.clubs[id] && w.clubs[id].str) || 66;
+  const key = o.key || `${o.a}|${o.b}|${o.title}`, posOf = posLookup(s), mdate = o.ctx && (o.ctx.date != null ? o.ctx.date : o.ctx.d);
+  return C.MS.gen({ key, sa: strOf(o.a, o.sa), sb: strOf(o.b, o.sb), ga: o.ga, gb: o.gb, d, posOf: id => posOf(id), spec: !o.nat && C.pkSpec ? C.pkSpec(w, mdate, o.a, o.b) : null });
+};
+U.teamColor = (id, nat, side) => teamColor(S().w, id, nat, side);
 U.showMatch = function (o) {
   const s = S(), w = s.w, d = o.d || { ev: [], ln: null };
   const v = o._v || (o._v = { tab: 'facts', hf: 2, pt: 'main', side: 2, sort: null, pl: null, shot: null });
