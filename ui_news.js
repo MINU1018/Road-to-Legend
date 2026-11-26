@@ -218,6 +218,31 @@ function groupMini(s, T, g) {
 // ---------- 뉴스 탭 ----------
 const CAT = { result: ['경기', 'c-res'], thriller: ['난타전', 'c-thr'], rout: ['대승', 'c-thr'], upset: ['이변', 'c-ups'], hat: ['해트트릭', 'c-hat'], record: ['기록', 'c-rec'], champ: ['우승', 'c-chp'], sack: ['감독', 'c-sack'], transfer: ['이적', 'c-tx'], rumor: ['루머', 'c-rum'], interview: ['인터뷰', 'c-int'], gossip: ['가십', 'c-gos'], award: ['시상', 'c-chp'], retire: ['은퇴', 'c-res'], stat: ['기록', 'c-rec'], streak: ['연승·연패', 'c-ups'], injury: ['부상', 'c-sack'], club: ['구단', 'c-tx'] , draw: ['추첨', 'c-rec']};
 const FILT = [['all', '전체'], ['match', '경기', ['result', 'thriller', 'rout', 'upset', 'hat']], ['tx', '이적·은퇴', ['transfer', 'rumor', 'retire']], ['record', '기록·우승·추첨', ['record', 'champ', 'award', 'stat', 'streak', 'draw']], ['inj', '부상', ['injury']], ['talk', '인터뷰·가십', ['interview', 'gossip']], ['sack', '감독·구단', ['sack', 'club']]];
+// 뉴스 글에 나오는 감독 이름은 감독 프로필로 (v42): 관련 구단의 지금·최근 감독, 관련 국가의 대표팀 감독
+function mgrNames(s, n) {
+  const w = s.w, out = new Set();
+  for (const id of n.cl || []) { const M = (w.mgr || {})[id]; if (M && M.n) out.add(M.n); for (const x of ((w.mgrH || {})[id] || []).slice(-4)) if (x.n) out.add(x.n); }
+  for (const nat of n.n || []) { const M = C.ntMgrOf ? C.ntMgrOf(w, nat) : null; if (M && M.n) out.add(M.n); }
+  return [...out].filter(x => x.length >= 4).sort((a, b) => b.length - a.length);
+}
+function linkMgr(text, names) {
+  if (!text || !names.length || !U.openMgr) return text;
+  const hit = names.filter(x => text.includes(x)); if (!hit.length) return text;
+  const re = new RegExp('(' + hit.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')');
+  return h('span', null, ...text.split(re).map((t, i) => i % 2 ? h('span', { class: 'lnk', onclick: ev => { ev.stopPropagation(); U.openMgr(t); } }, t) : t));
+}
+// 커리어: 내 구단·리그·국가·나 관련 소식의 우선순위 (0이면 무관)
+function mineScore(s, n) {
+  if (s.mode === 'world' || !s.p) return 0;
+  const w = s.w, my = s.car && s.car.club, lg = my && w.clubs[my] ? w.clubs[my].lg : null;
+  let v = 0;
+  if ((n.p || []).includes('ME') || (s.p.name && String(n.h || '').includes(s.p.name))) v += 4;
+  if (my && (n.cl || []).includes(my)) v += 3;
+  if (lg && n.lg === lg) v += 2;
+  if ((n.n || []).includes(s.p.nat)) v += 1;
+  return v;
+}
+U.newsMine = mineScore;
 function newsItem(s, n, big) {
   const w = s.w, cat = CAT[n.c] || ['뉴스', ''];
   const lead = (n.cl || []).find(id => w.clubs[id]), ln = (n.n || [])[0];
@@ -225,7 +250,7 @@ function newsItem(s, n, big) {
   return h('div', { class: 'nitem' + (big ? ' big' : '') + (n.imp >= 3 ? ' hot' : ''), onclick: open },
     h('div', { class: 'nic' }, lead ? crest(w.clubs[lead], big ? 40 : 26) : ln ? U.natCrest(ln, big ? 40 : 26) : h('span', { class: 'ndot ' + cat[1] })),
     h('div', { style: { minWidth: 0 } }, h('div', { class: 'nmeta' }, h('span', { class: 'ncat ' + cat[1] }, cat[0]), h('span', { class: 'mute' }, C.fmtDate(n.d)), n.imp >= 3 ? h('span', { class: 'nhot' }, '주요') : null),
-      h('div', { class: 'nh' }, n.h), n.s ? h('div', { class: 'ns mute' }, n.s) : null));
+      (() => { const nm = n.c === 'sack' || /감독/.test(n.h + (n.s || '')) ? mgrNames(s, n) : []; return [h('div', { class: 'nh' }, linkMgr(n.h, nm)), n.s ? h('div', { class: 'ns mute' }, linkMgr(n.s, nm)) : null]; })()));
 }
 U.pages.news = function () {
   const s = S(), w = s.w, v = (U.st.nv = U.st.nv || { f: 'fol', c: 'all', n: 60 });
@@ -242,6 +267,9 @@ U.pages.news = function () {
   // 헤드라인: 최근 7일 중 가장 큰 소식
   const today = w.cal ? w.cal.d : 0;
   const top = list.filter(n => n.d >= today - 7).sort((a, b) => b.imp - a.imp || b.id - a.id)[0];
+  // 커리어: 내 팀·리그·국가 소식을 맨 위에 (이적하면 새 구단 기준)
+  if (s.mode !== 'world' && s.p && v.c === 'all') { const mine = all.filter(n => n.d >= today - 21 && mineScore(s, n) > 0).sort((a, b) => b.d - a.d || mineScore(s, b) - mineScore(s, a)).slice(0, 8);
+    if (mine.length) { const c0 = s.car && s.w.clubs[s.car.club]; root.append(h('div', { class: 'sec' }, h('h3', null, '내 팀·리그·국가', h('span', { class: 'mute', style: { fontSize: '12px', fontWeight: 400 } }, ` ${c0 ? c0.name + ' · ' : ''}${(s.w.lg[(c0 || {}).lg] || {}).name || ''} · ${C.natName(s.p.nat)} · 최근 3주`)), h('div', { class: 'in nlist' }, ...mine.map(n => newsItem(s, n))))); } }
   if (top && v.c === 'all') root.append(h('div', { class: 'sec' }, h('div', { class: 'in' }, h('div', { class: 'lbl', style: { marginBottom: '6px' } }, '헤드라인'), newsItem(s, top, true))));
   if (!list.length) root.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, fol ? '팔로우한 리그·구단·선수의 소식이 없습니다. [전체]를 누르거나 아래에서 팔로우를 추가하세요.' : '해당하는 소식이 없습니다.')));
   const shown = list.slice(0, v.n), groups = [];
@@ -255,6 +283,8 @@ U.pages.news = function () {
 U.newsMini = function (s, n = 6) {
   const w = s.w, all = (w.news || []).slice().reverse();
   let l = all.filter(x => U.isFollowNews(x, s)).slice(0, n); if (l.length < 3) l = all.slice(0, n);
+  // 커리어: 내 구단·리그·국가 소식을 먼저 (최근 30일)
+  if (s.mode !== 'world' && s.p) { const today = w.cal ? w.cal.d : 0, mine = all.filter(x => x.d >= today - 30 && mineScore(s, x) > 0).slice(0, n); l = mine.concat(l.filter(x => !mine.includes(x))).slice(0, n); }
   if (!l.length) return null;
   return h('div', { class: 'sec' }, h('h3', null, '최신 뉴스', h('button', { class: 'btn ghost sm', style: { marginLeft: '8px' }, onclick: () => U.setTab('news') }, '뉴스 전체')), h('div', { class: 'in nlist' }, ...l.map(x => newsItem(s, x))));
 };

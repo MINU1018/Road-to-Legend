@@ -37,6 +37,53 @@ function rowsOf(w, st, sl) {
   return out;
 }
 const tn = (w, id, nat) => nat ? C.natName(id) : (w.clubs[id] || {}).name || id || '';
+// ---------- 검색 칸 + 팝업 목록 (v42) ----------
+// o: { value, placeholder, source(q) → [{ label, sub, el, val }], onPick(item), onCommit(text) }
+U.acInput = function (o) {
+  const wrap = h('div', { class: 'acw' }), box = h('div', { class: 'acbox' });
+  let items = [], sel = -1, t = null;
+  const inp = h('input', { type: 'search', placeholder: o.placeholder || '', value: o.value || '', autocomplete: 'off', style: { width: '100%' } });
+  const close = () => { box.style.display = 'none'; sel = -1; };
+  const draw = () => {
+    box.replaceChildren(...items.map((x, i) => h('div', { class: 'aci' + (i === sel ? ' on' : ''), onmousedown: ev => { ev.preventDefault(); pickI(i); } }, x.el || null, h('span', { class: 'acl' }, x.label), x.sub ? h('small', { class: 'mute' }, x.sub) : null)));
+    box.style.display = items.length ? 'block' : 'none';
+  };
+  const run = () => { const q = inp.value.trim(); items = q.length >= 1 ? (o.source(q) || []).slice(0, 12) : []; sel = items.length ? 0 : -1; draw(); };
+  const pickI = i => { const x = items[i]; if (!x) return; inp.value = x.label; close(); o.onPick ? o.onPick(x) : o.onCommit && o.onCommit(x.label); };
+  inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 110); });
+  inp.addEventListener('focus', () => { if (inp.value.trim()) run(); });
+  inp.addEventListener('blur', () => setTimeout(() => { close(); if (o.onCommit && inp.value !== (o.value || '')) o.onCommit(inp.value); }, 120));
+  inp.addEventListener('keydown', ev => {
+    if (ev.key === 'ArrowDown' && items.length) { sel = (sel + 1) % items.length; draw(); ev.preventDefault(); }
+    else if (ev.key === 'ArrowUp' && items.length) { sel = (sel - 1 + items.length) % items.length; draw(); ev.preventDefault(); }
+    else if (ev.key === 'Enter') { if (box.style.display === 'block' && sel >= 0) pickI(sel); else { close(); o.onCommit && o.onCommit(inp.value); } ev.preventDefault(); }
+    else if (ev.key === 'Escape') close();
+  });
+  wrap.append(inp, box);
+  return wrap;
+};
+// 팀 후보: 구단·대표팀 (이름·영문·약칭)
+function teamSource(w, q) {
+  q = fold(q); if (!q) return [];
+  const out = [];
+  for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite && !c.str) continue; const n = fold(c.name), e = fold(c.en);
+    const sc = n.startsWith(q) || e.startsWith(q) ? 3 : n.includes(q) || e.includes(q) ? 2 : fold(c.short) === q ? 2 : 0; if (sc) out.push({ sc: sc + (c.str || 0) / 100, label: c.name, sub: (w.lg[c.lg] || {}).name || '', el: crest(c, 16) }); }
+  const EN = (C.logos && C.logos.NAT_EN) || {};
+  for (const code of Object.keys(C.NAT || {})) { const n = fold(C.natName(code)), e = fold((EN[code] || '').replace(/\|/g, ' ')); const sc = n.startsWith(q) || e.startsWith(q) ? 3.5 : n.includes(q) || e.includes(q) || code.toLowerCase() === q ? 2.5 : 0; if (sc) out.push({ sc, label: C.natName(code), sub: '국가대표', el: U.natCrest(code, 16) }); }
+  return out.sort((a, b) => b.sc - a.sc);
+}
+// 대회 후보
+function compSource(w, q) {
+  q = fold(q); if (!q) return [];
+  const names = new Map();
+  for (const l of Object.values(w.lg)) names.set(l.name, C.natName(l.nation) + ' 리그');
+  for (const k in C.COMPS || {}) names.set(C.COMPS[k].name, '대륙 대회');
+  for (const k in C.TDEF || {}) names.set(C.TDEF[k].name, '국가대표 대회');
+  names.set('A매치', '국가대표 친선'); names.set('UEFA 네이션스리그', '국가대표 대회');
+  for (const nat in C.CUPNAME || {}) names.set(C.CUPNAME[nat], C.natName(nat) + ' 컵');
+  for (const nat in C.LCUPNAME || {}) names.set(C.LCUPNAME[nat], C.natName(nat) + ' 리그컵');
+  return [...names].filter(([n]) => fold(n).includes(q)).map(([n, sub]) => ({ label: n, sub, sc: fold(n).startsWith(q) ? 2 : 1 })).sort((a, b) => b.sc - a.sc);
+}
 // 시즌 목록: 진행 중 + 지난 시즌 (경기 기록이 보관된 시즌)
 const seasonsOf = w => (w.cal ? ['live'] : []).concat((w.mxKeys || []).filter(k => k !== C.wLabel(w.year) || !w.cal).slice().sort().reverse());
 U.pages.mfind = function () {
@@ -46,6 +93,7 @@ U.pages.mfind = function () {
   const stay = () => { U._keepY = window.scrollY; U.stay ? U.stay() : U.setTab('mfind'); };
   const set = (k, val) => { if (v[k] === val) return; v[k] = val; v.lim = 60; if (k === 'p') { v.pid = null; v.pn = ''; } stay(); };
   // 글자 칸은 Enter나 칸을 벗어날 때 적용 (입력 중 다시 그리면 커서가 사라진다)
+  const ac = (k, ph, src) => U.acInput({ value: v[k] || '', placeholder: ph, source: q => src(w, q), onPick: x => set(k, x.label), onCommit: t => set(k, t) });
   const inp = (k, ph, type) => h('input', { type: type || 'search', placeholder: ph, value: v[k] || '', onchange: e => set(k, e.target.value), onkeydown: e => { if (e.key === 'Enter') set(k, e.target.value); }, style: { width: '100%' } });
   const sel = (k, opts) => { const e = h('select', { class: 'wsel', onchange: ev => set(k, ev.target.value) }, ...opts.map(([val, l]) => { const o = h('option', { value: val }, l); if (String(v[k]) === String(val)) o.selected = true; return o; })); return e; };
   const SL = seasonsOf(w);
@@ -59,10 +107,10 @@ U.pages.mfind = function () {
   root.append(h('div', { class: 'sec' }, h('div', { class: 'in mfgrid' },
     cell('시즌', sel('season', [['all', '모든 시즌'], ...SL.map(k => [k, k === 'live' ? `${C.wLabel(w.year)} (진행 중)` : k])])),
     cell('대회 종류', sel('cat', [['', '전체'], ['league', '리그'], ['cup', '국내 컵'], ['cont', '대륙 대회'], ['intl', '국가대표 (국제 대회·A매치)']])),
-    cell('대회 이름', inp('comp', '예: 프리미어리그 · 챔피언스리그 · 월드컵')),
-    cell('팀 A', inp('a', '구단·대표팀 이름')),
-    cell('팀 B (맞대결)', inp('b', '상대 이름 (비우면 모든 상대)')),
-    cell('선수 (출전 경기)', h('div', null, inp('p', '선수 이름'), pSel, pickBox)),
+    cell('대회 이름', ac('comp', '예: 프리미어리그 · 챔피언스리그 · 월드컵', compSource)),
+    cell('팀 A', ac('a', '구단·대표팀 이름', teamSource)),
+    cell('팀 B (맞대결)', ac('b', '상대 이름 (비우면 모든 상대)', teamSource)),
+    cell('선수 (출전 경기)', h('div', null, v.pid ? null : U.acInput({ value: v.p || '', placeholder: '선수 이름', source: q => q.length < 2 || !U.dbSearch ? [] : U.dbSearch(w, q).players.slice(0, 12).map(x => ({ label: x.n, sub: `${x.pos || ''}${x.age ? ' · ' + x.age + '세' : ''}${x.club && w.clubs[x.club] ? ' · ' + w.clubs[x.club].name : x.retired ? ' · 은퇴' : ''}`, el: x.nat ? flag(x.nat, 14) : null, pid: x.pid })), onPick: x => { v.p = x.label; v.pid = x.pid; v.pn = x.label; v.lim = 60; stay(); }, onCommit: t => set('p', t) }), pSel, pickBox)),
     cell('날짜 시작', inp('d0', '', 'date')), cell('날짜 끝', inp('d1', '', 'date')),
     cell('결과 (팀 A 기준)', sel('res', [['', '전체'], ['W', '승'], ['D', '무'], ['L', '패']])),
     cell('홈/원정 (팀 A 기준)', sel('ha', [['', '전체'], ['h', '홈'], ['a', '원정']])),

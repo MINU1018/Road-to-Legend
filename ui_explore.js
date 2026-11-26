@@ -16,7 +16,7 @@ function tagNT(s, m) {
 }
 function allMatches(s) {
   const out = [];
-  for (const r of s.hist) for (const m of (r.log || [])) out.push(tagNT(s, Object.assign({ season: r.label, age: r.age, club: r.clubName, clubId: r.club }, m)));
+  for (const r of s.hist) for (const m of (r.log || [])) out.push(tagNT(s, Object.assign({ season: r.label, age: r.age, club: r.clubName, clubId: r.club, wy: r.y }, m)));
   if (s.ss) { const c = s.w.clubs[s.ss.club]; for (const m of s.ss.matches) out.push(Object.assign({ season: s.ss.label, age: s.p.age, club: c ? c.name : '', clubId: s.ss.club, live: 1 }, C.logExtra(m), { y: m.comp === 'youth' ? 1 : 0, d: m.d, c: m.comp, cn: m.compName, s: m.stage, o: m.oppName, h: m.home, gf: m.gf, ga: m.ga, p: m.played ? 1 : 0, st: m.start ? 1 : 0, mi: m.min || 0, r: m.rating || 0, g: m.played ? m.st.goals : 0, a: m.played ? m.st.assists : 0, mo: m.motm ? 1 : 0, w: m.why || '', pen: m.pens || '', yc: m.played ? m.st.yellow : 0, rc: m.played ? m.st.red : 0 })); }
   for (const m of out) if (m.live) tagNT(s, m);
   return out;
@@ -98,7 +98,8 @@ U.pages.mx = function () {
       h('tbody', null, ...list.slice(0, 300).map(m => {
         const note = [m.cs && gk ? '클린시트' : '', m.fk ? `프리킥 ${m.fk}` : '', m.pk ? `PK ${m.pk}` : '', m.hd ? `헤더 ${m.hd}` : '', m.ob ? `중거리 ${m.ob}` : '', m.mo ? 'POTM' : '', m.rc ? '퇴장' : '', !m.p ? (m.w || '미출전') : ''].filter(Boolean).join(' · ');
         const res = RES(m);
-        return h('tr', null, h('td', { class: 'mute' }, m.d ? C.fmtDateY(m.d) : ''), h('td', null, m.season), h('td', null, U.compTag ? U.compTag(m.c, m.cn, m.s) : m.cn, m.c === 'nt' || m.c === 'ntY' ? h('div', { class: 'mute', style: { fontSize: '11px' } }, m.cnx) : null), h('td', null, m.o, h('span', { class: 'mute', style: { fontSize: '11px' } }, m.h === true ? ' (홈)' : m.h === false ? ' (원정)' : '')),
+        const canOpen = m.d && m.clubId && !['youth', 'nt', 'ntY'].includes(m.c) && !m.y && U.openMyMatch;
+        return h('tr', { class: canOpen ? 'click' : '', title: canOpen ? '눌러서 경기 상세 보기' : '', onclick: canOpen ? () => U.openMyMatch(m.clubId, m.d, m.wy) : null }, h('td', { class: 'mute' }, m.d ? C.fmtDateY(m.d) : ''), h('td', null, m.season), h('td', null, U.compTag ? U.compTag(m.c, m.cn, m.s) : m.cn, m.c === 'nt' || m.c === 'ntY' ? h('div', { class: 'mute', style: { fontSize: '11px' } }, m.cnx) : null), h('td', null, m.o, h('span', { class: 'mute', style: { fontSize: '11px' } }, m.h === true ? ' (홈)' : m.h === false ? ' (원정)' : '')),
           h('td', null, h('span', { class: 'res ' + res, style: { padding: '1px 6px', borderRadius: '5px' } }, `${m.gf}-${m.ga}${m.pen ? (m.pen === 'W' ? ' PK승' : ' PK패') : ''}`)), h('td', null, m.p ? `${m.mi}'` : '-'), h('td', null, !m.p ? '' : gk ? (m.ca != null ? m.ca : '·') : (m.g || '')), h('td', null, !m.p ? '' : gk ? (m.sv != null ? m.sv : '·') : df ? (m.tk || '') : (m.a || '')), h('td', null, m.r ? U.rt1(m.r) : ''), h('td', { class: 'mute', style: { fontSize: '12px' } }, note));
       }))))));
   }

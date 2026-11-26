@@ -479,13 +479,36 @@ function injuryRoll(S, rec, minutes) {
 }
 C.userMatch = userMatch;
 
+// 유스 리그 (v42): 같은 나라 구단 12팀의 U18/U21 리그. 내 경기는 실제로 치르고, 나머지 대진은 전력으로 결과만
+function ylgSetup(S, u) {
+  const ss = S.ss, w = S.w, my = w.clubs[ss.club];
+  if (ss.ylg && ss.ylg.u === u && ss.ylg.c === ss.club) return ss.ylg;
+  const pool = Object.values(w.clubs).filter(c => c.nat === my.nat && c.id !== my.id && c.lg && !c.lite && c.str).sort((a, b) => b.str - a.str).slice(0, 44);
+  const near = pool.sort((a, b) => Math.abs(a.str - my.str) - Math.abs(b.str - my.str)).slice(0, 11);
+  const teams = [my.id].concat(near.map(c => c.id));
+  if (teams.length % 2) teams.pop();
+  const n = teams.length, idx = teams.map((_, i) => i), rounds = [];
+  for (let r = 0; r < n - 1; r++) { const pr = []; for (let i = 0; i < n / 2; i++) { const a = idx[i], b = idx[n - 1 - i]; pr.push(r % 2 ? [b, a] : [a, b]); } rounds.push(pr); idx.splice(1, 0, idx.pop()); }
+  const sched = rounds.concat(rounds.map(pr => pr.map(([a, b]) => [b, a])));
+  const tab = {}; for (const id of teams) tab[id] = { p: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 };
+  return (ss.ylg = { u, c: ss.club, name: `${C.natName(my.nat)} ${u} 리그`, teams, tab, r: 0, sched });
+}
+const ylgRes = (L, a, b, ga, gb) => { const A = L.tab[a], B = L.tab[b]; if (!A || !B) return; A.p++; B.p++; A.gf += ga; A.ga += gb; B.gf += gb; B.ga += ga; if (ga > gb) { A.w++; A.pts += 3; B.l++; } else if (gb > ga) { B.w++; B.pts += 3; A.l++; } else { A.d++; B.d++; A.pts++; B.pts++; } };
+C.ylgTable = L => !L ? [] : Object.entries(L.tab).map(([id, t]) => Object.assign({ id }, t)).sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf);
 async function doYouth(S, fx, hooks) {
-  const u21 = !(S.ss.status === 'youth' && S.p.age <= 17);
-  const ss = S.ss, lv = 47 + (S.w.clubs[ss.club].str - 70) * .5 + (u21 ? 5 : 0);
-  const oppName = pick(['U18', 'U21']) === 'U18' ? ['U18 리그'] : ['U21 리그'];
-  const oppStr = N(lv, 3), myStr = lv + 2 + (C.effOvr(S.p) - lv) * .12;
-  const opp = pick(Object.values(S.w.clubs).filter(c => c.nat === S.w.clubs[ss.club].nat && c.id !== ss.club)) || S.w.clubs[ss.club];
-  await userMatch(S, { d: fx.d, kind: 'Y', compKey: 'youth', compName: S.ss.status === 'youth' && S.p.age <= 17 ? 'U18 리그' : 'U21 리그', opp: opp.id, oppName: opp.name + (S.ss.status === 'youth' && S.p.age <= 17 ? ' U18' : ' U21'), oppStr, myStr, adj: clamp(69 - lv, 0, 24), home: R() < .5, imp: 0 }, hooks);
+  const u18 = S.ss.status === 'youth' && S.p.age <= 17, u21 = !u18, u = u18 ? 'U18' : 'U21';
+  const ss = S.ss, w = S.w, lv = 47 + (w.clubs[ss.club].str - 70) * .5 + (u21 ? 5 : 0);
+  const L = ylgSetup(S, u), pairs = L.sched[L.r % L.sched.length], mi = L.teams.indexOf(ss.club);
+  const mine = pairs.find(([a, b]) => a === mi || b === mi) || [mi, (mi + 1) % L.teams.length];
+  const home = mine[0] === mi, oid = L.teams[home ? mine[1] : mine[0]], opp = w.clubs[oid] || w.clubs[ss.club];
+  const oppStr = N(lv + ((opp.str || 70) - (w.clubs[ss.club].str || 70)) * .35, 2.5), myStr = lv + 2 + (C.effOvr(S.p) - lv) * .12;
+  await userMatch(S, { d: fx.d, kind: 'Y', compKey: 'youth', compName: `${u} 리그`, opp: opp.id, oppName: opp.name + ' ' + u, oppStr, myStr, adj: clamp(69 - lv, 0, 24), home, imp: 0 }, hooks);
+  const rec = ss.matches[ss.matches.length - 1];
+  if (rec && rec.comp === 'youth' && rec.d === fx.d) { if (home) ylgRes(L, ss.club, oid, rec.gf, rec.ga); else ylgRes(L, oid, ss.club, rec.ga, rec.gf); }
+  // 같은 라운드 나머지 경기
+  for (const [a, b] of pairs) { if (a === mi || b === mi) continue; const A = w.clubs[L.teams[a]] || {}, B = w.clubs[L.teams[b]] || {}, df = ((A.str || 70) - (B.str || 70)) * .045;
+    ylgRes(L, L.teams[a], L.teams[b], C.poisson(Math.max(.3, 1.45 + df + .15)), C.poisson(Math.max(.3, 1.45 - df))); }
+  L.r++;
 }
 // 국가대표 경기
 async function doNational(S, fx, hooks) {
@@ -536,10 +559,12 @@ C.totalAgg = totalAgg;
 C.logExtra = m => {
   if (!m.played || !m.st) return { oi: m.opp, cl: m.club || null };
   const sh = m.shots || [], gl = sh.filter(x => x.g);
-  return { oi: m.opp, fk: gl.filter(x => x.t === 'F').length, pk: gl.filter(x => x.t === 'P').length, hd: gl.filter(x => x.t === 'H').length, ob: gl.filter(x => x.ob).length, sh: m.st.shots, sot: m.st.sot, xg: +(m.st.xg || 0).toFixed(2), kp: m.st.chances, pa: m.st.passAtt ? Math.round(m.st.passOk / m.st.passAtt * 100) : 0, tk: m.st.tackles + m.st.ints, dr: m.st.dribOk, ca: m.st.concOn || 0, sv: m.st.saves || 0, cs: m.st.cs || 0, clr: m.st.clear || 0, bl: m.st.blocks || 0 };
+  return { oi: m.opp, em: m.evm && m.evm.length ? m.evm : undefined, fk: gl.filter(x => x.t === 'F').length, pk: gl.filter(x => x.t === 'P').length, hd: gl.filter(x => x.t === 'H').length, ob: gl.filter(x => x.ob).length, sh: m.st.shots, sot: m.st.sot, xg: +(m.st.xg || 0).toFixed(2), kp: m.st.chances, pa: m.st.passAtt ? Math.round(m.st.passOk / m.st.passAtt * 100) : 0, tk: m.st.tackles + m.st.ints, dr: m.st.dribOk, ca: m.st.concOn || 0, sv: m.st.saves || 0, cs: m.st.cs || 0, clr: m.st.clear || 0, bl: m.st.blocks || 0 };
 };
 const avgRating = st => st.rated ? +(st.ratingSum / st.rated).toFixed(2) : 0;
 C.avgRating = avgRating;
+// 리그 우승 경력에 필요한 최소 출전 (경기 수의 15%, 최소 3경기)
+C.lgMinApps = gp => Math.max(3, Math.ceil((gp || 30) * .15));
 
 function finishSeason(S) {
   const ss = S.ss, w = S.w, p = S.p;
@@ -550,13 +575,17 @@ function finishSeason(S) {
   ss.lgId = lgD ? lgD.id : lg ? lg.id : null;
   ss.lgPos = lgD ? lgD.pos : 0; ss.lgN = lgD ? lgD.n : 0;
   ss.final = {}; if (lgD) ss.final[lgD.id] = lgD.t.map(r => ({ id: r[0], p: r[1], w: r[2], d: r[3], l: r[4], gf: r[5], ga: r[6], pts: r[7] }));
-  const trophies = [];
+  const trophies = [], miss = [];
   const cname = ss.club && w.clubs[ss.club] ? w.clubs[ss.club].name : '';
-  if (lgD && lgD.pos === 1) trophies.push({ t: w.lg[lgD.id].name, k: 'league', club: cname, y: lgD.label });
-  if (ss.CWon) trophies.push({ t: ss.cupName, k: 'cup', club: cname, y: ss.label });
-  if (ss.LCWon) trophies.push({ t: ss.lcupName, k: 'lcup', club: cname, y: ss.label });
-  if (ss.contWon && ss.cont) trophies.push({ t: C.COMPS[ss.cont].name, k: 'cont', club: cname, y: ss.label });
-  if (ss.tourn && ss.tourn.won) trophies.push({ t: ss.tourn.name, k: 'nt', club: C.natName(p.nat), y: String(ss.tourn.y) });
+  // 우승 경력은 대회마다 최소 출전이 있어야 붙는다 (v42): 리그는 경기 수의 15%(최소 3경기), 컵·대륙 대회·국가대표 대회는 1경기 이상
+  const appsIn = f => ss.matches.filter(m => m.played && f(m)).length;
+  const tro = (t, need, have) => { if (have >= need) trophies.push(t); else miss.push(Object.assign({ need, have }, t)); };
+  if (lgD && lgD.pos === 1) { const gp = lgD.t && lgD.t[0] ? lgD.t[0][1] : 30; tro({ t: w.lg[lgD.id].name, k: 'league', club: cname, y: lgD.label }, C.lgMinApps(gp), appsIn(m => m.comp === 'league')); }
+  if (ss.CWon) tro({ t: ss.cupName, k: 'cup', club: cname, y: ss.label }, 1, appsIn(m => m.comp === 'cup'));
+  if (ss.LCWon) tro({ t: ss.lcupName, k: 'lcup', club: cname, y: ss.label }, 1, appsIn(m => m.comp === 'lcup'));
+  if (ss.contWon && ss.cont) tro({ t: C.COMPS[ss.cont].name, k: 'cont', club: cname, y: ss.label }, 1, appsIn(m => m.comp === 'cont'));
+  if (ss.tourn && ss.tourn.won) tro({ t: ss.tourn.name, k: 'nt', club: C.natName(p.nat), y: String(ss.tourn.y) }, 1, appsIn(m => m.comp === 'nt' && m.compName === ss.tourn.name));
+  ss.trophyMiss = miss;
   ss.trophies = trophies;
   ss.promo = ss.promo ? { [ss.club]: ss.promo } : null;
   return ss;

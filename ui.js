@@ -331,7 +331,7 @@ function ntTotals(kind) {
   return t;
 }
 U.ntTotals = ntTotals;
-const POSXY = { GK: [50, 92], CB: [50, 78], LB: [16, 72], RB: [84, 72], CDM: [50, 63], CM: [50, 52], CAM: [50, 38], LM: [16, 46], RM: [84, 46], LW: [18, 22], RW: [82, 22], ST: [50, 12] };
+const POSXY = { GK: [50, 92], CB: [50, 76], LB: [18, 76], RB: [82, 76], LWB: [18, 60], RWB: [82, 60], DM: [50, 60], CDM: [50, 60], CM: [50, 43], AM: [50, 26], CAM: [50, 26], LM: [18, 43], RM: [82, 43], LW: [18, 26], RW: [82, 26], ST: [50, 10] }; // 포지션 그리드: ST / LW AM RW / LM CM RM / LWB DM RWB / LB CB RB / GK
 U.POSXY = POSXY;
 
 // ---------- 라우터 ----------
@@ -833,11 +833,12 @@ function careerTable() {
 }
 function viewHub() {
   if (S.wc && U.wcHub) return U.wcHub();
+  if (U.followSync) U.followSync(S, st.wcv = st.wcv || {});
   const hub = h('div', { class: 'wrap hub' });
   const txp = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.txPanel && C.txWindowAt(S.w.cal.d) ? h('div', { class: 'panel', style: { overflow: 'hidden' } }, U.txPanel(S, { my: S.ss.club, compact: true, sel: st.txSel, onSel: d => { st.txSel = d; render(); } })) : null;
   const hero = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.tourHero ? U.tourHero(S) : null;
   const cerb = S.w.cal && U.cerBanner ? U.cerBanner(S, true) : null;
-  const left = h('div', { style: { display: 'grid', gap: '16px', minWidth: 0 } }, playerCard(), cerb, actionPanel(), hero ? h('div', { class: 'panel', style: { overflow: 'hidden', padding: '12px' } }, hero) : null, txp, newsPanel());
+  const left = h('div', { style: { display: 'grid', gap: '16px', minWidth: 0 } }, playerCard(), cerb, actionPanel(), hero ? h('div', { class: 'panel', style: { overflow: 'hidden', padding: '12px' } }, hero) : null, txp, newsPanel(), U.followManager ? h('div', { class: 'prof' }, U.followManager(S)) : null);
   hub.append(left, careerTable());
   return hub;
 }
@@ -937,6 +938,9 @@ function windowBlock() {
           h('button', { class: 'btn ghost sm', onclick: () => req('down') }, '출전 우선', h('small', null, '하부·주급 삭감 수용')))));
     } else out.push(h('div', { class: 'mute', style: { fontSize: '12px' } }, '이번 이적시장의 에이전트 요청은 이미 사용했습니다.'));
   }
+  // 월드 커리어: 내가 고른 구단에 직접 조건을 보낸다
+  if (S.wc && U.wcDirect && S.car.status !== 'youth' || S.wc && U.wcDirect && st0.youthEnd) out.push(h('div', { class: 'reqbox' }, h('div', null, h('b', null, '구단에 직접 제안'), h('div', { class: 'mute', style: { fontSize: '12px' } }, `원하는 구단을 골라 역할·주급·계약 기간을 먼저 제시합니다 · 남은 횟수 ${C.WC.directLeft(S)}번`)),
+    h('div', { class: 'reqbtns' }, h('button', { class: 'btn ghost sm', disabled: C.WC.directLeft(S) <= 0, onclick: () => U.wcDirect() }, '구단 고르기'))));
   const fin = h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } });
   const mustLeave = !cur || st0.release || (st0.expired && !st0.renew);
   if (mustLeave && S.offers.some(o => o.type === 'loan')) S.offers = S.offers.filter(o => o.type !== 'loan');
@@ -951,9 +955,9 @@ function stanceRow(c, title, terms, kind, btn, ghost) {
 }
 function offerRow(o, i) {
   const c = club(o.club), lg = S.w.lg[c.lg];
-  const negBtn = o.neg ? h('span', { class: 'chip ' + (o.negRes === 'up' ? 'good' : '') }, o.negRes === 'up' ? '조건 개선' : '조건 동일') : h('button', { class: 'btn ghost sm', title: '50% 조건 개선 · 30% 동일 · 20% 제안 철회', onclick: () => { const r = GM.negotiate(S, i); toast(r.negRes === 'up' ? '연봉이 올랐습니다!' : r.negRes === 'gone' ? `${C.jo(c.name, '이', '가')} 제안을 철회했습니다.` : '조건은 그대로입니다.'); render(); } }, '협상');
+  const negBtn = S.wc && U.wcNeg ? (o.neg ? h('span', { class: 'chip' }, '협상 완료') : h('button', { class: 'btn ghost sm', onclick: () => U.wcNeg(i) }, '협상')) : o.neg ? h('span', { class: 'chip ' + (o.negRes === 'up' ? 'good' : '') }, o.negRes === 'up' ? '조건 개선' : '조건 동일') : h('button', { class: 'btn ghost sm', title: '50% 조건 개선 · 30% 동일 · 20% 제안 철회', onclick: () => { const r = GM.negotiate(S, i); toast(r.negRes === 'up' ? '연봉이 올랐습니다!' : r.negRes === 'gone' ? `${C.jo(c.name, '이', '가')} 제안을 철회했습니다.` : '조건은 그대로입니다.'); render(); } }, '협상');
   return h('div', { class: 'offer', style: Object.assign(tintStyle(c, .22), { animationDelay: i * 60 + 'ms' }) }, watermark(c), crest(c, 40),
-    h('div', { style: { minWidth: 0 } }, h('div', { class: 'cn' }, c.name, ' ', o.type === 'loan' ? h('span', { class: 'chip blue' }, '임대') : o.free ? h('span', { class: 'chip good' }, '자유 계약') : null, o.cut ? h('span', { class: 'chip bad' }, `주급 ${o.cut}% 삭감`) : null, o.req ? h('span', { class: 'chip' }, '역제의') : null, S.wc && o.acc != null && !o.freeA ? h('span', { class: 'chip ' + (o.acc ? 'good' : 'bad'), title: o.acc ? '현 구단이 이적료 제안을 받아들였습니다. 거절하고 남으면 입지가 흔들릴 수 있습니다.' : '현 구단이 제안을 거절했습니다. 이적을 요청할 수는 있지만 막힐 수 있고, 관계가 상합니다.' }, o.acc ? (o.sell ? '구단 수락 · 정리 대상' : '구단 수락') : '구단 거절') : null, S.wc && o.rival >= 2 ? h('span', { class: 'chip bad', title: '라이벌 구단으로 가면 지금 팬들이 등을 돌립니다' }, '라이벌') : null),
+    h('div', { style: { minWidth: 0 } }, h('div', { class: 'cn' }, c.name, ' ', o.type === 'loan' ? h('span', { class: 'chip blue' }, '임대') : o.free ? h('span', { class: 'chip good' }, '자유 계약') : null, o.cut ? h('span', { class: 'chip bad' }, `주급 ${o.cut}% 삭감`) : null, o.req ? h('span', { class: 'chip' }, o.req === 'direct' ? '직접 제안' : '역제의') : null, o.agent ? h('span', { class: 'chip' }, '에이전트') : null, S.wc && o.promise ? h('span', { class: 'chip', title: '협상에서 약속받은 역할' }, `약속: ${C.ROLELABEL[o.promise]}`) : null, S.wc && o.acc != null && !o.freeA ? h('span', { class: 'chip ' + (o.acc ? 'good' : 'bad'), title: o.acc ? '현 구단이 이적료 제안을 받아들였습니다. 거절하고 남으면 입지가 흔들릴 수 있습니다.' : '현 구단이 제안을 거절했습니다. 이적을 요청할 수는 있지만 막힐 수 있고, 관계가 상합니다.' }, o.acc ? (o.sell ? '구단 수락 · 정리 대상' : '구단 수락') : '구단 거절') : null, S.wc && o.rival >= 2 ? h('span', { class: 'chip bad', title: '라이벌 구단으로 가면 지금 팬들이 등을 돌립니다' }, '라이벌') : null),
       h('div', { class: 'terms' }, h('span', null, lg.name), h('span', null, '전력 ', h('b', null, c.str.toFixed(1))), h('span', null, '역할 ', ROLECHIP(o.role)), o.type !== 'loan' ? h('span', null, h('b', null, wageTxt(o.wage)), ` · ${o.years}년`) : h('span', null, '1시즌'), o.fee ? h('span', null, '이적료 ', h('b', null, C.fmtEUR(o.fee))) : null)),
     h('div', { class: 'btns' }, h('button', { class: 'btn sm' + (S.wc && o.acc === false ? ' ghost' : ''), onclick: () => decide({ kind: 'offer', i }) }, S.wc && o.acc === false ? '이적 요청' : '수락'), o.type !== 'loan' ? negBtn : null));
 }
@@ -1067,6 +1071,9 @@ function simBlock() {
   // 다음 일정
   const fx = C.userFixtures(S).filter(f => !f.done && f.d > today);
   const KN = { L: '리그', C: ss.cupName || '컵', LC: ss.lcupName || '리그컵', E: ss.cont ? C.COMPS[ss.cont].short : '대륙 대회', N: 'A매치', Y: '유스' };
+  // 월드 커리어: 직전 경기(내 출전·평점·골 시간)를 진행 버튼 바로 위에
+  if (S.wc && U.wcMyRow) { const last = ss.matches.filter(m => m.comp !== 'youth' || S.car.status === 'youth').slice(-3).reverse();
+    if (last.length) out.push(h('div', { class: 'upnext' }, h('div', { class: 'lbl' }, '직전 경기'), h('div', { class: 'wcml', style: { padding: 0 } }, ...last.map(m => U.wcMyRow(m, U.wcOpenMine ? U.wcOpenMine(m) : null))))); }
   if (fx.length) out.push(h('div', { class: 'upnext' }, h('div', { class: 'lbl' }, `다음 경기 (남은 ${fx.length}경기)`), ...fx.slice(0, 4).map(f => h('div', { class: 'uprow' }, h('span', { class: 'mute' }, C.fmtDateY(f.d)), h('span', { class: 'chip' }, f.k === 'E' && f.comp ? C.COMPS[f.comp].short : KN[f.k] || f.k), h('span', null, f.nat ? `${C.natName(f.opp)} · ${f.stage || ''}` : f.opp ? (f.home ? '홈 · ' : '원정 · ') + ((w.clubs[f.opp] || {}).name || '') : f.stage || ''), h('span', { class: 'mute', style: { fontSize: '11px' } }, f.d - today === 1 ? '내일' : `${f.d - today}일 뒤`)))));
   const big = C.calUpcoming(S, today, 40).filter(e => e.k !== 'lg' || e.nat === ss.nat).slice(0, 4);
   if (big.length) out.push(h('div', { class: 'mute', style: { fontSize: '12px' } }, '다가오는 일정: ', ...big.map(e => h('span', { class: 'chip', style: { marginRight: '4px' } }, e.d <= today && e.d2 ? `${e.t} 진행 중 (~${C.fmtDate(e.d2)})` : `${C.fmtDate(e.d)} ${e.t}`))));
@@ -1079,6 +1086,8 @@ function simBlock() {
   out.push(h('div', { class: 'nextbtn', id: 'runBtn' },
     h('button', { class: 'btn', onclick: () => runTo(Math.min(nf ? nf.d : end - 1, end - 1)) }, nf ? `다음 경기 ▸  ${nfTxt}` : `${endTxt}까지 ▸`),
     nf ? h('button', { class: 'btn ghost sm', onclick: () => runTo(end - 1) }, `${endTxt}까지`) : null));
+  // 월드 커리어: 진행 중 화면(내가 뛴 경기)을 버튼 바로 아래, 달력은 그 밑에
+  if (S.wc) { out.push(h('div', { id: 'live', style: { display: 'grid', gap: '10px' } })); out.push(h('div', { id: 'calWrap' }, careerCal(today, end, fx))); return out; }
   out.push(h('div', { id: 'calWrap' }, careerCal(today, end, fx)));
   out.push(h('div', { id: 'live', style: { display: 'grid', gap: '10px' } }));
   return out;
@@ -1197,7 +1206,7 @@ async function runTo(target) {
   const tick = h('div', { class: 'ticker' });
   const txTk = h('div', { class: 'txtick', style: { display: 'none' } });
   // 월드 커리어: 내가 뛴 경기는 따로 (출전 시간·평점이 바로 보이게), 팀 전체 결과는 그 아래
-  const mine = S.wc && U.wcMyRow ? h('div', { class: 'wcml live' }) : null, mineH = mine ? h('div', { class: 'lbl', style: { display: 'none' } }, '내가 뛴 경기') : null;
+  const mineQ = [], mine = S.wc && U.wcMyRow ? h('div', { class: 'wcml live' }) : null, mineH = mine ? h('div', { class: 'lbl', style: { display: 'none' } }, '내가 뛴 경기') : null;
   live.append(dayTxt, prog, ...(pro ? [pro] : []), yth, txTk, stage, ...(mine ? [mineH, mine, h('div', { class: 'lbl' }, '팀 경기 결과 (미출전 포함)')] : []), tick);
   const ss = S.ss, w = S.w, d0 = w.cal.d, span = Math.max(1, target - d0);
   const total = C.userFixtures(S).filter(f => !f.done && f.d <= target).length;
@@ -1223,7 +1232,7 @@ async function runTo(target) {
     match: async m => {
       if (S.newsQ && S.newsQ.length) { const big = S.newsQ.filter(x => x.big && x.k !== 'transfer'); S.newsQ = []; for (const x of big) { toast(x.t); if (x.k === 'mile' || x.k === 'hat') confetti(50); } }
       n++; tick.prepend(tickRow(m)); upd();
-      if (mine && m.played) { mineH.style.display = ''; mine.prepend(U.wcMyRow(m)); }
+      if (mine && m.played) mineQ.push(m); // 골·도움 시간은 경기 기록이 저장된 뒤(그날 진행 끝)에 붙인다
       // 월드 커리어: 관계 반영, 중계할 경기·대화 사건은 그날 진행이 끝난 뒤 (경기 기록이 저장된 다음) 보여 준다
       if (S.wc && U.wcAfterMatch) { U.wcAfterMatch(m); if (U.wcPending()) return; }
       const sp = normSpeed(st.speed);
@@ -1238,6 +1247,7 @@ async function runTo(target) {
     dayTxt.firstChild.textContent = `${C.fmtDateY(d)} 진행 중… (${C.fmtDateY(target)}까지 · ${U.etaTxt ? U.etaTxt(t0run, d - d0, span) : ''})`;
     if (U.txTick) U.txTick(S, d, txTk, ss.club);
     if (S.wc && U.wcOnDay) { await U.wcOnDay(d, () => { stopped = true; stopBtn.disabled = true; stopBtn.textContent = "멈추는 중…"; }); upd(); }
+    while (mine && mineQ.length) { const m = mineQ.shift(); mineH.style.display = ''; mine.prepend(U.wcMyRow(m, U.wcOpenMine ? U.wcOpenMine(m) : null)); }
     const t = Date.now(); if (t - lastPaint > 60) { lastPaint = t; await sleep(0); }
   };
   try { await GM.simTo(S, target, hooks, onDay, () => stopped); } catch (e) { console.error(e); toast('시뮬레이션 중 오류가 났습니다.'); }
@@ -1294,6 +1304,7 @@ function reviewBlock() {
   if (r.tourn) res.push(h('span', { class: 'chip' + (r.tourn.won ? ' gold' : ' blue') }, `${r.tourn.name} ${r.tourn.stage}`));
   if (ss && ss.promo && ss.promo[r.club]) res.push(h('span', { class: 'chip ' + (ss.promo[r.club] > 0 ? 'good' : 'bad') }, ss.promo[r.club] > 0 ? '승격!' : '강등'));
   if (r.ballon) res.push(h('span', { class: 'chip gold' }, `발롱도르 ${r.ballon}위`));
+  for (const t of r.trophyMiss || []) res.push(h('span', { class: 'chip', title: '우승 경력은 대회마다 최소 출전이 있어야 붙습니다 (리그: 경기 수의 15%·최소 3경기, 그 밖의 대회: 1경기)' }, `팀 ${t.t} 우승 · 출전 ${t.have}/${t.need}경기로 경력 제외`));
   if (r.tourn && S.w.intl && S.w.intl[r.tourn.y]) res.push(h('button', { class: 'chip', style: { cursor: 'pointer' }, onclick: () => { st.wv = Object.assign(st.wv || {}, { mode: 'intl', iy: String(r.tourn.y), ik: r.tourn.k }); U.setTab('table'); } }, `${r.tourn.y} 국제 대회 대진 보기 ›`));
   out.push(h('div', { class: 'chg' }, ...res));
   if (r.awards.length) out.push(h('div', { class: 'chg' }, ...r.awards.map(a => h('span', { class: 'chip gold' }, trophy(a.k, 14, '#f2c14e'), a.t))));

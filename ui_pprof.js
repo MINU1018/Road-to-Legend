@@ -10,7 +10,7 @@ const flag = (c, w) => U.flag(c, w);
 const f1 = x => (Math.round(x * 10) / 10).toFixed(1), f2 = x => (Math.round(x * 100) / 100).toFixed(2);
 const PST = () => (U.st.pf = U.st.pf || {});
 const POSKO = { GK: '골키퍼', CB: '중앙 수비수', LB: '왼쪽 수비수', RB: '오른쪽 수비수', LWB: '왼쪽 윙백', RWB: '오른쪽 윙백', DM: '수비형 미드필더', CDM: '수비형 미드필더', CM: '중앙 미드필더', AM: '공격형 미드필더', CAM: '공격형 미드필더', LM: '왼쪽 미드필더', RM: '오른쪽 미드필더', LW: '왼쪽 윙어', RW: '오른쪽 윙어', ST: '스트라이커' };
-const PXY = { GK: [50, 92], CB: [50, 79], LB: [16, 74], RB: [84, 74], LWB: [13, 61], RWB: [87, 61], DM: [50, 63], CDM: [50, 63], CM: [50, 50], AM: [50, 36], CAM: [50, 36], LM: [15, 46], RM: [85, 46], LW: [19, 26], RW: [81, 26], ST: [50, 15] };
+const PXY = { GK: [50, 92], CB: [50, 76], LB: [18, 76], RB: [82, 76], LWB: [18, 60], RWB: [82, 60], DM: [50, 60], CDM: [50, 60], CM: [50, 43], AM: [50, 26], CAM: [50, 26], LM: [18, 43], RM: [82, 43], LW: [18, 26], RW: [82, 26], ST: [50, 10] }; // 포지션 그리드: ST / LW AM RW / LM CM RM / LWB DM RWB / LB CB RB / GK
 const PSH = { GK: 'GK', CB: 'CB', LB: 'LB', RB: 'RB', LWB: 'LWB', RWB: 'RWB', DM: 'DM', CDM: 'DM', CM: 'CM', AM: 'AM', CAM: 'AM', LM: 'LM', RM: 'RM', LW: 'LW', RW: 'RW', ST: 'ST' };
 const FAMK = ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'DM', 'CM', 'AM', 'LM', 'RM', 'LW', 'RW', 'ST'];
 const fcRow = pid => { const F = G.FC27; return /^\d+$/.test(String(pid)) && F && F.P[+pid] ? F.P[+pid] : null; };
@@ -82,7 +82,10 @@ U.pfValueChart = function (s, pid, e, c, P) {
   const ageAt = (t, fb) => birth != null ? (C.dayOf(Math.floor(t), 1, 1) + (t % 1) * 365.25 - birth) / 365.25 : fb;
   const rows = {}; for (const x of hist) { if (x[6] === '' || x[6] == null) continue; const y = x[0] < 1000 ? x[0] + 2000 : x[0]; (rows[y] = rows[y] || []).push(x); }
   const yrs = Object.keys(rows).map(Number).sort((a, b) => a - b);
-  const pts = [];
+  const pts = []; let preV = null;
+  // P.vpts: 이미 계산한 가치 점들 (월드 커리어 내 선수 등)
+  if (P && P.vpts) pts.push(...P.vpts);
+  else {
   const vf = C.vfOf ? C.vfOf(w, pid) : 1; // FC27+TFMKT 시장가치 보정
   const push = (t, ovr, age, cid, perf, ct) => { const n = .975 + seed(Math.round(t * 12)) * .05; pts.push({ x: t, v: Math.max(10000, Math.round(C.aiFee(ovr, age, natOfClubW(w, cid), ct, .5, perf) * vf * n / 10000) * 10000), cid }); };
   let o0 = F ? F[11] : null, a0 = null;
@@ -116,8 +119,9 @@ U.pfValueChart = function (s, pid, e, c, P) {
     if (pts.length) { const L = pts[pts.length - 1]; L.v = U.valueNow(s, pid, e, c); L.now = 1; if (c) L.cid = c.id; }
   }
   // FC27+TFMKT: 게임 시작(2026년 8월) 이전은 실제 시장가치
-  const preV = s.ds === 'tm' && C.TM ? C.TM.preVal(pid) : null;
+  preV = s.ds === 'tm' && C.TM ? C.TM.preVal(pid) : null;
   if (preV && preV.length) { for (let i = pts.length - 1; i >= 0; i--) if (pts[i].x < 2026.55) pts.splice(i, 1); for (const p of preV) pts.push({ x: p.t, v: p.v, cid: p.cid, pre: 1 }); }
+  }
   // 안전장치: 시간 순으로, 같은 달은 하나만
   pts.sort((p, q) => p.x - q.x); for (let i = pts.length - 1; i > 0; i--) if (Math.abs(pts[i].x - pts[i - 1].x) < 1 / 24) pts.splice(i - 1, 1);
   if (pts.length < 2) return null;
@@ -357,16 +361,19 @@ U.pfSeason = function (s, pid, e, c, P, seasons) {
 U.pfCareer = function (s, pid, P, path, seasons) {
   const w = s.w, v = PST(); v.ct = v.ct || 'club';
   const yy = x => (x < 1000 ? x + 2000 : x);
-  const tot = (cid, y0, y1) => { let a = 0, g = 0; for (const sn of seasons) { const y = sn.live ? w.year - 2000 : sn.y; if (y < y0 || (y1 != null && y > y1)) continue; for (const it of sn.items) if (it.club === cid && it.cat !== 'nt') { a += it.apps || 0; g += it.g || 0; } } return [a, g]; };
+  const tot = (cid, y0, y1, yth) => { let a = 0, g = 0; for (const sn of seasons) { const y = sn.live ? w.year - 2000 : sn.y; if (y < y0 || (y1 != null && y > y1)) continue; for (const it of sn.items) if (it.club === cid && it.cat !== 'nt' && !!it.youth === !!yth) { a += it.apps || 0; g += it.g || 0; } } return [a, g]; }; // 유스 경기는 유스 경력에만
   const tnm = cid => (C.TM ? C.TM.teamName(w, cid) : (w.clubs[cid] || {}).name) || cid, tcr = (cid, sz) => crest(w.clubs[cid] || (C.TM && C.TM.teamParent(cid) ? w.clubs[C.TM.teamParent(cid)] : null) || null, sz);
   const sl = y => `${yy(y)}/${String(yy(y) + 1).slice(2)}`;
+  // 유스 경력(x.youth)은 1군 경력과 따로 (v42)
+  const yPath = path.filter(x => x.youth); path = path.filter(x => !x.youth);
+  const yRows = yPath.map(x => { const [a, g] = tot(x.cid, x.y0, x.y1, 1); return h('div', { class: 'pfcr' }, tcr(x.cid, 22), h('div', null, h('b', { class: w.clubs[x.cid] ? 'lnk' : '', onclick: () => { if (w.clubs[x.cid]) U.openClub(x.cid); } }, tnm(x.cid)), x.ylab ? h('span', { class: 'segtag' }, x.ylab) : null, h('small', { class: 'mute' }, `${sl(x.y0)} – ${x.y1 == null ? '지금' : sl(x.y1)}`)), h('span', null, a), h('span', null, g)); });
   const rows = path.map((x, i) => {
     const pv = path[i - 1], nx = path[i + 1], pp = path[i - 2];
     // 겨울 이동은 배지 없이 기간 글자에만 'nn/nn 겨울'. 배지는 임대·임대 복귀·임대 후 완전 이적만
     const ws = x.mv ? x.w0 : pv && pv.y1 === x.y0, we = x.mv ? x.w1 : nx && x.y1 != null && nx.y0 === x.y1;
     const a0 = sl(x.y0) + (ws ? ' 겨울' : ''), a1 = x.y1 == null ? '지금' : sl(x.y1) + (we ? ' 겨울' : '');
     const tag = x.mv ? (x.tag || (x.loan ? '임대' : null)) : x.loan ? '임대' : pv && pv.loan && !x.loan && pp && pp.cid === x.cid ? '임대 복귀' : null;
-    const [a, g] = tot(x.cid, x.y0, x.y1);
+    const [a, g] = tot(x.cid, x.y0, x.y1, 0);
     return h('div', { class: 'pfcr' + (x.loan ? ' loan' : '') }, tcr(x.cid, 22), h('div', null, h('b', { class: w.clubs[x.cid] ? 'lnk' : '', onclick: () => { if (w.clubs[x.cid]) U.openClub(x.cid); } }, tnm(x.cid)), tag ? h('span', { class: 'segtag' + (/임대/.test(tag) ? ' loan' : '') }, tag) : null, h('small', { class: 'mute' }, a0 === a1 ? a0 : `${a0} – ${a1}`)), h('span', null, a), h('span', null, g)); }).reverse();
   // 국가대표
   const ntA = seasons.reduce((t, sn) => t + sn.items.filter(it => it.cat === 'nt').reduce((q, it) => q + it.apps, 0), 0), ntG = seasons.reduce((t, sn) => t + sn.items.filter(it => it.cat === 'nt').reduce((q, it) => q + it.g, 0), 0);
@@ -378,11 +385,11 @@ U.pfCareer = function (s, pid, P, path, seasons) {
   for (const sn of seasons.slice().reverse()) {
     const its = sn.items.filter(it => it.club && it.cat !== 'nt'); if (!its.length) continue;
     const y = sn.live ? w.year - 2000 : sn.y, by = new Map();
-    for (const it of its) { const k = by.get(it.club) || { a: 0, g: 0, as: 0, rs: 0, ra: 0, loan: 0 }; k.a += it.apps || 0; k.g += it.g || 0; k.as += it.a || 0; if (it.rt != null && it.apps) { k.rs += it.rt * it.apps; k.ra += it.apps; } if (it.nd) k.nd = 1; if (it.loan) k.loan = 1; by.set(it.club, k); }
-    const cl = [...by.keys()].sort((p, q) => pIdx(q, y) - pIdx(p, y));
-    for (const id of cl) { const k = by.get(id), pi = pIdx(id, y), ln = k.loan || (pi >= 0 && path[pi].loan);
+    for (const it of its) { const key = it.youth ? it.club + '|Y' : it.club; const k = by.get(key) || { a: 0, g: 0, as: 0, rs: 0, ra: 0, loan: 0, cid: it.club, yth: it.youth ? (it.ylab || '유스') : '' }; k.a += it.apps || 0; k.g += it.g || 0; k.as += it.a || 0; if (it.rt != null && it.apps) { k.rs += it.rt * it.apps; k.ra += it.apps; } if (it.nd) k.nd = 1; if (it.loan) k.loan = 1; by.set(key, k); }
+    const cl = [...by.keys()].sort((p, q) => (by.get(p).yth ? 1 : 0) - (by.get(q).yth ? 1 : 0) || pIdx(by.get(q).cid, y) - pIdx(by.get(p).cid, y));
+    for (const key of cl) { const k = by.get(key), id = k.cid, pi = pIdx(id, y), ln = k.loan || (pi >= 0 && path[pi].loan);
       const dz = v => k.nd && !k.a ? '-' : v;
-      sRows.push(h('div', { class: 'pfcr s4' + (ln ? ' loan' : '') }, tcr(id, 20), h('div', null, h('b', { class: w.clubs[id] ? 'lnk' : '', onclick: () => { if (w.clubs[id]) U.openClub(id); } }, tnm(id)), ln ? h('span', { class: 'segtag loan' }, '임대') : null, h('small', { class: 'mute' }, sn.live ? sn.label : sn.pre ? sn.label : sn.wl)), h('span', null, dz(k.a)), h('span', null, dz(k.g)), h('span', null, dz(k.as)), h('span', null, k.ra ? U.rt2(k.rs / k.ra) : '-'))); }
+      sRows.push(h('div', { class: 'pfcr s4' + (ln ? ' loan' : '') }, tcr(id, 20), h('div', null, h('b', { class: w.clubs[id] ? 'lnk' : '', onclick: () => { if (w.clubs[id]) U.openClub(id); } }, tnm(id)), ln ? h('span', { class: 'segtag loan' }, '임대') : null, k.yth ? h('span', { class: 'segtag' }, k.yth) : null, h('small', { class: 'mute' }, sn.live ? sn.label : sn.pre ? sn.label : sn.wl)), h('span', null, dz(k.a)), h('span', null, dz(k.g)), h('span', null, dz(k.as)), h('span', null, k.ra ? U.rt2(k.rs / k.ra) : '-'))); }
   }
   // 시즌별 차트용: 클럽 경기 합계 (오래된 순)
   const chL = []; for (const sn of seasons) { const its = sn.items.filter(it => it.club && it.cat !== 'nt' && !it.nd && !it.youth); if (!its.length) continue; const y = sn.live ? w.year - 2000 : sn.y; const a = its.reduce((q, it) => q + (it.apps || 0), 0), rated = its.filter(it => it.rt != null), ra = rated.reduce((q, it) => q + it.apps, 0), rs = rated.reduce((q, it) => q + it.rt * it.apps, 0);
@@ -393,6 +400,7 @@ U.pfCareer = function (s, pid, P, path, seasons) {
     chart,
     v.ct === 'club' ? h('div', { class: 'pfcrh mute' }, h('span', null, '1군 경력'), h('span', null, '경기'), h('span', null, '득점')) : h('div', { class: 'pfcrh s4 mute' }, h('span', null, '시즌별 (클럽 경기)'), h('span', null, '경기'), h('span', null, '골'), h('span', null, '도움'), h('span', null, '평점')),
     ...(v.ct === 'club' ? rows : sRows),
+    v.ct === 'club' && yRows.length ? [h('div', { class: 'pfcrh mute' }, h('span', null, '유스 경력'), h('span', null, '경기'), h('span', null, '득점')), ...yRows] : null,
     v.ct === 'club' && nat && (ntA || caps) ? [h('div', { class: 'pfcrh mute' }, h('span', null, '국가대표 팀'), h('span'), h('span')), h('div', { class: 'pfcr' }, U.natCrest(nat, 22), h('div', null, h('b', { class: 'lnk', onclick: () => U.openNat(nat) }, C.natName(nat)), h('small', { class: 'mute' }, caps ? `게임 이전 A매치 ${caps[0]}경기 ${caps[1]}골 포함 · 이후 국제 대회 본선` : '국제 대회 본선·A매치')), h('span', null, ntA + (caps ? caps[0] : 0)), h('span', null, ntG + (caps ? caps[1] : 0)))] : null));
 };
 
@@ -416,7 +424,7 @@ U.pfTrophies = function (s, pid, P, seasons) {
   const w = s.w, by = new Map(), add = (key, crestEl, title, sub, name, sl) => { let g = by.get(key); if (!g) by.set(key, g = { crestEl, title, sub, list: new Map() }); const t = g.list.get(name) || { n: name, ys: [] }; t.ys.push(sl); g.list.set(name, t); };
   for (const sn of seasons) { if (sn.live) continue; const A = w.arch && w.arch[sn.wl]; if (!A) continue;
     for (const it of sn.items) { if (!it.apps) continue;
-      if (it.cat === 'league' && it.lid && A.lg[it.lid] && A.lg[it.lid].t && A.lg[it.lid].t[0] && A.lg[it.lid].t[0][0] === it.club) add(it.club, crest(w.clubs[it.club] || null, 22), (w.clubs[it.club] || {}).name, C.natName((w.lg[it.lid] || {}).nation), A.lg[it.lid].n, A.lg[it.lid].sl || sn.wl);
+      if (it.cat === 'league' && it.lid && A.lg[it.lid] && A.lg[it.lid].t && A.lg[it.lid].t[0] && A.lg[it.lid].t[0][0] === it.club && it.apps >= C.lgMinApps(A.lg[it.lid].t[0][1])) add(it.club, crest(w.clubs[it.club] || null, 22), (w.clubs[it.club] || {}).name, C.natName((w.lg[it.lid] || {}).nation), A.lg[it.lid].n, A.lg[it.lid].sl || sn.wl);
       if (it.cat === 'cup') { const [kd, n2] = it.key.split(':'); const X = (kd === 'lcup' ? A.lcup : A.cup)[n2]; if (X && X.w === it.club) add(it.club, crest(w.clubs[it.club] || null, 22), (w.clubs[it.club] || {}).name, C.natName(n2), X.n, X.sl || sn.wl); }
       if (it.cat === 'cont') { const k = it.key.split(':')[1], X = A.cont[k]; if (X && X.w === it.club) add(it.club, crest(w.clubs[it.club] || null, 22), (w.clubs[it.club] || {}).name, '', X.n, X.sl || sn.wl); }
       if (it.cat === 'nt' && P && P.nat) { const k = it.key.split(':')[1], H = (w.hist.nt || {})[k] || [], yv = sn.y + 2000, hit = H.find(x => x.c === P.nat && Math.abs(parseInt(x.y, 10) - yv) <= 1); if (hit) add('nat', U.natCrest(P.nat, 22), C.natName(P.nat), '국가대표', (C.TDEF && C.TDEF[k] && C.TDEF[k].name) || it.name, String(hit.y)); }

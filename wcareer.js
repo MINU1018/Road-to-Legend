@@ -91,7 +91,7 @@ function growCore(S, ctx) {
   const ga = age - (h.peak - 27.5) * .5 - (gk ? 2 : 0); // 전성기가 늦은 선수·골키퍼는 늦게 여문다
   const play = clamp((ctx.minShare || 0) * 1.3, 0, 1.15);
   const perf = clamp((ctx.rating || 6.65) - 6.65, -.8, 1) * (ctx.minShare > .05 ? 1 : 0);
-  const lg = clamp((1 - (h.lon || 1)) * 3, -2, 2.5); // 선수 생명 성향 (년)
+  const lg = clamp((1 - (h.lon || 1)) * 3, -2, 2.5) + (S.wc.sup && S.wc.sup.med ? .6 : 0); // 선수 생명 성향 (년) · 의료팀이 있으면 조금 길게
   if (ga <= 23) {
     pot += perf * 2 * play + N(-.35, 1.1) - (play < .2 && ga >= 20 ? rnd(0, 1.5) : 0) - (ga >= 21 && pot - o >= 8 ? rnd(0, 1.2) : 0);
     if (pot > o) o += (pot - o) * rnd(.15, .32) * (.62 + .6 * play) * (ga <= 20 ? 1.1 : 1) + perf * 2.2 * play + N(.45, 1);
@@ -103,7 +103,7 @@ function growCore(S, ctx) {
   else if (ga > 30) o -= Math.max(0, ga - 30 - lg * .5) * rnd(.25, .75) + rnd(0, .7);
   if (ga >= 24 && ga <= 30 && pot > o) o += (pot - o) * rnd(.25, .6);
   // 갈림길
-  let ev = 0; const rr = R(), stg = has(S, 'pro') ? .6 : 1;
+  let ev = 0; const rr = R(), med = S.wc.sup && S.wc.sup.med, stg = (has(S, 'pro') ? .6 : 1) * (med ? .8 : 1);
   if (ga >= 18 && ga <= 25 && rr < (ga <= 22 && pot >= o + 6 ? .09 : .055)) { o += rint(2, 5) + (ga <= 21 && pot >= o + 8 ? rint(0, 3) : 0); pot += rint(1, 4); ev = 1; }
   else if (ga <= 23 && rr < .055 + .08 * stg) { o -= Math.max(0, o - o0) * .7; pot -= rint(2, 5); ev = 2; }
   else if (ga >= 24 && ga <= 31 && rr < .055 + .1 * stg) { o -= rint(2, 4); ev = 3; }
@@ -143,6 +143,7 @@ GM.endSeason = function (S) {
   const bigInj = S.ss && (S.ss.injuries || []).some(x => (x.days || 0) >= 90);
   WC._S = S; WC._bigInj = bigInj;
   try { const r = es0(S); if (S.wc.lastGrow) S.wc.lastGrow.six0 = six0; seasonRel(S, r);
+    S.wc.supPaid = supRenew(S);
     (S.wc.sixH = S.wc.sixH || []).push({ label: r.label, y: r.y, age: r.age, ovr: r.ovr1, six: WC.six(S.p).map(x => x[2]), ev: S.wc.lastGrow ? S.wc.lastGrow.ev : 0, v: S.value }); return r; } finally { WC._S = null; }
 };
 const fy0 = GM.freeYear;
@@ -316,6 +317,11 @@ WC.onMatch = function (S, m) {
       if (has(S, 'media') || has(S, 'comp')) S.p.rep = clamp(S.p.rep + (has(S, 'media') ? .15 : 0) + (d > .8 ? .2 : 0), 0, 100);
     }
   }
+  // 높은 주급: 부진하면 팬 시선이 더 빨리 차가워진다 / 홍보팀: 좋은 경기 뒤 명성이 조금 더
+  if (r && !nt && !youth) { if (S.wc.star && r < 6.5) fansV(S, (r - 6.8) * .02); if (S.wc.sup && S.wc.sup.pr && r >= 7.3) S.p.rep = clamp(S.p.rep + .25, 0, 100); }
+  // 약속받은 역할 확인 (리그 10경기 뒤 한 번)
+  const P = S.wc.promise;
+  if (P && !P.chk && P.club === S.car.club && !nt && !youth) { const lgm = S.ss.matches.filter(x => x.comp === 'league'); if (lgm.length >= 10) { P.chk = 1; const stt = lgm.slice(-10).filter(x => x.start).length; if (stt < (P.role === 'key' ? 7 : 5)) W.q.push({ id: 'promise', force: 1 }); else WC.note(S, '약속받은 역할대로 뛰고 있다', 1); } }
   // 관계는 시간이 지나면 조금씩 무뎌진다
   for (const x of rel(S).mates) x.v *= .995;
   // 사건
@@ -476,7 +482,8 @@ C.drawEvents = function (S, when, n) {
   const E = C._EVENTS || [];
   const saveRecent = S.recentEv;
   if (when === 'pre' && C._drawCross) { const x = C._drawCross(S); if (x) { out.push(qualEvent(x)); n = Math.max(0, n - 1); } }
-  const pool = E.filter(e => KEEP.includes(e.id) && e.when.includes(when) && !(S.recentEv || []).includes(e.id) && (!e.cond || safe(() => e.cond(S))));
+  const fam = S.wc.sup && S.wc.sup.family;
+  const pool = E.filter(e => KEEP.includes(e.id) && e.when.includes(when) && !(S.recentEv || []).includes(e.id) && !(fam && ['homesick', 'language'].includes(e.id) && R() < .8) && (!e.cond || safe(() => e.cond(S))));
   const wpool = Object.keys(WEV).filter(k => !['newMgr', 'praise', 'press', 'ntCall', 'derby'].includes(k)).map(k => [k, safe(() => typeof WEV[k].w === 'function' ? WEV[k].w(S, null) : 0) || 0]).filter(x => x[1] > 0);
   for (let i = 0; i < n; i++) {
     if (wpool.length && R() < .55) { const k = wpick(wpool, x => x[1]); wpool.splice(wpool.indexOf(k), 1); const b = buildWC(S, k[0], null); if (b) { out.push(qualEvent(b)); continue; } }
@@ -559,7 +566,8 @@ WC.markOffers = function (S, list, win) {
   return list;
 };
 const ow0 = GM.openWindow;
-GM.openWindow = function (S) { ow0(S); if (S.wc) { WC.markOffers(S, S.offers, 'summer'); WC.mgrCheck(S); if (has(S, 'amb') && R() < .3 && S.car.status === 'first') { const x = C.requestOffers(S, 'up'); if (x.length) { x.forEach(o => { delete o.req; }); S.offers = S.offers.concat(x); WC.markOffers(S, S.offers, 'summer'); } } } };
+GM.openWindow = function (S) { ow0(S); if (S.wc) { WC.markOffers(S, S.offers, 'summer'); WC.mgrCheck(S); if (S.wc.sup && S.wc.sup.agent && R() < .45 && S.car.status !== 'youth') { const x = C.requestOffers(S, R() < .5 ? 'up' : 'same'); x.forEach(o => { delete o.req; o.agent = 1; }); S.offers = S.offers.concat(x.filter(o => !S.offers.some(y => y.club === o.club))); WC.markOffers(S, S.offers, 'summer'); }
+  if (has(S, 'amb') && R() < .3 && S.car.status === 'first') { const x = C.requestOffers(S, 'up'); if (x.length) { x.forEach(o => { delete o.req; }); S.offers = S.offers.concat(x); WC.markOffers(S, S.offers, 'summer'); } } } };
 const rm0 = GM.requestMove;
 GM.requestMove = function (S, mode) { const got = rm0(S, mode); if (S.wc && got) { WC.markOffers(S, got, 'summer'); mgrV(S, -.05); fansV(S, -.04); lean(S, 'amb', .3); } return got; };
 // 이적 결정
@@ -597,7 +605,7 @@ GM.decideWindow = function (S, d) {
     }
     if (o) leaveClub(S, o);
     const r = dw0(S, d);
-    if (S.car.club !== before) { rel(S).mgr = null; WC.mgrCheck(S, true); initMates(S); S.wc.rb = (rel(S).mgr || {}).v * 2.2 || 0; S.wc.sel = []; }
+    if (S.car.club !== before) { rel(S).mgr = null; WC.mgrCheck(S, true); initMates(S); S.wc.rb = (rel(S).mgr || {}).v * 2.2 || 0; S.wc.sel = []; joinTerms(S, o); }
     return r;
   }
   if (['stay', 'renew', 'extend', 'youth', 'promote', 'back'].includes(d.kind) && !st.expired && !st.release) stayPenalty(S, S.offers);
@@ -621,6 +629,100 @@ GM.winterMove = function (S, i) {
   return r;
 };
 
+// ---------- 이적 협상 · 직접 제안 · 주급의 의미 (v42) ----------
+// 협상: 역할·주급·계약 기간을 요구하면 구단이 받아들이거나, 수정안을 내거나, 협상을 접는다 (보이지 않는 확률)
+// 주급은 구단이 나를 어떻게 보는지의 신호: 높게 받고 가면 기대(출전 보장·팬의 눈높이)가, 낮게 받고 가면 '싼 백업' 취급이 따라온다
+const ROLES = ['reserve', 'backup', 'rotation', 'starter', 'key'];
+WC.ROLES = ROLES;
+const ri_ = r => Math.max(0, ROLES.indexOf(r));
+const pvOf = S => C.ovrOf(S.p) + (S.p.rep - 45) * .04 + (S.p.age <= 22 ? clamp(C.potEstimate(S.p).est - C.ovrOf(S.p), 0, 15) * .15 : 0) - Math.max(0, S.p.age - 30) * 1.1;
+WC.baseWage = (S, c) => C.wageFor(c, C.ovrOf(S.p), (S.w.lg[c.lg] || {}).nation || c.nat);
+function negInit(S, o) {
+  if (o.ng) return o.ng;
+  const c = S.w.clubs[o.club], pv = pvOf(S);
+  const head = clamp(.1 + (pv - c.str) * .025 + (S.p.rep - 50) * .003 + (S.wc.sup && S.wc.sup.agent ? .08 : 0) + N(0, .04), .02, .55);
+  return (o.ng = { w0: o.wage, r0: C.roleAt(S, c), y0: o.years, max: Math.round(o.wage * (1 + head) / 100) * 100, n: 0 });
+}
+WC.negInit = negInit;
+// ask: { role, wage, years } → { ok } | { counter:{role,wage,years}, why } | { gone, why }
+WC.negAsk = function (S, o, ask) {
+  const ng = negInit(S, o), rg = ri_(ask.role) - ri_(ng.r0), q = ask.wage / ng.max;
+  const roleP = rg <= 0 ? 1 : rg === 1 ? clamp(.42 + (S.p.rep - 50) * .006, .15, .75) : .08;
+  const wageP = q <= 1 ? 1 : clamp(1 - (q - 1) * 3.5, 0, 1);
+  const yrsP = S.p.age >= 31 && ask.years >= 3 ? .35 : S.p.age >= 29 && ask.years >= 4 ? .6 : 1;
+  ng.n++;
+  if (R() < roleP * wageP * yrsP) { const up = ri_(ask.role) > ri_(o.role); Object.assign(o, { wage: ask.wage, role: up ? ask.role : o.role, years: ask.years, neg: true, negRes: 'deal', promise: up ? ask.role : o.promise || null }); return { ok: 1 }; }
+  const why = [wageP < 1 ? '주급 요구가 구단이 생각한 선을 넘는다고 합니다' : '', roleP < 1 ? `${C.ROLELABEL[ask.role]} 자리는 약속하기 어렵다고 합니다` : '', yrsP < 1 ? '나이를 고려하면 계약 기간이 길다고 합니다' : ''].filter(Boolean).join(' · ') || '조건을 조금 더 생각해 보겠다고 합니다';
+  const walk = [.1, .28, .55, .8][Math.min(3, ng.n - 1)] + (q > 1.4 ? .25 : 0) + (rg >= 2 ? .2 : 0);
+  if (R() < walk) { o.withdrawn = true; o.negRes = 'gone'; o.neg = true; return { gone: 1, why: why + ' — 구단이 협상을 접었습니다.' }; }
+  const cw = Math.round(Math.min(ask.wage, (Math.min(ask.wage, ng.max) + Math.max(ng.w0, o.wage)) / 2 + (ng.max - ng.w0) * R() * .3) / 100) * 100;
+  const cr = rg <= 0 ? ask.role : rg === 1 && R() < .3 ? ask.role : ng.r0;
+  o.cnt = { role: cr, wage: Math.max(cw, o.wage), years: yrsP < 1 ? Math.min(ask.years, S.p.age >= 31 ? 2 : 3) : ask.years };
+  return { counter: o.cnt, why };
+};
+WC.negTake = function (S, o) { const x = o.cnt; if (!x) return; const up = ri_(x.role) > ri_(o.role); Object.assign(o, { wage: x.wage, role: up ? x.role : o.role, years: x.years, neg: true, negRes: 'deal', promise: up ? x.role : o.promise || null }); o.cnt = null; };
+// 직접 제안: 내가 고른 구단에 먼저 조건을 보낸다 (이적시장마다 3번)
+WC.directLeft = S => 3 - ((S.wc.dir || {})[S.w.year] || 0);
+WC.direct = function (S, cid, ask) {
+  const w = S.w, c = w.clubs[cid], cur = w.clubs[S.car.club];
+  if (!c || !c.lg || cid === S.car.club) return { no: 1, why: '제안할 수 없는 구단입니다.' };
+  if (WC.directLeft(S) <= 0) return { no: 1, why: '이번 이적시장에서는 더 이상 직접 제안을 보낼 수 없습니다.' };
+  if ((S.offers || []).some(o => o.club === cid && !o.withdrawn)) return { no: 1, why: '이미 이 구단의 제안이 있습니다. 위 목록에서 협상하세요.' };
+  S.wc.dir = S.wc.dir || {}; S.wc.dir[w.year] = (S.wc.dir[w.year] || 0) + 1;
+  C.materialize(w, c);
+  const pv = pvOf(S), d = pv - c.str, st = S.stance || {}, free = S.car.status === 'free' || st.expired || st.release;
+  const r0 = C.roleAt(S, c);
+  let p = d < -9 ? .02 : d < -5 ? .15 : d < -1 ? .42 : d < 6 ? .68 : .5;
+  p += { key: .15, starter: .1, rotation: 0, backup: -.12, reserve: -.3 }[r0] || 0;
+  if (S.p.age >= 32) p -= .15; if (S.wc.sup && S.wc.sup.agent) p += .1; if (has(S, 'media')) p += .03;
+  const fee = free ? 0 : Math.round((S.value || 0) * rnd(.95, 1.25) / 1e5) * 1e5, budget = Math.exp((c.str - 60) / 5) * 1e6;
+  let why = '';
+  if (fee > budget * 1.25) { p *= .2; why = '이적료를 감당하기 어렵다고 합니다'; }
+  if (cur && C.rivalOf && C.rivalOf(cur.id, cid) >= 2) p *= .7;
+  mgrV(S, -.03); // 현 구단도 소식을 듣는다
+  if (R() >= clamp(p, .01, .9)) return { no: 1, why: why || (d < -5 ? '지금 수준으로는 전력 구상에 없다고 합니다' : r0 === 'reserve' ? '그 자리에는 이미 선수가 많다고 합니다' : '지금은 영입 계획이 없다고 합니다') };
+  const wage = Math.round(WC.baseWage(S, c) * rnd(.92, 1.08) / 100) * 100;
+  const o = { type: 'transfer', club: cid, fee, wage, years: S.p.age >= 32 ? 1 : S.p.age >= 29 ? 2 : rint(2, 4), role: r0, free: !!free, req: 'direct' };
+  S.offers = (S.offers || []).concat([o]); WC.markOffers(S, [o], 'summer');
+  const r = ask ? WC.negAsk(S, o, ask) : { ok: 0 };
+  return Object.assign({ o }, r);
+};
+// 입단할 때: 주급 수준과 약속받은 역할
+function joinTerms(S, o) {
+  const c = S.w.clubs[S.car.club]; if (!c || !o || o.type === 'loan') return;
+  const q = o.wage / Math.max(1, WC.baseWage(S, c));
+  S.wc.star = q >= 1.25 ? 1 : 0;
+  if (q >= 1.25) { S.wc.rb = (S.wc.rb || 0) + .6; mgrV(S, .05); WC.note(S, '높은 주급으로 입단 — 기대가 크다', 0); }
+  else if (q <= .75) { S.wc.rb = (S.wc.rb || 0) - .6; WC.note(S, '낮은 주급으로 입단 — 스쿼드 자원으로 보는 시선', 0); }
+  S.wc.promise = o.promise ? { club: S.car.club, role: o.promise, y: S.w.year, chk: 0 } : null;
+}
+WC.joinTerms = joinTerms;
+// 약속받은 역할과 실제 출전이 다르면 (리그 10경기쯤) 한 번 문제가 된다
+WEV.promise = { w: 0, build: S => { const P = S.wc.promise; return { title: '약속과 다른 현실', desc: `입단할 때 ${C.ROLELABEL[P.role]} 역할을 약속받았지만, 최근 선발 기회가 많지 않습니다.`, icon: 'brief', opts: [
+  { label: '감독에게 약속을 상기시킨다', desc: '단호하게', out: [O(pr(.45, mv(S) * .4), '다음 경기부터 기회를 주겠다는 답', 1, {}, null, { rb: 1.4, mgr: -.02 }), O(1, '"자리는 실력으로"라는 답', -1, {}, null, { mgr: -.18, lean: { hot: .4 } })] },
+  { label: '구단 수뇌부에 이야기한다', desc: '감독을 건너뛴다', out: [O(.5, '구단이 감독과 이야기했다', 0, {}, null, { rb: 1, mgr: -.12 }), O(1, '감독이 불쾌해했다', -1, {}, null, { mgr: -.25 })] },
+  { label: '참고 기다린다', desc: '증명할 기회를 노린다', out: [O(1, '말없이 기다리기로 했다', 0, {}, null, { mgr: .04, lean: { humble: .4, pro: .3 } })] }] }; } };
+// ---------- 지원 스태프·생활 (주급으로 쓰는 돈) ----------
+// 시즌마다 비용이 나간다. 효과는 숫자로 보이지 않고 확률로만 작용한다
+const SUP = {
+  med: ['개인 의료·컨디셔닝 팀', '부상 위험과 성장 정체가 줄고, 30대의 노쇠가 조금 늦춰진다', 400000],
+  pr: ['홍보·미디어 팀', '명성이 빨리 쌓이고 인터뷰가 잘 풀리는 편', 200000],
+  agent: ['유명 에이전트', '이적 제안이 늘고 협상 여지가 넓어진다 (주급 수입의 8% + 기본료)', 120000],
+  family: ['가족·생활 지원', '해외에서 뛸 때 적응 문제가 줄고 기분이 안정된다', 150000]
+};
+WC.SUP = SUP;
+WC.supCost = (S, k) => k === 'agent' ? SUP.agent[2] + Math.round((S.car.wage || 0) * 52 * .08) : SUP[k][2];
+WC.supSet = function (S, k, on) {
+  const U0 = S.wc.sup = S.wc.sup || {}; if (!!U0[k] === !!on) return { ok: 1 };
+  if (on) { const cost = WC.supCost(S, k); if ((S.p.money || 0) < cost) return { no: 1, why: '재산이 부족합니다.' }; S.p.money -= cost; U0[k] = 1; if (k === 'med') S.p.hid.inj = clamp(S.p.hid.inj * .85, .3, 2.5); WC.note(S, `${SUP[k][0]} 계약`, 0); }
+  else { U0[k] = 0; if (k === 'med') S.p.hid.inj = clamp(S.p.hid.inj / .85, .3, 2.5); WC.note(S, `${SUP[k][0]} 계약 종료`, 0); }
+  return { ok: 1 };
+};
+function supRenew(S) {
+  const U0 = S.wc.sup || {}; let tot = 0;
+  for (const k in U0) if (U0[k]) { const cost = WC.supCost(S, k); if ((S.p.money || 0) >= cost) { S.p.money -= cost; tot += cost; } else WC.supSet(S, k, false); }
+  return tot;
+}
 // ---------- 은퇴 · 관전 모드로 ----------
 // 은퇴는 언제든 (시즌 도중이면 그때까지 기록으로 시즌을 마감한다). 받아 주는 구단이 없으면 강제 은퇴
 WC.retireNow = function (S) {
