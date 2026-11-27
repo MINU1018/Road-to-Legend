@@ -273,9 +273,13 @@ function playerView(s, root, pid) {
     if (pp && pp.length) { const g0 = path[0], L = pp[pp.length - 1]; if (L.y1 == null) L.y1 = w.year - 2001;
       if (g0 && L.cid === g0.cid && !!L.loan === !!g0.loan) { g0.y0 = L.y0; g0.w0 = L.w0; g0.tag = g0.tag || L.tag; g0.mv = 1; pp.pop(); }
       path = pp.concat(path); }
+    // 유스·2군 경력 (1군 경력과 따로)
+    const yp = C.TM.preYouthPath ? C.TM.preYouthPath(w, pid) : null; if (yp && yp.length) path = path.concat(yp);
     const ps = C.TM.preSeasons(w, pid, (cid, y, k) => k === 'c' ? String(y + 2000) : k === 's' ? seasonLbl(y + 2000) : clubSeasonLbl(w, cid, y));
     if (ps && ps.length) { const y0 = seasons.length ? seasons[0].y : 9999; seasons = ps.filter(x => x.y < y0).concat(seasons); }
   }
+  // 게임 안의 2군 구단(바르사 아틀레틱 등)도 유스·2군 경력으로
+  for (const x of path) { const xc = w.clubs[x.cid]; if (xc && xc.parent && !x.youth) { x.youth = 1; x.b2 = 1; x.ylab = '2군'; } }
   const bdy = /^\d+$/.test(String(pid)) && G.FC27.P[+pid] ? G.FC27.P[+pid][9] : LP ? LP[3] : null;
   const P0age = y => bdy == null ? null : Math.floor((C.dayOf(y + 2000, 9, 1) - bdy) / 365.25);
   let blk = null;
@@ -327,7 +331,7 @@ function playerView(s, root, pid) {
         !nt && clubsOf.length > 1 ? h('select', { class: 'wsel', onchange: ev => { d.pc = ev.target.value; stay(); } }, h('option', { value: '' }, '전체 구단'), ...clubsOf.map(cid => { const o = h('option', { value: cid }, (C.TM ? C.TM.teamName(w, cid) : (w.clubs[cid] || {}).name) || cid); if (cid === d.pc) o.selected = true; return o; })) : null),
       h('div', { class: 'in tscroll' }, h('table', { class: 'ltable lc ptable' }, h('thead', null, h('tr', null, ...['시즌', nt ? '대표팀' : '구단', '나이', 'OVR', '경기', '출전시간', '골', '도움', '평점'].map(x => h('th', null, x)))), tb,
         h('tfoot', null, h('tr', { class: 'me' }, h('td', null, '통산'), h('td'), h('td'), h('td'), h('td', null, tot.apps), h('td', { class: 'mute' }, tot.minOk ? mfmt(tot.min) : tot.min ? mfmt(tot.min) + '+' : '-'), h('td', null, tot.g), h('td', null, tot.a), h('td', null, tot.ra ? U.rt2(tot.rs / tot.ra) : '-'))))),
-      h('div', { class: 'mute', style: { fontSize: '11px', padding: '0 18px 14px' } }, TR ? '2024/25까지 게임 이전 시즌은 공식전 전체 합계(평점·출전시간 없음), 2025/26은 소속 구단만 표시합니다. 유스(연령별) 경기는 시즌 줄에만 보이고 통산에서 뺍니다. 진행 중 줄은 지금까지 치른 경기.' : '출전시간은 이번 버전부터 기록됩니다 (이전 시즌은 -). 진행 중 줄은 지금까지 치른 경기. 경기 목록·상세는 모든 시즌 보관됩니다.')));
+      h('div', { class: 'mute', style: { fontSize: '11px', padding: '0 18px 14px' } }, TR ? '2024/25까지 게임 이전 시즌은 공식전 전체 합계(평점·출전시간 없음), 2025/26은 유럽 5대 리그 선수만 리그 기록(FBref, 컵·대륙 대회 제외)이 있고, 그 밖은 소속 구단만 표시합니다. 유스(연령별) 경기는 시즌 줄에만 보이고 통산에서 뺍니다. 진행 중 줄은 지금까지 치른 경기.' : '출전시간은 이번 버전부터 기록됩니다 (이전 시즌은 -). 진행 중 줄은 지금까지 치른 경기. 경기 목록·상세는 모든 시즌 보관됩니다.')));
   } else main.append(h('div', { class: 'sec' }, h('div', { class: 'empty' }, '보관된 시즌 기록이 없습니다. 게임 시작(2026/27) 이후 시즌이 끝나야 기록이 쌓입니다.')));
   // 발롱도르 이력
   const bd = (w.bdHist || []).filter(b => !U.cerHidden(b.y)).map(b => { const i = b.top.findIndex(x => x[2] === pid); return i >= 0 ? [b.y, i + 1] : null; }).filter(Boolean);

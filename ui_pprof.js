@@ -361,12 +361,12 @@ U.pfSeason = function (s, pid, e, c, P, seasons) {
 U.pfCareer = function (s, pid, P, path, seasons) {
   const w = s.w, v = PST(); v.ct = v.ct || 'club';
   const yy = x => (x < 1000 ? x + 2000 : x);
-  const tot = (cid, y0, y1, yth) => { let a = 0, g = 0; for (const sn of seasons) { const y = sn.live ? w.year - 2000 : sn.y; if (y < y0 || (y1 != null && y > y1)) continue; for (const it of sn.items) if (it.club === cid && it.cat !== 'nt' && !!it.youth === !!yth) { a += it.apps || 0; g += it.g || 0; } } return [a, g]; }; // 유스 경기는 유스 경력에만
+  const tot = (cid, y0, y1, yth) => { let a = 0, g = 0; for (const sn of seasons) { const y = sn.live ? w.year - 2000 : sn.y; if (y < y0 || (y1 != null && y > y1)) continue; for (const it of sn.items) if (it.club === cid && it.cat !== 'nt' && (yth == null || !!it.youth === !!yth)) { a += it.apps || 0; g += it.g || 0; } } return [a, g]; }; // 유스 경기는 유스 경력에만
   const tnm = cid => (C.TM ? C.TM.teamName(w, cid) : (w.clubs[cid] || {}).name) || cid, tcr = (cid, sz) => crest(w.clubs[cid] || (C.TM && C.TM.teamParent(cid) ? w.clubs[C.TM.teamParent(cid)] : null) || null, sz);
   const sl = y => `${yy(y)}/${String(yy(y) + 1).slice(2)}`;
   // 유스 경력(x.youth)은 1군 경력과 따로 (v42)
   const yPath = path.filter(x => x.youth); path = path.filter(x => !x.youth);
-  const yRows = yPath.map(x => { const [a, g] = tot(x.cid, x.y0, x.y1, 1); return h('div', { class: 'pfcr' }, tcr(x.cid, 22), h('div', null, h('b', { class: w.clubs[x.cid] ? 'lnk' : '', onclick: () => { if (w.clubs[x.cid]) U.openClub(x.cid); } }, tnm(x.cid)), x.ylab ? h('span', { class: 'segtag' }, x.ylab) : null, h('small', { class: 'mute' }, `${sl(x.y0)} – ${x.y1 == null ? '지금' : sl(x.y1)}`)), h('span', null, a), h('span', null, g)); });
+  const yRows = yPath.slice().reverse().map(x => [x, tot(x.cid, x.y0, x.y1, x.b2 ? null : 1)]).filter(([x, [a]]) => a > 0 || x.ylab === '유스' || x.y1 == null).map(([x, [a, g]]) => { return h('div', { class: 'pfcr' }, tcr(x.cid, 22), h('div', null, h('b', { class: w.clubs[x.cid] ? 'lnk' : '', onclick: () => { if (w.clubs[x.cid]) U.openClub(x.cid); } }, tnm(x.cid)), x.ylab ? h('span', { class: 'segtag' }, x.ylab) : null, h('small', { class: 'mute' }, `${sl(x.y0)} – ${x.y1 == null ? '지금' : sl(x.y1)}`)), h('span', null, a), h('span', null, g)); });
   const rows = path.map((x, i) => {
     const pv = path[i - 1], nx = path[i + 1], pp = path[i - 2];
     // 겨울 이동은 배지 없이 기간 글자에만 'nn/nn 겨울'. 배지는 임대·임대 복귀·임대 후 완전 이적만
@@ -400,7 +400,7 @@ U.pfCareer = function (s, pid, P, path, seasons) {
     chart,
     v.ct === 'club' ? h('div', { class: 'pfcrh mute' }, h('span', null, '1군 경력'), h('span', null, '경기'), h('span', null, '득점')) : h('div', { class: 'pfcrh s4 mute' }, h('span', null, '시즌별 (클럽 경기)'), h('span', null, '경기'), h('span', null, '골'), h('span', null, '도움'), h('span', null, '평점')),
     ...(v.ct === 'club' ? rows : sRows),
-    v.ct === 'club' && yRows.length ? [h('div', { class: 'pfcrh mute' }, h('span', null, '유스 경력'), h('span', null, '경기'), h('span', null, '득점')), ...yRows] : null,
+    v.ct === 'club' && yRows.length ? [h('div', { class: 'pfcrh mute' }, h('span', null, yPath.some(x => x.b2) ? '유스·2군 경력' : '유스 경력'), h('span', null, '경기'), h('span', null, '득점')), ...yRows] : null,
     v.ct === 'club' && nat && (ntA || caps) ? [h('div', { class: 'pfcrh mute' }, h('span', null, '국가대표 팀'), h('span'), h('span')), h('div', { class: 'pfcr' }, U.natCrest(nat, 22), h('div', null, h('b', { class: 'lnk', onclick: () => U.openNat(nat) }, C.natName(nat)), h('small', { class: 'mute' }, caps ? `게임 이전 A매치 ${caps[0]}경기 ${caps[1]}골 포함 · 이후 국제 대회 본선` : '국제 대회 본선·A매치')), h('span', null, ntA + (caps ? caps[0] : 0)), h('span', null, ntG + (caps ? caps[1] : 0)))] : null));
 };
 

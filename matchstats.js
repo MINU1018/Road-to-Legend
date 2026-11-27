@@ -73,6 +73,9 @@ function build(o) {
   // ---- 점유율 (전·후반) ----
   const p1 = clamp(Math.round(ts.pos[0] + g() * 4), 22, 78), p2 = clamp(2 * ts.pos[0] - p1, 22, 78);
   const POS = [[p1, 100 - p1], [p2, 100 - p2]];
+  // 퇴장 (v44): 10명이 된 뒤로는 점유가 상대 쪽으로 기운다 (그 반의 남은 시간만큼)
+  { const red = [99, 99]; for (const e of (o.d && o.d.ev) || []) if (e.k === 'r' || e.k === '2') red[e.s] = Math.min(red[e.s], e.m);
+    for (let hf = 0; hf < 2; hf++) for (let s = 0; s < 2; s++) { if (red[s] >= 90) continue; const h0 = hf * 45, fr = clamp((h0 + 45 - Math.max(h0, red[s])) / 45, 0, 1); if (!fr) continue; const dv = Math.round(10 * fr); POS[hf][s] = clamp(POS[hf][s] - dv, 20, 80); POS[hf][1 - s] = 100 - POS[hf][s]; } }
   // ---- 슈팅 ----
   const shots = [];
   const SW = { ST: 1, W: .62, AM: .58, CM: .3, DM: .14, FB: .13, CB: .2, GK: 0 };

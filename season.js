@@ -46,9 +46,13 @@ function q(a, k) { return a[k] || 50; }
 // o: { lamT, lamO, minutes, start, sT, sO, penTaker, fkTaker, comp }
 function playerMatch(p, o) {
   const a = p.a, role = roleOf(p), rt = RT[role], sh = SH[role];
-  const st = blankStats(), f = o.minutes / 90;
+  const st = blankStats();
   const mod = C.modSum(p) * .9 + (o.adj || 0); // 컨디션/일시 보정 (능력치 단위), 유스 리그는 리그 수준 보정
   const A = k => q(a, k) + mod;
+  // v44: 퇴장은 미리 정한다 — 퇴장당하면 그 순간까지만 뛰고, 남은 시간은 10명이라 실점 위험이 커진다
+  const fullMin = o.minutes, red = R() < .004 * (fullMin / 90) * (A('aggression') / 70);
+  if (red) { o = Object.assign({}, o, { minutes: Math.max(3, Math.round(fullMin * rnd(.3, .97))) }); st.red = 1; st.redLeft = fullMin - o.minutes; }
+  const f = o.minutes / 90;
   st.apps = 1; st.starts = o.start ? 1 : 0; st.min = o.minutes;
   const poss = clamp(.5 + (o.sT - o.sO) * .012, .3, .72);
   const shots = [];
@@ -136,15 +140,16 @@ function playerMatch(p, o) {
   st.fouls = poisson(rt[17] * f * (A('aggression') / 65));
   st.defAct = st.tackles + st.ints + st.clear + st.blocks;
   if (R() < rt[18] * f * Math.pow(A('aggression') / 65, 1.3)) st.yellow = 1;
-  if (R() < .004 * f * (A('aggression') / 70)) st.red = 1;
   st.touches = Math.round(st.passAtt * 1.18 + st.dribAtt + st.shots + st.recov * .6 + st.duelA * .3 + st.boxTouch * .4 + N(4, 2) * f);
   // --- 실점 ---
   let defMod = 1;
   if (role === 'GK') defMod = Math.exp(-((A('gkDiving') + A('gkReflexes') + A('gkPos') + A('gkHandling')) / 4 - 72) * .014);
   else defMod = 1 - (dq - 70) * .006 * DEFW[role] * f;
   const lamO = o.lamO * clamp(defMod, .6, 1.4);
-  const oppG = poisson(lamO);
-  const concOn = binom(oppG, f);
+  // 내가 퇴장당한 뒤 (10명): 상대 득점 기대가 커지고 우리 팀 득점은 줄어든다
+  const redL = (st.redLeft || 0) / 90, extraO = redL ? poisson(o.lamO * redL * .5) : 0, lostT = redL ? -poisson(o.lamT * redL * .35) : 0;
+  const oppG = poisson(lamO) + extraO;
+  const concOn = binom(oppG - extraO, f);
   st.concOn = concOn; st.xgaOn = o.lamO * f * N(1, .2);
   if (o.minutes >= 60 && concOn === 0) st.cs = 1;
   if (role === 'GK') {
@@ -154,7 +159,8 @@ function playerMatch(p, o) {
     st.gPrev = st.xgotFaced - concOn;
     st.claims = poisson(1.3 * f * (A('gkPos') / 70));
   }
-  return { st, gf: goals + others, ga: oppG, shots };
+  delete st.redLeft;
+  return { st, gf: Math.max(goals, goals + others + lostT), ga: oppG, shots, redOff: red ? o.minutes : 0 };
 }
 function binom(n, p) { let k = 0; for (let i = 0; i < n; i++) if (R() < p) k++; return k; }
 function shotSpot(type, xg) {
@@ -398,7 +404,9 @@ function selection(S, kind, imp) {
   const ss = S.ss;
   if (ss.inj > 0 || ss.susp > 0) { if (ss.susp > 0 && kind !== 'N') ss.susp--; return null; }
   const pro = proForm(ss);
-  const cup = kind === 'C' || kind === 'LC', cupLow = cup && (imp || 0) < 2, cont = kind === 'E';
+  // 구단 상황(v44): 리그 우승이 멀거나 중위권이면 컵 정예, 강등 싸움이면 컵 로테이션·리그 올인
+  const fo = C.focusOf && S.w && S.w.cal ? C.focusOf(S.w, ss.club) : { lg: 0, cup: 0, cont: 0 };
+  const cup = kind === 'C' || kind === 'LC', cupLow = cup && (imp || 0) < 2 && (fo.cup < .1 || R() < .35), cont = kind === 'E';
   const START = (rot) => ({ start: true, minutes: startMin(S, rot) }), BENCH = sp => (R() < sp ? { start: false, minutes: subMin() } : { bench: true });
   // 유스 리그
   if (kind === 'Y') {
@@ -437,7 +445,7 @@ function selection(S, kind, imp) {
   }
   // 1군: 서열
   if (rank < n) {
-    const rest = cupLow ? (ss.role === 'key' ? .38 : .5) : cont ? .02 : .05;
+    const rest = cupLow ? (ss.role === 'key' ? .38 : .5) + Math.max(0, -fo.cup) : cont ? .02 + Math.max(0, -fo.cont) * .4 : kind === 'L' ? .05 + Math.max(0, -fo.lg) * .4 : .05;
     if (R() < rest) return BENCH(.45);
     return START();
   }
@@ -484,8 +492,9 @@ async function userMatch(S, o, hooks) {
   let [lamT, lamO] = C.lambdas(myStr, o.oppStr, home);
   let rec = { d: o.d, comp: o.compKey, compName: o.compName, stage: o.stage || '', opp: o.opp, oppName: o.oppName, home: o.home, gf: 0, ga: 0, played: false };
   if (sel && !sel.bench) {
+    C._qm = null; // 내가 뛴 경기는 내 경기 결과를 쓴다
     const r = playerMatch(p, { adj: (o.adj || (ss.breakout && ss.role === 'youth' ? 4 : 0)) + (o.kind === 'Y' ? 0 : moOf(S)), lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
-    rec.gf = r.gf; rec.ga = r.ga; rec.st = r.st; rec.shots = r.shots; rec.played = true; rec.start = sel.start; rec.min = sel.minutes;
+    rec.gf = r.gf; rec.ga = r.ga; rec.st = r.st; rec.shots = r.shots; rec.played = true; rec.start = sel.start; rec.min = r.st.min; rec.on = sel.start ? 0 : 90 - sel.minutes; // 퇴장이면 그 순간까지
     // 결정적 순간
     // 결정적 순간: 유스·친선전·대승/대패 경기는 제외하고, 승부가 걸린 접전에서만
     const close = Math.abs(rec.gf - rec.ga) <= 1;
@@ -519,7 +528,7 @@ async function userMatch(S, o, hooks) {
     if (rec.st.yellow && o.kind === 'L') { ss.yellows++; if (ss.yellows % 5 === 0) ss.susp += 1; }
     injuryRoll(S, rec, sel.minutes);
   } else {
-    const [a, b] = C.quickMatch(myStr, o.oppStr, home); rec.gf = a; rec.ga = b;
+    const [a, b] = C.quickMatch(myStr, o.oppStr, home); rec.gf = a; rec.ga = b; if (!o.home && C._qm) C._qm = C.qmSwap(C._qm); // 경기 기록은 홈 기준
     if (sel && sel.bench) { rec.bench = true; rec.why = '벤치'; }
     else rec.why = ss.inj > 0 ? '부상' : ss.susp > 0 ? '징계' : o.kind === 'Y' ? '미출전' : '명단 제외';
   }

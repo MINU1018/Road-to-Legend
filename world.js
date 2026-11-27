@@ -699,7 +699,27 @@ C.marketWindow = marketWindow; C.MINPOS = MINPOS;
 const BASEG = 1.36, KSTR = .105, HOME = .11;
 function lambdas(sA, sB, home) { const d = KSTR * (sA - sB); const h = home === 1 ? HOME : home === -1 ? -HOME : 0; return [BASEG * Math.exp(d / 2 + h), BASEG * Math.exp(-d / 2 - h)]; }
 C.lambdas = lambdas;
-function quickMatch(sA, sB, home) { const [a, b] = lambdas(sA, sB, home); return [poisson(a), poisson(b)]; }
+// v44: 퇴장을 먼저 정하고 시간대별로 골을 낸다 — 10명이 된 팀은 득점 기대 ×0.62, 상대는 ×1.42 (실제 퇴장 뒤 득점률 차이 수준)
+// 결과에 .tl = { mins: [[홈 골 분], [원정 골 분]], reds: [[팀, 분]] } 를 붙이고 C._qm 에 남긴다 → 바로 뒤 C.MD.play가 그대로 쓴다
+const RED_P = .068, RED_ME = .62, RED_OP = 1.42;
+function quickMatch(sA, sB, home) {
+  const [a, b] = lambdas(sA, sB, home), lam = [a, b], reds = [];
+  for (let s = 0; s < 2; s++) if (R() < RED_P) reds.push([s, R() < .35 ? 15 + Math.floor(R() * 45) : 55 + Math.floor(R() * 36)]);
+  reds.sort((x, y) => x[1] - y[1]);
+  const cuts = [0, ...reds.map(r => r[1]), 90], mins = [[], []];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const t0 = cuts[i], t1 = cuts[i + 1], dur = t1 - t0; if (dur <= 0) continue;
+    const down = [0, 1].map(s => reds.some(r => r[0] === s && r[1] <= t0));
+    for (let s = 0; s < 2; s++) {
+      const mlt = (down[s] ? RED_ME : 1) * (down[1 - s] ? RED_OP : 1);
+      const n = poisson(lam[s] * mlt * dur / 90);
+      for (let k = 0; k < n; k++) { let m = t0 + 1 + Math.floor(R() * dur); if (t1 === 90 && R() < .06) m = 91 + Math.floor(R() * 5); mins[s].push(Math.min(97, m)); }
+    }
+  }
+  mins.forEach(x => x.sort((p, q) => p - q));
+  const r = [mins[0].length, mins[1].length]; r.tl = { mins, reds }; C._qm = r; return r;
+}
+C.qmSwap = r => { if (!r || !r.tl) return r; const o = [r[1], r[0]]; o.tl = { mins: [r.tl.mins[1], r.tl.mins[0]], reds: r.tl.reds.map(([s, m]) => [1 - s, m]) }; return o; };
 function koWinner(sA, sB, ga, gb) { if (ga !== gb) return ga > gb ? 0 : 1; return R() < 1 / (1 + Math.exp(-(sA - sB) * .05)) ? 0 : 1; }
 C.quickMatch = quickMatch; C.koWinner = koWinner;
 // 경기 당일 전력: 스쿼드 전력 + 시즌 폼(감독·분위기, 달마다 조금씩 변함) + 부상자 공백

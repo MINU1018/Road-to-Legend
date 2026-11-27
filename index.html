@@ -1297,11 +1297,38 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 .lvst .bars{display:flex;width:100%;height:6px;gap:3px}.lvst .bars i{display:block;height:100%;border-radius:3px;transition:width .4s}
 .lvctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .lvctl .seg{min-width:180px}
+.cslots{display:grid;gap:6px;margin-top:6px}.cslot{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:9px 11px;background:var(--panel2);border-radius:10px}
+.cslt{display:grid;gap:2px;min-width:0}.cslt span{overflow-wrap:anywhere}.csltb{display:flex;gap:6px;flex-wrap:wrap}
+.cform{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0}.cform input{flex:1 1 200px;min-width:0}
+/* v44 모바일 정리 */
+.prof{grid-template-columns:minmax(0,1fr)}
+@media (max-width:640px){
+ .wcmr{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"c o rt" "d res p" "ga ga ga";row-gap:5px;column-gap:8px;padding:8px 10px}
+ .wcmr .d{grid-area:d;white-space:nowrap;font-size:11.5px}
+ .wcmr .cpt{grid-area:c;display:inline-block;justify-self:start;white-space:nowrap}
+ .wcmr .o{grid-area:o}
+ .wcmr .res{grid-area:res;justify-self:start;min-width:48px}
+ .wcmr .wcmp{grid-area:p;justify-self:end;white-space:nowrap}
+ .wcmr .ga{grid-area:ga;display:block;white-space:normal;font-size:11.5px}
+ .wcmr .ga:empty{display:none}
+ .wcmr > .rt{grid-area:rt;justify-self:end}
+ .seg button{white-space:nowrap}
+ .panel > .ph{flex-wrap:wrap;gap:8px}
+ .panel > .ph .btn{white-space:nowrap}
+ .cfx{grid-template-columns:50px minmax(0,1fr) 58px 26px;gap:6px}
+ .cfx .cfc{display:none}
+ .cfx .cfs{white-space:nowrap}
+ .tscroll table th,.tscroll table td{white-space:nowrap}
+ .tscroll{-webkit-overflow-scrolling:touch}
+ .in:has(> table.ltable){overflow-x:auto}
+ .in > table.ltable th,.in > table.ltable td{white-space:nowrap}
+ .ptable th,.ptable td{white-space:nowrap}
+}
 </style>
 
 <div id="app"></div>
 <canvas id="confetti"></canvas>
-<script src="data_fc27.js"></script><script src="data_fa.js"></script>
+<script src="data_fc27.js"></script><script src="data_fa.js"></script><script src="data_s2526.js"></script>
 <script src="data_yth.js"></script>
 <script src="data_loans.js"></script>
 <script src="data_mgr.js"></script>
@@ -1359,7 +1386,7 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="ui_viz.js"></script>
 <script src="ui_charts.js"></script>
 <script src="ui_games.js"></script>
-<script src="ui_settings.js"></script>
+<script src="cloud.js"></script><script src="ui_settings.js"></script>
 <script src="ui_extra.js"></script>
 <script src="ui_wcareer.js"></script>
 <script>TCUI.boot();</script>

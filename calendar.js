@@ -162,7 +162,7 @@ async function lgRound(S, LS, d, hooks) {
       ga = home ? rec.gf : rec.ga; gb = home ? rec.ga : rec.gf; u = uArg(S, home ? 0 : 1, rec);
     } else [ga, gb] = C.quickMatch(C.mstr(w, a), C.mstr(w, b), 1);
     addRes(LS.tb, a, b, ga, gb);
-    C.MD.ctx = { w, d, kind: 'lg', imp: impPair(w, a, b, .74, rb), ck: 'L:' + LS.id, sl: LS.label, tier: lg.tier || 1 };
+    C.MD.ctx = { w, d, kind: 'lg', imp: impPair(w, a, b, .74, rb, 'lg'), ck: 'L:' + LS.id, sl: LS.label, tier: lg.tier || 1 };
     const res = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
     addAgg(h.agg, ai, res.P[0]); addAgg(h.agg, bi, res.P[1]);
     h.s.push(`${C.MD.b62(ai)}.${C.MD.b62(bi)}.${ga}.${gb}`); h.e.push(res.ev); h.l.push(keepLn ? res.ln : ''); h.d.push(d); h.r.push(LS.ri);
@@ -316,7 +316,7 @@ async function cupDay(S, st, d, hooks) {
     for (const m of res.m) {
       const [a, b, ga, gb, pw] = m, isU = u && a === u.a && b === u.b;
       const left = st.rounds.length - st.ri + 1; // 방금 치른 라운드 포함 남은 라운드 수
-      C.MD.ctx = { w, d, kind: 'cup', ck: 'C:' + st.nat + ':' + st.kind, sl: st.label, imp: impPair(w, a, b, left <= 1 ? 1 : left === 2 ? .88 : left === 3 ? .7 : st.kind === 'cup' ? .44 : .3) };
+      C.MD.ctx = { w, d, kind: 'cup', ck: 'C:' + st.nat + ':' + st.kind, sl: st.label, imp: impPair(w, a, b, left <= 1 ? 1 : left === 2 ? .88 : left === 3 ? .7 : st.kind === 'cup' ? .44 : .3, null, 'cup') };
       const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, isU ? uArg(S, a === me ? 0 : 1, urec) : null, { cup: true });
       h.rows.push([rd.n, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
       addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -488,14 +488,44 @@ function contCreate(w, k, sy, parts) {
   return cs;
 }
 
-// 경기 중요도 (0~1): 높으면 베스트 11, 낮으면 로테이션. [홈, 원정]
-function impPair(w, a, b, base, o) {
+// v44: 구단 시즌 상황 → 대회별 중요도 가감 (구단마다 다르게, 하루 단위 캐시)
+//  리그: 우승 경쟁 / 대륙 대회권 경쟁 / 무난한 중위권 / 강등 싸움을 남은 경기 수와 승점 차로 판단
+//  · 우승 경쟁이면 리그에 힘을 싣고, 우승이 어렵다 보면 대륙권 지키기 + 컵·대륙 대회 집중, 중위권이면 컵에 무게, 강등 싸움이면 리그 올인(컵은 로테이션)
+//  대륙 대회·컵은 남은 단계가 적을수록 + (우승 가능성이 보일수록) 무게가 커진다 — 단계별 기본값은 경기 쪽에서 이미 준다
+const FOC = { d: -1, w: null, m: new Map() };
+function focusOf(w, id) {
+  const d = w.cal ? w.cal.d : 0;
+  if (FOC.d !== d || FOC.w !== w) { FOC.d = d; FOC.w = w; FOC.m.clear(); }
+  let f = FOC.m.get(id); if (f) return f;
+  f = { lg: 0, cup: 0, cont: 0, tag: '' };
+  const c = w.clubs[id], LS = c && c.lg && w.cal && w.cal.lg[c.lg];
+  if (LS && !LS.done && LS.ri >= 6) {
+    const T = C.sortTable(LS.tb), n = T.length, pos = T.findIndex(r => r.id === id);
+    if (pos >= 0) {
+      const me = T[pos], left = Math.max(0, LS.dates.length - LS.ri), pace = left * .3; // 남은 경기당 따라잡을 수 있는 승점 (현실적인 추격 속도)
+      const gapTop = (pos === 0 ? (T[1] ? T[1].pts - me.pts : -99) : T[0].pts - me.pts);
+      const tier = (w.lg[c.lg] && w.lg[c.lg].tier) || 1, eu = tier === 1 ? (n >= 18 ? 4 : 3) : 0, relN = Math.max(2, Math.round(n / 7));
+      const euCut = eu ? T[eu - 1].pts : null, relCut = T[n - relN] ? T[n - relN].pts : 0, safe = me.pts - relCut;
+      const late = LS.ri / Math.max(1, LS.dates.length);
+      if (gapTop <= 2 + pace && pos < Math.max(3, Math.round(n / 4))) { f.lg += .16 + (late > .7 ? .08 : 0); f.tag = 'title'; if (late > .75) { f.cup -= .06; f.cont -= .03; } }
+      else if (pos >= n - relN - 1 || safe <= 3 + left * .15) { f.lg += .22 + (late > .7 ? .08 : 0); f.cup -= .22; f.cont -= .12; f.tag = 'rel'; }
+      else if (eu && Math.abs(me.pts - euCut) <= 3 + left * .25 && pos < n / 2) { f.lg += .08; f.cup += .04; f.tag = 'euro'; }
+      else if (eu && pos < eu && me.pts - euCut > 3 + left * .25) { f.lg -= .06; f.cup += .1; f.cont += .1; f.tag = 'euroSafe'; } // 우승은 멀고 대륙권은 안정적 → 컵·대륙 집중
+      else { f.lg -= .1; f.cup += .14; f.cont += .06; f.tag = 'mid'; } // 무난한 중위권 → 컵에서 우승을 노린다
+    }
+  }
+  FOC.m.set(id, f); return f;
+}
+C.focusOf = focusOf;
+// 경기 중요도 (0~1): 높으면 베스트 11, 낮으면 로테이션. [홈, 원정]. fk: 'lg'|'cup'|'cont' (구단 상황 반영)
+function impPair(w, a, b, base, o, fk) {
   const A = w.clubs[a], B = w.clubs[b], sa = (A && A.str) || 66, sb = (B && B.str) || 66, dby = C.derbyOf && C.derbyOf(a, b);
   const one = (me, op, diff, rk) => {
     let v = base;
     if (diff > 9) v -= .22; else if (diff > 5) v -= .1; else if (diff < -4) v += .08; // 한참 약한 상대면 쉬게, 강팀 상대면 정예
     if (rk && rk[me] != null) v += rk[me]; // 우승·잔류 경쟁 막판
     if (dby) v += .2;
+    if (fk && base < 1) { try { v += focusOf(w, me)[fk] || 0; } catch (e) {} } // 결승은 언제나 정예
     return clamp(v, .15, 1);
   };
   return [one(a, b, sa - sb, o), one(b, a, sb - sa, o)];
@@ -514,7 +544,7 @@ async function contUser(S, cs, oid, home, stage, imp, d, hooks) {
 function contRow(S, cs, h, stage, a, b, ga, gb, u, pw, d) {
   const w = S.w;
   const ko = /결승|준결승|8강|16강|플레이오프/.test(stage), fin = /^결승/.test(stage);
-  C.MD.ctx = { w, d, kind: 'cont', imp: impPair(w, a, b, fin ? 1 : ko ? .94 : .8), ck: 'K:' + cs.k, sl: cs.label };
+  C.MD.ctx = { w, d, kind: 'cont', imp: impPair(w, a, b, fin ? 1 : ko ? .9 : .76, null, 'cont'), ck: 'K:' + cs.k, sl: cs.label };
   const r = C.MD.play(dictOf(w), sideOf(w, a), sideOf(w, b), ga, gb, u);
   h.rows.push([stage, cx(w, a), cx(w, b), ga, gb, r.ev, r.ln, pw ? cx(w, pw) : null, d]);
   addAgg(h.agg, cx(w, a), r.P[0]); addAgg(h.agg, cx(w, b), r.P[1]);
@@ -1230,6 +1260,7 @@ function dayEvents(S, d) {
   if (w.cer && !w.cer.rev && d > w.cer.d) C.cerReveal(S);
   if (m === 1 && dd === 1) { newYear(S, y); applyWindow(S, 'winter', d, day(y, 1, 31)); }
   if (m === 6 && dd === 15) applyWindow(S, 'summer', d, day(y, 9, 1));
+  if (dd === 1 && S.p && S.ss && C.curValueLive) { try { const v = C.curValueLive(S); (S.vm = S.vm || []).push({ d, v, club: S.car.club }); if (S.vm.length > 360) S.vm.shift(); S.value = v; } catch (e) { console.error(e); } } // 내 선수 가치: 매달 기록 (v44)
   if (w.cal.win && d > w.cal.win.d1) w.cal.win = null;
   runQueue(S, d);
   if (C.mgrDaily) C.mgrDaily(S, d, !w.cal.started);

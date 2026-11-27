@@ -387,7 +387,7 @@ function wcProfile() {
   main.append(infoCard(s), sixCard(s));
   // 이적 가치 그래프: 일반 선수와 같은 그림 (시즌마다 기록한 가치 + 지금)
   if (U.pfValueChart) { try { const now = w.cal ? C.ymd(w.cal.d) : [w.year, 8];
-    const vp = (s.vh || []).map(x => ({ x: x.y + 7 / 12, v: Math.max(10000, x.v || 0), cid: x.club })).concat([{ x: now[0] + (now[1] - 1) / 12, v: Math.max(10000, s.value || 0), cid: s.car.club, now: 1 }]);
+    const vp = (s.vh || []).map(x => ({ x: x.y + 7 / 12, v: Math.max(10000, x.v || 0), cid: x.club })).concat((s.vm || []).map(x => { const [yy, mm] = C.ymd(x.d); return { x: yy + (mm - 1) / 12, v: Math.max(10000, x.v || 0), cid: x.club }; })).sort((a, b) => a.x - b.x).filter((x, i, A) => !i || x.x - A[i - 1].x > .02).concat([{ x: now[0] + (now[1] - 1) / 12, v: Math.max(10000, s.value || 0), cid: s.car.club, now: 1 }]);
     const vc = U.pfValueChart(s, 'ME', null, c, Object.assign({ vpts: vp }, P)); if (vc) main.append(vc); } catch (e) { console.error(e); } }
   if (U.pfSeason && seasons.length) { try { const blk = U.pfSeason(s, 'ME', null, c, P, seasons.filter(sn => sn.items.some(it => !it.youth))); main.append(...blk.main); side.append(...blk.side); } catch (e) { console.error(e); } }
   main.append(seasonTable(s, seasons));

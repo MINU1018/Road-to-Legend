@@ -129,6 +129,18 @@ T.prePath = function (w, pid) {
   const appsIn = x => R.car.reduce((t, r) => t + (r.t === x.cid && r.y - 2000 >= x.y0 && (x.y1 == null || r.y - 2000 <= x.y1) ? r.ap : 0), 0);
   return out.filter((x, i) => !(x.tag === '임대 복귀' && x.y1 != null && i < out.length - 1 && !appsIn(x)));
 };
+// v44: 게임 이전 유스·2군 경력 칸 [{cid, y0, y1, youth:1, ylab, b2}] — 1군 경력과 따로 보여 준다
+const ylabOf = k => { const n = T.teamName(null, k), m = n.match(/\bU ?-?(1[4-9]|2[0-3])\b|Under ?(\d{2})|Sub-?(\d{2})/i); if (m) return 'U' + (m[1] || m[2] || m[3]); if (/Primavera/i.test(n)) return 'U19'; if (/Juvenil/i.test(n)) return 'U19'; return T.isYouthTeam(k) ? '유스' : '2군'; };
+T.preYouthPath = function (w, pid) {
+  const R = T.rec(pid); if (!R) return R;
+  const rows = R.car.filter(r => T.isYouth(r.t)).map(r => ({ t: r.t, y: r.y - 2000 })).sort((a, b) => a.y - b.y), out = [];
+  for (const r of rows) { const L = out.find(x => x.cid === r.t && r.y <= x.y1 + 1); if (L) L.y1 = Math.max(L.y1, r.y); else out.push({ cid: r.t, y0: r.y, y1: r.y, youth: 1, ylab: ylabOf(r.t), b2: !T.isYouthTeam(r.t), pre: 1 }); }
+  // 기록 없이 이동만 있는 유스 팀 (시작 시점에 그 팀 소속이면 '지금')
+  const cur = T.clubAt(R, D(2026, 7, 31));
+  for (const m of R.tx) if (m.t && T.isYouth(m.t) && !out.some(x => x.cid === m.t)) { const so = seasonOfD(m.d); out.push({ cid: m.t, y0: so.y, y1: so.y, youth: 1, ylab: ylabOf(m.t), b2: !T.isYouthTeam(m.t), pre: 1 }); }
+  for (const x of out) if (x.cid === cur) x.y1 = null;
+  return out.sort((a, b) => a.y0 - b.y0);
+};
 // 게임 이전 시즌별 기록 → 프로필 시즌 목록 형식 [{y, label, wl, items, pre}]
 // 2024/25까지는 Transfermarkt 기록(평점 없음), 2025/26은 구단만 ('-')
 T.preSeasons = function (w, pid, lblOf) {
@@ -139,7 +151,10 @@ T.preSeasons = function (w, pid, lblOf) {
     sn.items.push({ key: 'T', cat: 'all', name: yt ? '유스 (통산 제외)' : T.isYouth(r.t) ? '2군' : '공식전 전체', club: r.t, apps: r.ap, g: r.g, a: r.a, rt: null, min: null, cs: 0, mom: 0, pre: 1, youth: yt ? 1 : 0 }); }
   // 2025/26: 시즌 초(9월)와 겨울 뒤(3월) 소속
   const c1 = T.clubAt(R, D(2025, 9, 1)), c2 = T.clubAt(R, D(2026, 3, 1));
-  for (const cl of [...new Set([c1, c2])]) if (cl) { const sn = get(2025, null, cl); sn.items.push({ key: 'T', cat: 'all', name: '공식전 전체', club: cl, apps: null, g: null, a: null, rt: null, min: null, cs: 0, mom: 0, pre: 1, nd: 1, youth: T.isYouthTeam(cl) ? 1 : 0 }); }
+  // v44: 유럽 5대 리그는 실제 리그 기록 (FBref, data_s2526.js). 컵·대륙 대회는 없음
+  const S5 = G.S2526 && G.S2526.p[String(pid)], lgRows = S5 ? S5.split('|').map(x => { const f = x.split('.'); return { club: f[0], nat: f[1], ap: +f[2], st: +f[3], min: +f[4], g: +f[5], a: +f[6], y: +f[8], r: +f[9] }; }) : [];
+  for (const L of lgRows) { const sn = get(2025, null, L.club); sn.items.push({ key: 'T', cat: 'lg', name: (G.S2526.lg[L.nat] || '리그') + ' (리그만)', club: L.club, apps: L.ap, g: L.g, a: L.a, rt: null, min: L.min, starts: L.st, cs: 0, mom: 0, pre: 1, s5: 1 }); }
+  for (const cl of [...new Set([c1, c2])]) if (cl && !lgRows.some(L => L.club === cl)) { const sn = get(2025, null, cl); sn.items.push({ key: 'T', cat: 'all', name: '공식전 전체', club: cl, apps: null, g: null, a: null, rt: null, min: null, cs: 0, mom: 0, pre: 1, nd: 1, youth: T.isYouthTeam(cl) ? 1 : 0 }); }
   return [...by.values()].sort((a, b) => a.y - b.y);
 };
 // 게임 이전 부상 [{d, n, t, cid}]

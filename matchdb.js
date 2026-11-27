@@ -238,6 +238,7 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   const st9 = 2 + Math.floor(R() * 6); // 이 경기의 후반 추가시간
   // 포메이션: 구단은 감독 성향, 국가대표는 기본 4-3-3/4-2-3-1
   const formOf = sd => { const w = CX ? CX.w : C._w; if (opt && opt.nat) return C.seeded('nf|' + sd.key)() < .5 ? '4-3-3' : '4-2-3-1'; const M = w && C.mgrOf ? C.mgrOf(w, sd.key) : null; if (M) { C.mgrStyle(M, (w.clubs[sd.key] || {}).nat); return C.formFor(w, sd.key, M, sd.sq); } return '4-2-3-1'; };
+  const QT = C._qm && C._qm[0] === ga && C._qm[1] === gb ? C._qm.tl : null; C._qm = null; // 결과와 함께 정해진 골 시간·퇴장 (world.js quickMatch)
   const W0 = CX ? CX.w : null, flowOn = !!(W0 && W0.clubs && (kind === 'lg' || kind === 'cup' || kind === 'cont'));
   const Ls = sides.map(sd => { const cx = CX ? discCx(CX, sd, kind) : { ban: null, fat: null }; cx.imp = CX && CX.imp != null ? (Array.isArray(CX.imp) ? CX.imp[sides.indexOf(sd)] : CX.imp) : null; cx.nb = MD.benchN(CX ? CX.w : C._w, kind, sd.key); if (CX && CX.w) cx.call = () => MD.callUps(CX.w, sd.key, CX.d);
     if (flowOn && W0.clubs[sd.key]) { cx.kind = kind; cx.prev = MD.prevXI(W0, sd.key); cx.mo = id => MD.moOf(W0, id); const yy = W0.year; cx.pref = id => MD.prefOf(sd.key, id, yy); }
@@ -326,7 +327,7 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
       const gkIn = GRP[sb.pos] === 'G', outs = P[s].filter(x => x.start && x.off === 90 && (gkIn ? GRP[x.pos] === 'G' : GRP[x.pos] !== 'G') && x.id !== 'ME');
       if (!outs.length) break;
       let minute;
-      if (sb.id === 'ME') minute = clamp(90 - (me.min || 15), 1, 89);
+      if (sb.id === 'ME') minute = clamp(me.on != null && me.on > 0 ? me.on : 90 - (me.min || 15), 1, 89);
       else minute = subMin[Math.min(si++, subMin.length - 1)] || 70;
       if (cameo.includes(sb) && minute < 70) minute = Math.round(clamp(N(80, 5), 70, 89));
       // 같은 포지션끼리 교체. 후반 늦게는 지친 공격수·미드필더부터
@@ -335,17 +336,26 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
       o.off = minute;
       { const o0 = sb.id === 'ME' ? sb.ovr : Math.round(C.posEff ? C.posEff(sb, o.pos) : sb.ovr); P[s].push({ id: sb.id, pos: o.pos, bp: sb.pos, sl: o.sl, ovr: sb.id === 'ME' ? o0 : Math.round(o0 + moA(sb.id)), ovr0: o0, on: minute, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 }); }
     }
-    if (me && me.start && me.min < 90) { const mp = P[s].find(x => x.id === 'ME'); mp.off = me.min; const gkMe = GRP[mp.pos] === 'G', b2 = bench.filter(b => !P[s].some(x => x.id === b.id) && (GRP[b.pos] === 'G') === gkMe)[0]; if (b2) P[s].push({ id: b2.id, pos: mp.pos, bp: b2.pos, sl: mp.sl, ovr: b2.ovr, on: me.min, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 }); }
+    if (me && !me.start && me.st && me.st.red) { const mp = P[s].find(x => x.id === 'ME'); if (mp) mp.off = Math.min(90, mp.on + (me.min || 1)); }
+    if (me && me.start && me.min < 90 && me.st && me.st.red) { const mp = P[s].find(x => x.id === 'ME'); mp.off = me.min; } // 퇴장: 교체 없이 10명
+    else if (me && me.start && me.min < 90) { const mp = P[s].find(x => x.id === 'ME'); mp.off = me.min; const gkMe = GRP[mp.pos] === 'G', b2 = bench.filter(b => !P[s].some(x => x.id === b.id) && (GRP[b.pos] === 'G') === gkMe)[0]; if (b2) P[s].push({ id: b2.id, pos: mp.pos, bp: b2.pos, sl: mp.sl, ovr: b2.ovr, on: me.min, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 }); }
   }
   const onAt = (s, m) => P[s].filter(x => x.on <= m && (x.off >= m || x.off >= 90) && !x.rOut);
   const ev = [];
+  // 결과와 함께 정해진 퇴장: 그 시간에 뛰던 선수가 나가고 교체 없이 10명 (이후 골·도움·통계에서 빠진다)
+  if (QT) for (const [rs, rm] of QT.reds) {
+    const cand = P[rs].filter(x => x.id !== 'ME' && x.on < rm && x.off >= 90 && C.ROLE[x.pos] !== 'GK');
+    const c = pickW(cand, x => CW[C.ROLE[x.pos]] || 1); if (!c) continue;
+    const sub = P[rs].find(x => !x.start && x.sl === c.sl && x.on > rm); if (sub) { const alt = P[rs].find(x => x !== c && x.start && x.off >= 90 && GRP[x.pos] === GRP[sub.pos] && x.id !== 'ME'); if (alt) { alt.off = sub.on; } else { P[rs].splice(P[rs].indexOf(sub), 1); } }
+    const sec = R() < .45; c.y = sec ? 1 : c.y; c.r = 1; c.off = rm; c.redM = rm; if (sec) ev.push(['y', Math.max(c.on + 1, rm - 5 - Math.floor(R() * 30)), rs, c.id, null]); ev.push([sec ? '2' : 'r', rm, rs, c.id, null]);
+  }
   for (let s = 0; s < 2; s++) {
     const n = goals[s];
     const meP = P[s].find(x => x.id === 'ME');
     const me = meP && u && u.rec;
     const myG = me ? (me.st.goals || 0) : 0, myA = me ? (me.st.assists || 0) : 0;
     // 후반 추가시간(90+1 ~ 90+7)에 나는 골도 있다: m > 90 이면 '90+(m-90)'
-    const mins = []; for (let i = 0; i < n; i++) mins.push(R() < .055 ? 90 + 1 + Math.floor(R() * st9) : 1 + Math.floor(R() * 90));
+    const mins = QT && QT.mins[s] && QT.mins[s].length === n ? QT.mins[s].slice() : []; if (!mins.length) for (let i = 0; i < n; i++) mins.push(R() < .055 ? 90 + 1 + Math.floor(R() * st9) : 1 + Math.floor(R() * 90));
     mins.sort((a, b) => a - b);
     // 내 골·도움은 내가 뛴 시간 안의 골에 배정
     const inMe = m => meP && m >= meP.on && m <= meP.off;
@@ -377,10 +387,10 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
     // 카드
     const meCard = me ? [me.st.yellow || 0, me.st.red || 0] : [0, 0];
     const dby = C.derbyOf && C.derbyOf(A.key, B.key);
-    let ny = poisson(dby ? 2.3 : 1.75), nr = R() < (dby ? .085 : .055) ? 1 : 0;
+    let ny = poisson(dby ? 2.3 : 1.75), nr = !QT && R() < (dby ? .085 : .055) ? 1 : 0; // QT: 퇴장은 결과와 함께 이미 정해졌다
     if (meCard[0]) { const m = meP.on + Math.floor(R() * Math.max(1, meP.off - meP.on)); meP.y = 1; ev.push(['y', m, s, 'ME', null]); }
     if (meCard[1]) { const m = Math.max(meP.on + 1, meP.off); meP.r = 1; ev.push(['r', m, s, 'ME', null]); }
-    for (let k = 0; k < ny; k++) { const m = R() < .07 ? 91 + Math.floor(R() * st9) : 5 + Math.floor(R() * 86); const c = pickW(onAt(s, m).filter(x => x.id !== 'ME' && !x.r), x => CW[C.ROLE[x.pos]] || 1); if (!c) continue; if (c.y) { if (R() < .5) { c.r = 1; c.rOut = 1; c.off = Math.max(m, lastEv(ev, s, c.id)); ev.push(['2', c.off, s, c.id, null]); } } else { c.y = 1; ev.push(['y', m, s, c.id, null]); } }
+    for (let k = 0; k < ny; k++) { const m = R() < .07 ? 91 + Math.floor(R() * st9) : 5 + Math.floor(R() * 86); const c = pickW(onAt(s, m).filter(x => x.id !== 'ME' && !x.r), x => CW[C.ROLE[x.pos]] || 1); if (!c) continue; if (c.y) { if (!QT && R() < .5) { c.r = 1; c.rOut = 1; c.off = Math.max(m, lastEv(ev, s, c.id)); ev.push(['2', c.off, s, c.id, null]); } } else { c.y = 1; ev.push(['y', m, s, c.id, null]); } }
     if (nr) { const m = 15 + Math.floor(R() * 75); const c = pickW(onAt(s, m).filter(x => x.id !== 'ME' && !x.r), x => CW[C.ROLE[x.pos]] || 1); if (c) { c.r = 1; c.rOut = 1; c.off = Math.max(m, lastEv(ev, s, c.id)); ev.push(['r', c.off, s, c.id, null]); } }
   }
   ev.sort((a, b) => a[1] - b[1]);

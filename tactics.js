@@ -74,9 +74,10 @@ C.pickLineup = function (sq, opt) {
   const gks = src.filter(x => norm(x.pos) === 'GK').sort((a, b) => b.ovr - a.ovr), gk2 = opt.gkRot && gks[1] && gks[1].ovr >= gks[0].ovr - 14 ? gks[1].id : null;
   // v43: 대회별 선발 성향. lg = 시즌 주전 위주(작은 흔들림 + 직전 선발 관성), cont = 정예, cup = 실험·로테이션. kind 없음(과거 시즌 생성 등) = 예전 방식
   const K = opt.kind, prev = opt.prev, moF = opt.mo, prefF = opt.pref;
-  const sd = K === 'lg' ? .45 : K === 'cont' ? .35 : K === 'cup' ? 1 + rot * 2.6 : 1.2 + rot * 3.2;
-  const inc = K === 'lg' ? 1.7 : K === 'cont' ? 1.9 : K === 'cup' ? .5 : 0; // 직전 선발 관성
-  const restP = K === 'lg' ? rot * rot * .35 : K === 'cont' ? rot * rot * .15 : K === 'cup' ? rot * rot * 1.1 : rot * rot * .7;
+  // v44: 대회 종류가 아니라 그 경기의 중요도(구단 상황·단계·상대·더비로 정한 imp)로 정한다 — 같은 컵이라도 구단에 따라 정예일 수도, 로테이션일 수도
+  const sd = K ? .3 + rot * rot * 3.6 : 1.2 + rot * 3.2;
+  const inc = K ? 2 * clamp(imp * 1.35 - .25, 0, 1) * (K === 'cup' ? .7 : 1) : 0; // 직전 리그·대륙 선발 관성
+  const restP = K ? rot * rot * .7 : rot * rot * .7;
   const extra = x => (K ? (prefF ? prefF(x.id) : 0) + (moF ? moF(x.id) * .75 : 0) + (prev ? (prev.get(x.id) || 0) * inc : 0) : 0);
   const base = new Map(src.map(x => [x.id, norm(x.pos) === 'GK' ? (x.id === gk2 ? 30 : 0) - (opt.fat ? opt.fat(x) * .3 : 0) + (K && prev ? (prev.get(x.id) || 0) * 2.5 : 0) : (opt.noise == null ? N(0, sd) : opt.noise) + extra(x) - (opt.fat ? opt.fat(x) * (.6 + rot * .9) : 0) + (x.yb || 0) * rot * 2.2 - (top.includes(x.id) && R() < restP ? 7 : 0)]));
   const used = new Set(), xi = new Array(S.length);

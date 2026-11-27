@@ -67,7 +67,7 @@ U.pages.mx = function () {
       sel(f.cond, CONDS.map(c => [c[0], c[1]]), v => { f.cond = v; re(); }),
       oppIn,
       sel(f.group, GROUPS, v => { f.group = v; re(); }))));
-  const out = h('div', { style: { display: 'grid', gap: '14px' } });
+  const out = h('div', { style: { display: 'grid', gap: '14px', gridTemplateColumns: 'minmax(0,1fr)' } });
   root.append(out);
   function draw() {
     out.replaceChildren();

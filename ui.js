@@ -113,7 +113,7 @@ async function loadSide(S) {
   if (S.w.arch && C._ad && (await kvGet('ark')) == null) for (const k in S.w.arch) C._ad.add(k); // 예전 저장(보관 기록이 저장 안에 있던 형식): 다음 저장 때 시즌별로 옮긴다
   if (!S.w.arch) { const ks = await kvGet('ark'); if (ks != null) { S.w.arch = {}; for (const k of ks.split('|').filter(Boolean)) { const t = await kvGet('ar:' + k); if (t) S.w.arch[k] = GM.parse(t); } } }
 }
-U.save = function () { if (!S || S.viewOnly) return; clearTimeout(saveT); saveT = setTimeout(async () => { await flushMx(S); const t = GM.serialize(S); if (!t) return; await flushCal(S); await flushArch(S); const ok = await kvSet('save', t); hasSave = ok; if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } }, 300); };
+U.save = function () { if (!S || S.viewOnly) return; clearTimeout(saveT); saveT = setTimeout(async () => { await flushMx(S); const t = GM.serialize(S); if (!t) return; await flushCal(S); await flushArch(S); const ok = await kvSet('save', t); hasSave = ok; if (U.cloud && ['review', 'reviewDone'].includes(S.phase)) U.cloud.autoKick(S); if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } }, 300); };
 U.saveNow = async function () { if (!S || S.viewOnly) return; clearTimeout(saveT); await flushMx(S); const t = GM.serialize(S); if (!t) return; await flushCal(S); await flushArch(S); hasSave = await kvSet('save', t); if (C.psDirty) { C.psDirty = false; await kvSet('ps', JSON.stringify(S.w.ps || {})); } };
 
 // ---------- 이펙트 ----------
@@ -434,6 +434,13 @@ U.boot = async function () {
   if (S && S.phase === 'retired' && U.hof[0] && !U.hof[0].id && U.hof[0].name === S.p.name) { const id = 'c' + Date.now(); await archiveCareer(id); U.hof[0].id = id; await kvSet('hof', JSON.stringify(U.hof)); }
   if (U.loadAch) await U.loadAch();
   render();
+  // 클라우드 저장: 로그인 링크에서 돌아왔으면 슬롯 창을 연다 (v44)
+  if (U.cloud) U.cloud.init().then(CL => { if (CL.justIn) { CL.justIn = false; toast('클라우드에 로그인했습니다.'); U.openCloud(); } else if (CL.err) toast('로그인 오류: ' + CL.err); render(); }).catch(e => console.error(e));
+};
+U.openCloud = async function () {
+  const CL = U.cloud; if (!CL) return; await CL.init();
+  if (!CL.on() || !CL.logged()) { U.go('settings'); toast(CL.on() ? '설정 → 클라우드 저장에서 로그인해 주세요.' : '설정 → 클라우드 저장에서 연결해 주세요.'); return; }
+  U.overlay(close => [h('div', { class: 'head' }, h('h2', null, '클라우드 저장'), h('span', { class: 'mute' }, CL.sess.email || '')), h('div', { class: 'body' }, U.cloudSlotsBox(() => close()))]);
 };
 U.saveHof = async function (entry) { U.hof = [entry].concat(U.hof || []).slice(0, 30); await kvSet('hof', JSON.stringify(U.hof)); };
 
@@ -453,6 +460,7 @@ function viewHome() {
       h('button', { class: 'btn ghost', onclick: () => { rdraft = { q: '', pos: '', diff: 'normal', pick: null }; U.go('real'); } }, '실존 선수로 시작'),
       U.viewWCNew ? h('button', { class: 'btn ghost wcbtn', title: '관전 모드의 세계에 내 선수를 넣어 커리어를 지켜보는 모드 · 훈련·상점 없음', onclick: () => { U.wcDraft = null; U.go('wcnew'); } }, '월드 커리어', h('span', { class: 'chip gold', style: { marginLeft: '6px', fontSize: '10px' } }, 'NEW')) : null,
       h('button', { class: 'btn ghost', onclick: () => U.pickSaveFile && U.pickSaveFile() }, '저장 파일 불러오기'),
+      U.cloud && U.cloud.on() ? h('button', { class: 'btn ghost', onclick: () => U.openCloud() }, U.cloud.logged() ? '클라우드 저장' : '클라우드 로그인') : null,
       h('button', { class: 'btn ghost', title: '내 선수 없이 세계 축구만 시즌마다 시뮬레이션', onclick: () => U.startWorld && U.startWorld() }, '관전 모드 (시뮬레이션만)'),
       h('button', { class: 'btn ghost', onclick: () => U.go('ach') }, '도전과제', achN ? h('span', { class: 'mute', style: { marginLeft: '6px' } }, achN) : null)),
     hofBlock());

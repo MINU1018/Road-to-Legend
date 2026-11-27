@@ -60,6 +60,7 @@ U.viewSettings = function () {
     row('우승·수상 연출', '끄면 시즌 결산 화면에 목록으로만 보입니다', toggle('cer', cfg.ceremonies, v => { cfg.ceremonies = v; saveCfg(); }))));
   root.append(logoCard());
   root.append(saveCard());
+  if (U.cloud) root.append(cloudCard());
   root.append(h('div', { style: { display: 'flex', justifyContent: 'flex-end' } }, h('button', { class: 'btn ghost sm', onclick: async () => { C.setCfg(null); await saveCfg(); toast('설정을 기본값으로 되돌렸습니다.'); U.render(); } }, '설정 기본값으로')));
   return root;
 };
@@ -159,6 +160,51 @@ function saveCard() {
     h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' } },
       h('button', { class: 'btn ghost sm', disabled: S ? null : true, onclick: () => ask('진행 중인 커리어를 삭제합니다. 되돌릴 수 없습니다.', async () => { await U.clearSave(); toast('커리어를 삭제했습니다.'); }) }, '커리어 삭제'),
       h('button', { class: 'btn ghost sm', onclick: () => ask('명예의 전당 기록을 모두 지웁니다.', async () => { U.hof = []; await U.kvSet('hof', '[]'); toast('명예의 전당을 비웠습니다.'); }) }, '명예의 전당 비우기')));
+}
+// ---------- 클라우드 저장 (Supabase) ----------
+const fmtAt = t => { if (!t) return '-'; const d = new Date(t); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const fmtSz = b => b > 1e6 ? (b / 1e6).toFixed(1) + 'MB' : Math.max(1, Math.round(b / 1e3)) + 'KB';
+U.cloudSlotsBox = function (onDone) {
+  const CL = U.cloud, S = U.S(), box = h('div', { class: 'cslots' }, h('div', { class: 'mute' }, '목록을 불러오는 중…'));
+  const names = { slot1: '슬롯 1', slot2: '슬롯 2', slot3: '슬롯 3', auto: '자동 저장 (시즌 끝)' };
+  const draw = L => {
+    box.replaceChildren(...[...CL.SLOTS, CL.AUTO].map(k => {
+      const m = L[k];
+      return h('div', { class: 'cslot' },
+        h('div', { class: 'cslt' }, h('b', null, names[k]), m ? h('span', null, `${m.name}${m.age ? ` · ${m.age}세` : ''}${m.club ? ` · ${m.club}` : ''} · ${m.season}`) : h('span', { class: 'mute' }, '비어 있음'), m ? h('small', { class: 'mute' }, `${fmtAt(m.at)} · ${fmtSz(m.size || 0)}`) : null),
+        h('div', { class: 'csltb' },
+          k !== CL.AUTO ? h('button', { class: 'btn sm', disabled: S ? null : true, onclick: async e => { if (m && !confirm(`${names[k]}에 덮어씁니다.`)) return; e.target.disabled = true; e.target.textContent = '저장 중…'; try { await CL.save(U.S(), k); toast('클라우드에 저장했습니다.'); draw(await CL.slots()); } catch (er) { toast(er.message); e.target.disabled = false; e.target.textContent = '여기에 저장'; } } }, '여기에 저장') : null,
+          m ? h('button', { class: 'btn ghost sm', onclick: async e => { if (U.S() && U.S().phase !== 'retired' && !confirm('진행 중인 커리어를 덮어씁니다.')) return; e.target.disabled = true; e.target.textContent = '받는 중…'; try { const o = await CL.load(k); await U.loadSave(o); toast('클라우드 저장을 불러왔습니다.'); if (onDone) onDone(); } catch (er) { toast(er.message); e.target.disabled = false; e.target.textContent = '불러오기'; } } }, '불러오기') : null,
+          m ? h('button', { class: 'btn ghost sm', onclick: async () => { if (!confirm(`${names[k]}를 지웁니다.`)) return; try { await CL.remove(k); draw(await CL.slots()); } catch (er) { toast(er.message); } } }, '삭제') : null));
+    }));
+  };
+  CL.slots().then(draw).catch(e => box.replaceChildren(h('div', { class: 'result' }, h('b', null, '목록을 불러오지 못했습니다'), h('span', { class: 'mute' }, e.message))));
+  return box;
+};
+function cloudCard() {
+  const CL = U.cloud, wrap = h('div');
+  const paint = async () => {
+    await CL.init();
+    const parts = [];
+    if (CL.err) parts.push(h('div', { class: 'result' }, h('b', null, '로그인 오류'), h('span', { class: 'mute' }, CL.err)));
+    if (!CL.on()) {
+      const u = h('input', { type: 'url', placeholder: 'https://xxxx.supabase.co', value: '' }), k = h('input', { type: 'text', placeholder: '공개 키 (publishable / anon)', value: '' });
+      parts.push(h('p', { class: 'mute' }, '이 주소에서는 Supabase 설정을 찾지 못했습니다. Vercel 배포 주소에서는 자동으로 연결됩니다. 여기서 쓰려면 Supabase 프로젝트 URL과 공개 키를 넣으세요 (비밀 키는 넣지 마세요).'),
+        h('div', { class: 'cform' }, u, k, h('button', { class: 'btn sm', onclick: async () => { if (/secret|service_role/i.test(k.value)) { toast('비밀 키는 넣으면 안 됩니다. 공개 키를 넣으세요.'); return; } await CL.setManual(u.value, k.value); paint(); } }, '연결')));
+    } else if (!CL.logged()) {
+      const em = h('input', { type: 'email', placeholder: '이메일 주소', autocomplete: 'email' }), msg = h('div', { class: 'mute' });
+      parts.push(h('p', { class: 'mute' }, '로그인하면 커리어를 클라우드 슬롯 3개(+시즌 끝 자동 저장)에 올려 다른 기기에서 이어 할 수 있습니다.'),
+        h('div', { class: 'cform' }, em, h('button', { class: 'btn sm', onclick: async e => { if (!/@/.test(em.value)) { toast('이메일 주소를 확인해 주세요.'); return; } e.target.disabled = true; try { await CL.sendLink(em.value.trim()); msg.textContent = `${em.value}로 로그인 링크를 보냈습니다. 메일의 링크를 이 브라우저에서 열면 로그인됩니다.`; } catch (er) { msg.textContent = '보내지 못했습니다: ' + er.message; } e.target.disabled = false; } }, '로그인 링크 보내기'), h('button', { class: 'btn ghost sm', onclick: () => CL.github() }, 'GitHub로 로그인')), msg);
+    } else {
+      parts.push(h('div', { class: 'srow' }, h('div', null, h('div', { style: { fontWeight: 600 } }, CL.sess.email || '로그인됨'), h('div', { class: 'mute', style: { fontSize: '12px' } }, CL.cfg.src === 'vercel' ? 'Vercel 연동 설정' : '직접 넣은 설정')), h('button', { class: 'btn ghost sm', onclick: () => { CL.logout(); paint(); } }, '로그아웃')),
+        row('시즌이 끝날 때 자동 저장', "시즌 결산마다 '자동 저장' 슬롯에 덮어씁니다", toggle('cloudAuto', CL.autoOn(), v => CL.setAuto(v))),
+        U.cloudSlotsBox());
+    }
+    if (CL.on() && CL.cfg.src === 'manual') parts.push(h('div', { style: { marginTop: '6px' } }, h('button', { class: 'btn ghost sm', onclick: async () => { await CL.setManual('', ''); paint(); } }, '직접 넣은 설정 지우기')));
+    wrap.replaceChildren(...parts);
+  };
+  paint();
+  return card('클라우드 저장', 'Supabase에 저장합니다. 저장 내용은 저장 파일 내보내기와 같고(압축), 로그인한 본인만 볼 수 있습니다.', wrap);
 }
 function saveInput(onOk) {
   return h('input', { type: 'file', accept: '.json,.txt,application/json', style: { display: 'none' }, onchange: async e => {

@@ -798,6 +798,17 @@ function curValue(S) {
   return C.marketValue(S.p, { nation: (C.leagueOf(S) || {}).nation || 'ENG', rating: last && last.total && last.total.rated >= 8 ? last.rating : null, minShare: last ? last.minShare : .5, potEst: C.potEstimate(S.p).est, contractYrs: S.car.contract - S.w.year + 1 });
 }
 C.curValue = curValue;
+// v44: 시즌 중 가치 — 지난 시즌 기록에 이번 시즌 평점·출전 비중을 경기 수만큼 섞는다 (매달 그래프용)
+C.curValueLive = function (S) {
+  const ss = S.ss, last = S.hist[S.hist.length - 1];
+  if (!ss || !ss.matches) return curValue(S);
+  const pro = ss.matches.filter(m => !['youth', 'nt', 'ntY'].includes(m.comp)), rated = pro.filter(m => m.played && m.rating);
+  const k = clamp(pro.length / 30, 0, .85);
+  const curR = rated.length ? rated.reduce((a, m) => a + m.rating, 0) / rated.length : null, curMS = pro.length ? pro.reduce((a, m) => a + (m.played ? m.min || 0 : 0), 0) / (pro.length * 90) : 0;
+  const lastR = last && last.total && last.total.rated >= 8 ? last.rating : null, lastMS = last ? last.minShare : .5;
+  const rating = curR != null && rated.length >= 3 ? (lastR != null ? lastR * (1 - k) + curR * k : curR) : lastR;
+  return C.marketValue(S.p, { nation: (C.leagueOf(S) || {}).nation || 'ENG', rating, minShare: lastMS != null ? lastMS * (1 - k) + curMS * k : curMS, potEst: C.potEstimate(S.p).est, contractYrs: S.car.contract - S.w.year + 1 });
+};
 // 현 소속팀 입장
 // 지난 시즌 활약도: 평점·출전 비중·구단/리그 개인상·우승
 function perfScore(S) {
