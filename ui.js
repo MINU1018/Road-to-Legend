@@ -144,15 +144,38 @@ function confetti(n = 160, colors) {
   requestAnimationFrame(step);
 }
 U.confetti = confetti;
+// 팝업 공통 (v44): 오른쪽 위 X 버튼 · Esc · 휴대폰 '뒤로' 버튼으로 닫는다
+//  · 팝업 안에서 close.x = () => … 로 X의 동작을 바꿀 수 있다 (예: 중계는 진행 계속, 꼭 골라야 하는 선택은 안내만)
+//  · 팝업 안에 원래 '닫기'(.mclose)가 있으면 X가 그 버튼을 대신 누른다 (정리 작업 유지)
+//  · opts.noX: X 없음 (자동으로 닫히는 연출 등)
+const OVS = []; let ovIgnore = 0;
+window.addEventListener('popstate', () => {
+  if (ovIgnore > 0) { ovIgnore--; return; }
+  const top = OVS[OVS.length - 1]; if (!top) return;
+  top.pop = true; top.x();
+  if (OVS[OVS.length - 1] === top) { top.pop = false; try { history.pushState({ ov: 1 }, ''); } catch (e) { } } // 닫히지 않았으면(꼭 골라야 하는 선택) 기록을 되돌려 둔다
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && OVS.length) { e.preventDefault(); OVS[OVS.length - 1].x(); } });
 function overlay(content, opts = {}) {
   return new Promise(res => {
-    const ov = h('div', { class: 'ov', role: 'dialog' });
+    const ov = h('div', { class: 'ov', role: 'dialog', 'aria-modal': 'true' });
     // 다시 열 수 있는 팝업(경기 상세 등): 이 팝업에서 다른 화면으로 가면 '뒤로'가 팝업까지 되살린다
     if (opts.reopen) { if (!opts.reopen.parent && U._ovClosed && U._ovClosed.fn !== opts.reopen && Date.now() - U._ovClosed.t < 700) opts.reopen.parent = U._ovClosed.fn; U._ov = opts.reopen; }
-    const close = v => { if (opts.reopen && U._ov === opts.reopen) { U._ov = null; U._ovClosed = { fn: opts.reopen, t: Date.now() }; } ov.style.animation = 'fadeIn .2s reverse both'; setTimeout(() => ov.remove(), 180); res(v); };
+    let shut = false;
+    const ent = { pop: false, x: () => doX() };
+    const close = v => {
+      if (shut) return; shut = true;
+      if (opts.reopen && U._ov === opts.reopen) { U._ov = null; U._ovClosed = { fn: opts.reopen, t: Date.now() }; }
+      const i = OVS.indexOf(ent); if (i >= 0) OVS.splice(i, 1);
+      if (!ent.pop && ent.hist) { ovIgnore++; try { history.back(); } catch (e) { ovIgnore--; } }
+      ov.style.animation = 'fadeIn .2s reverse both'; setTimeout(() => ov.remove(), 180); res(v);
+    };
     const box = h('div', { class: 'ovbox' + (opts.cls ? ' ' + opts.cls : '') }, typeof content === 'function' ? content(close) : content);
+    const doX = () => { if (shut) return; if (typeof close.x === 'function') return close.x(); const mc = box.querySelector('.mclose'); if (mc) return mc.click(); close(); };
+    if (!opts.noX) { box.prepend(h('div', { class: 'ovxw' }, h('button', { class: 'ovx', type: 'button', 'aria-label': '닫기', title: '닫기 (Esc)', onclick: e => { e.stopPropagation(); doX(); } }, svg('<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>')))); box.classList.add('hasx'); }
     ov.append(box); document.body.append(ov);
-    if (opts.clickClose) ov.addEventListener('click', e => { if (e.target === ov) close(); });
+    OVS.push(ent); try { history.pushState({ ov: 1 }, ''); ent.hist = true; } catch (e) { }
+    if (opts.clickClose) ov.addEventListener('click', e => { if (e.target === ov) doX(); });
   });
 }
 U.overlay = overlay;

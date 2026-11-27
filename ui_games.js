@@ -67,9 +67,10 @@ function fieldScene(mc) {
 
 U.playMoment = function (mc) {
   return new Promise(resolve => {
-    const ov = h('div', { class: 'ov' });
-    const box = h('div', { class: 'ovbox' });
-    ov.append(box); document.body.append(ov);
+    // 공통 팝업(X·Esc·뒤로): 고르기 전에는 안내만, 결과가 나온 뒤에는 '경기 계속'과 같다
+    let closeF = null, last = null;
+    const box = h('div');
+    U.overlay(close => { closeF = close; close.x = () => { if (last) closeF(last); else U.toast(done ? '결과를 보여 주는 중입니다.' : '선택지를 하나 골라야 진행됩니다.'); }; return box; }).then(v => resolve(v));
     box.append(h('div', { class: 'head' }, h('div', { class: 'lbl', style: { color: 'var(--gold)' } }, '결정적 순간 · ' + mc.comp + (mc.stage ? ' ' + mc.stage : '')), h('h2', null, mc.title), h('span', { class: 'mute' }, mc.sub)));
     const body = h('div', { class: 'body' }); box.append(body);
     body.append(h('p', { style: { margin: 0 } }, mc.desc));
@@ -109,7 +110,8 @@ U.playMoment = function (mc) {
       const failWord = mc.defend ? (res.ok === null ? '위기 모면' : '실점') : mc.ui === 'shot' ? ({ save: 'SAVED', wall: 'BLOCKED', post: '골대!', miss: 'MISS' }[res.kind] || 'MISS') : '실패';
       body.append(h('div', { class: 'banner ' + (res.ok ? 'ok' : 'no') }, res.ok ? okWord : failWord), h('p', { class: 'mute', style: { textAlign: 'center', margin: 0 } }, res.text + (res.ok ? '' : ` 정답은 ${mc.answer + 1}번이었습니다.`)));
       if (res.ok) U.confetti(130);
-      const btn = h('button', { class: 'btn', onclick: () => { ov.style.animation = 'fadeIn .2s reverse both'; setTimeout(() => ov.remove(), 180); resolve(res); } }, '경기 계속');
+      last = res;
+      const btn = h('button', { class: 'btn', onclick: () => closeF(res) }, '경기 계속');
       body.append(btn); btn.focus();
     };
     mc.opts.forEach((o, i) => list.append(h('button', { class: 'zbtn', onclick: () => choose(i) }, h('b', null, i + 1), h('span', null, o.label))));

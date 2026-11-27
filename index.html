@@ -1324,6 +1324,14 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
  .in > table.ltable th,.in > table.ltable td{white-space:nowrap}
  .ptable th,.ptable td{white-space:nowrap}
 }
+/* v44 팝업 닫기 버튼 */
+.ovbox.hasx{position:relative;overflow:clip}
+.ovxw{position:sticky;top:0;height:0;z-index:20}
+.ovx{position:absolute;right:10px;top:10px;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);background:rgba(16,19,25,.86);color:var(--text,#e9eef5);cursor:pointer;backdrop-filter:blur(6px);padding:0}
+.ovx:hover{background:var(--panel2);border-color:var(--muted,#8a94a6)}
+.ovx:focus-visible{outline:2px solid var(--gold,#f2c14e);outline-offset:2px}
+.ovbox.hasx .mclose{display:none}
+.ovbox.hasx > .head,.ovbox.hasx > div > .head:first-child,.ovbox.hasx > .lvhead{padding-right:54px}
 </style>
 
 <div id="app"></div>

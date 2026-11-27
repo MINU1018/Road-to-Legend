@@ -541,7 +541,11 @@ U.wcEvent = function (b) {
     // 갈림길만 보여 준다: 결과·확률·색 없음 (선택하면 보이지 않는 확률로 갈린다)
     b.opts.forEach((o, i) => opts.append(h('button', { class: 'opt', onclick: () => choose(i) }, h('div', { class: 't' }, o.label), h('div', { class: 'd' }, o.desc || ''))));
     body.append(h('p', { class: 'mute', style: { margin: 0 } }, b.desc), opts);
+    // X·Esc·뒤로: 고르기 전에는 안내만 (이 대화는 골라야 진행된다), 고른 뒤에는 '여기서 멈추기'와 같다
+    let picked = false;
+    close.x = () => { if (picked) close('stop'); else U.toast('선택지를 하나 골라야 진행됩니다.'); };
     const choose = i => {
+      if (picked) return; picked = true;
       [...opts.children].forEach((c, k) => { c.style.pointerEvents = 'none'; if (k !== i) c.style.opacity = '.35'; else c.classList.add('picked'); });
       const log = C.resolveEvent(s, b, i);
       if (s.ss) C.updateRole(s);
@@ -631,6 +635,7 @@ U.wcLive = async function (m) {
     if (dist(col[0], col[1]) < 90) col[1] = dist(col[0], '#5fa8ff') > 90 ? '#5fa8ff' : '#e9ecf1'; }
   return overlay(close => {
     let t = 0, spd = s.wc.speed || 2, playing = true, done = false, timer = null;
+    close.x = () => { clearTimeout(timer); close('go'); }; // X·Esc·뒤로 = '나가기' (진행은 계속)
     const clock = h('div', { class: 'lvclock' }), sc = h('div', { class: 'lvscore' }), prog = h('div', { class: 'lvprog' }, h('i'));
     const feed = h('div', { class: 'lvfeed' }), stats = h('div', { class: 'lvstats' }), me = h('div', { class: 'lvme' });
     const head = h('div', { class: 'head lvhead' }, h('div', { class: 'lbl' }, o.title || ''),
