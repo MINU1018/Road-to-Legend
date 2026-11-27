@@ -1,4 +1,4 @@
-// 클라우드 저장 (v44) — Supabase Auth(이메일 로그인 링크 · GitHub) + Storage('saves' 버킷)
+// 클라우드 저장 (v44) — Supabase Auth(이메일 로그인 링크 · 구글 · GitHub) + Storage('saves' 버킷)
 // 설정 값(프로젝트 URL · 공개 키)은 Vercel 배포에서는 /api/config(서버 환경 변수)에서, 그 밖에서는 설정 화면에 직접 넣은 값(이 브라우저에 저장)에서 읽는다
 // 저장 파일 = '저장 파일 내보내기'와 같은 내용(gzip 압축). 경로: saves/<사용자 id>/<슬롯>.json.gz + <슬롯>.meta.json(선수·시즌 요약)
 // 비밀 키(service role / secret)는 쓰지 않는다. 각 사용자는 자기 폴더만 읽고 쓸 수 있게 Storage 정책을 건다 (README '클라우드 저장' 참고)
@@ -25,11 +25,11 @@ CL.init = async function () {
     history.replaceState(null, '', location.pathname + location.search);
     await CL.who(); put({ sess: CL.sess }); CL.justIn = true;
   } else if (location.hash && /error_description=/.test(location.hash)) {
-    const q = new URLSearchParams(location.hash.slice(1)); CL.err = q.get('error_description'); history.replaceState(null, '', location.pathname + location.search);
+    const q = new URLSearchParams(location.hash.slice(1)); CL.err = q.get('error_description'); if (/provider is not enabled|Unsupported provider/i.test(CL.err || '')) CL.err = '이 로그인 방식이 Supabase에서 아직 켜져 있지 않습니다 (Authentication → Sign In / Providers).'; history.replaceState(null, '', location.pathname + location.search);
   }
   CL.ready = true; return CL;
 };
-CL.setManual = (url, key) => { put({ url: (url || '').trim().replace(/\/+$/, ''), key: (key || '').trim() }); CL.ready = false; return CL.init(); };
+CL.setManual = (url, key) => { CL._prov = null; put({ url: (url || '').trim().replace(/\/+$/, ''), key: (key || '').trim() }); CL.ready = false; return CL.init(); };
 CL.on = () => !!CL.cfg;
 CL.logged = () => !!(CL.sess && CL.sess.at);
 const H = (auth, extra) => Object.assign({ apikey: CL.cfg.key }, auth && CL.sess ? { Authorization: 'Bearer ' + CL.sess.at } : { Authorization: 'Bearer ' + CL.cfg.key }, extra || {});
@@ -50,7 +50,16 @@ CL.sendLink = async function (email) {
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.msg || j.error_description || j.message || ('오류 ' + r.status)); }
   return true;
 };
-CL.github = () => { location.href = CL.cfg.url + '/auth/v1/authorize?provider=github&redirect_to=' + encodeURIComponent(back()); };
+// 소셜 로그인 (Supabase Authentication → Providers에서 켠 것만 동작): 'google' | 'github'
+CL.oauth = provider => { location.href = CL.cfg.url + '/auth/v1/authorize?provider=' + provider + '&redirect_to=' + encodeURIComponent(back()); };
+// 켜져 있는 로그인 방식 (/auth/v1/settings → external.google 등). 켜지 않은 방식의 버튼은 숨긴다
+CL.providers = async function () {
+  if (CL._prov) return CL._prov;
+  try { const r = await fetch(CL.cfg.url + '/auth/v1/settings', { headers: H(false) }); const j = r.ok ? await r.json() : null; CL._prov = j && j.external ? j.external : { email: true, google: true, github: true }; } catch (e) { CL._prov = { email: true, google: true, github: true }; }
+  return CL._prov;
+};
+CL.github = () => CL.oauth('github');
+CL.google = () => CL.oauth('google');
 CL.logout = function () { if (CL.sess && CL.cfg) fetch(CL.cfg.url + '/auth/v1/logout', { method: 'POST', headers: H(true) }).catch(() => {}); CL.sess = null; CL.list = null; put({ sess: null }); };
 // ---------- 압축 ----------
 async function gz(text) { if (!G.CompressionStream) return new Blob([text], { type: 'application/json' }); const s = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip')); return new Blob([await new Response(s).arrayBuffer()], { type: 'application/gzip' }); }
