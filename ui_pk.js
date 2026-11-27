@@ -53,7 +53,7 @@ U.pkReplay = function (s, x) {
   const w = s.w, T = C.PKT[x[7]];
   const opp = w.clubs[x[4]] || {}, mine = w.clubs[x[3]] || {};
   const nameOf = id => id === 'ME' ? s.p.name : (C.MD && C.MD.nameOf ? C.MD.nameOf(id, s) : '') || '';
-  const start = async (stage, SB, cap) => {
+  const start = async (stage, SB, cap, res0) => {
     let o = null; try { o = U.findRecMatch ? await U.findRecMatch(s, x[3], x[5], x[4]) : null; } catch (e) { o = null; }
     let ms = null; if (o && o.d && o.d.ln && U.matchMs) { try { ms = U.matchMs(o); } catch (e) { ms = null; } }
     const atk = o ? (o.a === x[3] ? 0 : 1) : 0, m = x[6];
@@ -75,12 +75,17 @@ U.pkReplay = function (s, x) {
     const names = [0, 1].map(sd => { const c = w.clubs[sideId(sd)] || {}; return c.short || c.name || ''; });
     SB.names(names, cols);
     const run = () => {
-      const S0 = U.MOT.mkState(teams, [1, -1], U.MOT.hash('pk|' + x[5] + '|' + x[1] + '|' + m));
-      const fr = U.MOT.scene(S0, Object.assign({ atk: 0 }, args, { atk: 0 }));
       // 장면 안에서는 득점 팀을 0번(오른쪽 공격)으로 둔다
+      const seed = U.MOT.hash('pk|' + x[5] + '|' + x[1] + '|' + m);
+      const sc = [0, 0]; SB.set(sc[0], sc[1], U.fmtMin(m)); res0.textContent = '';
+      const onGoal = () => { sc[0]++; SB.set(sc[0], sc[1]); res0.textContent = `${U.fmtMin(m)} 골 · ${C.pkName(s, x)}`; };
+      let clip = null;
+      if (U.HLX) { try { clip = U.HLX.make(Object.assign({}, args, { atk: 0, half: 1, seed, nameOf, ovrOf: U.hlOvr, teams: [0, 1].map(sd => ({ name: names[sd], short: names[sd], col: cols[sd], fm: teams[sd].fm, ln: teams[sd].ln })) })); } catch (e) { console.error(e); } }
+      if (clip) return U.HLX.play(stage, clip, { meId: 'ME', onEvent: k => { if (k === 'goal') onGoal(); } });
+      const S0 = U.MOT.mkState(teams, [1, -1], seed);
+      const fr = U.MOT.scene(S0, Object.assign({ atk: 0 }, args, { atk: 0 }));
       const info = U.motionInfo(S0, teams, [], nameOf);
-      const sc = [0, 0]; SB.set(sc[0], sc[1], U.fmtMin(m));
-      return U.playFrames(stage, fr, info, { onLabel: l => { if (l === 'goal') { sc[0]++; SB.set(sc[0], sc[1]); } } });
+      return U.playFrames(stage, fr, info, { onLabel: l => { if (l === 'goal') onGoal(); } });
     };
     // 득점 팀이 0번이 되도록 팀 순서를 맞춘다
     if (atk === 1) { teams = [teams[1], teams[0]]; names.reverse(); cols.reverse(); SB.names(names, cols); }
@@ -88,15 +93,15 @@ U.pkReplay = function (s, x) {
     return run;
   };
   U.overlay(close => {
-    const cv = h('canvas', { class: 'rpcv' }), sbx = h('div', { class: 'sbd' }), stage = h('div', { class: 'rpstage' }, cv, sbx), cap = h('div', { class: 'mute', style: { fontSize: '12.5px' } }, '불러오는 중…');
+    const cv = h('canvas', { class: 'rpcv' }), sbx = h('div', { class: 'sbd' }), stage = h('div', { class: 'rpstage' }, cv, sbx), cap = h('div', { class: 'mute', style: { fontSize: '12.5px' } }, '불러오는 중…'), res0 = h('div', { class: 'lfres' });
     const SB = { names(n, c) { this.n = n; this.c = c; }, set(a, b, mm) { if (mm != null) this.m = mm; sbx.replaceChildren(h('i', { style: { background: this.c[0] } }), h('span', null, this.n[0]), h('b', null, a), h('em', null, '-'), h('b', null, b), h('span', null, this.n[1]), h('i', { style: { background: this.c[1] } }), h('span', { class: 'sbm' }, this.m || '')); } };
     let runF = null, stopF = null;
-    start(cv, SB, cap).then(r => { runF = r; stopF = r(); }).catch(e => { console.error(e); cap.textContent = '재현을 만들지 못했습니다.'; });
+    start(cv, SB, cap, res0).then(r => { runF = r; stopF = r(); }).catch(e => { console.error(e); cap.textContent = '재현을 만들지 못했습니다.'; });
     close.x = () => { if (stopF) stopF(); close(); };
     return h('div', null,
       h('div', { class: 'head', style: { gridTemplateColumns: '1fr auto', alignItems: 'center' } }, h('div', null, h('b', { style: { fontSize: '16px' } }, `${C.pkName(s, x)} · ${T.n}`), h('div', { class: 'mute', style: { fontSize: '12px' } }, `${mine.name || ''} vs ${opp.name || ''} · ${x[12] || KIND[x[8]] || ''} · ${C.fmtDateY(x[5])} · ${U.fmtMin(x[6])} · 약 ${Math.round(x[9])}m`)),
         h('button', { class: 'btn ghost sm', onclick: () => { if (stopF) stopF(); close(); } }, '닫기')),
-      h('div', { class: 'body' }, stage, cap, h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' } },
+      h('div', { class: 'body' }, stage, res0, cap, h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' } },
         h('button', { class: 'btn sm', onclick: () => { if (stopF) stopF(); if (runF) stopF = runF(); } }, '다시 보기'),
         U.openRecMatch ? h('button', { class: 'btn ghost sm', onclick: () => U.openRecMatch(s, x[3], x[5], x[4]) }, '경기 기록') : null)));
   }, { clickClose: true, cls: 'pkov rpbox' });

@@ -40,6 +40,13 @@ function scoreboard(names, cols) {
   return { el: el0, set(a, b, m) { sA.textContent = a; sB.textContent = b; if (m != null) mn.textContent = m; } };
 }
 U.scoreboard = scoreboard;
+// v49: 터치라인 엔진 하이라이트 (hl_direct.js). 선수 OVR은 월드 기록에서
+U.hlOvr = id => { try { const S0 = U.S && U.S(); if (!S0) return 65; if (id === 'ME') return G.TC.ovrOf(S0.p); const f = G.TC.findE && G.TC.findE(S0.w, id); return f && f[0] ? f[0][2] : 65; } catch (e) { return 65; } };
+// 결과 한 줄 (그 순간에만 보여 준다)
+U.hlCaption = (kind, x) => { const nm = x.nameOf || (v => v); const who = x.p != null ? nm(x.p) : ''; const t = x.clock ? x.clock + ' ' : '';
+  if (kind === 'goal') return x.k === 'o' ? `${t}자책골 · ${who}` : `${t}골 · ${who}${x.a ? ` (도움 ${nm(x.a)})` : ''}`;
+  if (kind === 'red') return `${t}퇴장 · ${who}`;
+  return `${t}${{ save: '선방', miss: '빗나감', post: '골대', block: '막힘' }[kind] || '슈팅'} · ${who}`; };
 U.playFrames = playFrames;
 // 기록 → 장면 인자
 function sceneArgs(g, atk) {
@@ -68,16 +75,25 @@ U.goalReplay = function (opt) {
       if (stopF) stopF();
       const g = goals[gi], atk = g.k === 'o' ? g.s : g.s, tA = opt.teams[atk], tD = opt.teams[1 - atk];
       const onAt = t => (t.ln || []).filter(p => (p.on || 0) <= g.m && (p.off == null || p.off >= g.m || p.off >= 90)).sort((a, b) => (b.role === 'GK') - (a.role === 'GK')).slice(0, 11);
-      const teams = [0, 1].map(s => ({ col: opt.teams[s].col, ln: onAt(opt.teams[s]) }));
+      const teams = [0, 1].map(s => ({ col: opt.teams[s].col, fm: opt.teams[s].fm, ln: onAt(opt.teams[s]) }));
       if (!teams[0].ln.length || !teams[1].ln.length) return;
-      const M = U.MOT, S0 = M.mkState(teams, atk === 0 ? [1, -1] : [-1, 1], M.hash('rp|' + (opt.key || '') + '|' + g.m + '|' + g.p));
-      const frames = M.scene(S0, sceneArgs(g, atk));
+      const seed = U.MOT ? U.MOT.hash('rp|' + (opt.key || '') + '|' + g.m + '|' + g.p) : 7;
       const kind = g.k === 'p' ? '페널티킥' : g.k === 'o' ? '자책골' : [g.sh && g.sh.type, g.sh && g.sh.sit].filter(Boolean).join(' · ');
-      cap.replaceChildren(...[h('span', { class: 'rpmin', style: { background: tA.col } }, `${g.m}'`), h('b', null, g.k === 'o' ? opt.nameOf(g.p) + ' (자책)' : opt.nameOf(g.p)), g.a && g.k !== 'o' ? h('span', { class: 'mute' }, ` · 도움 ${opt.nameOf(g.a)}`) : null, h('span', { class: 'mute' }, ` · ${tA.name}${kind ? ' · ' + kind : ''}`), g.sh && g.sh.dx && g.k !== 'p' ? h('span', { class: 'mute' }, ` · ${Math.round(Math.hypot(g.sh.dx, g.sh.dy || 0))}m`) : null].filter(Boolean));
+      // 결과(누가 넣었는지)는 골이 들어가는 순간에만
+      const reveal = () => cap.replaceChildren(...[h('span', { class: 'rpmin', style: { background: tA.col } }, `${g.m}'`), h('b', null, g.k === 'o' ? opt.nameOf(g.p) + ' (자책)' : opt.nameOf(g.p)), g.a && g.k !== 'o' ? h('span', { class: 'mute' }, ` · 도움 ${opt.nameOf(g.a)}`) : null, h('span', { class: 'mute' }, ` · ${tA.name}${kind ? ' · ' + kind : ''}`), g.sh && g.sh.dx && g.k !== 'p' ? h('span', { class: 'mute' }, ` · ${Math.round(Math.hypot(g.sh.dx, g.sh.dy || 0))}m`) : null].filter(Boolean));
+      cap.replaceChildren(h('span', { class: 'mute' }, `${g.m}'`));
       cnt.textContent = goals.length > 1 ? `${gi + 1} / ${goals.length}` : '';
-      const info = infoFor(S0, teams, [g.p, g.a].filter(Boolean), opt.nameOf);
       const before = [0, 1].map(sd => goals.slice(0, gi).filter(x => x.s === sd).length); SB.set(before[0], before[1], `${g.m}'`);
-      stopF = playFrames(cv, frames, info, { speed: () => spd, onLabel: l => { if (l === 'goal') { before[g.s]++; SB.set(before[0], before[1]); } }, onT: x => { bar.style.width = clamp(x, 0, 1) * 100 + '%'; }, done: () => { if (auto && gi < goals.length - 1) setTimeout(() => { if (!stopF) return; gi++; run(); }, 900); } });
+      const onGoal = () => { before[g.s]++; SB.set(before[0], before[1]); reveal(); };
+      const doneF = () => { if (auto && gi < goals.length - 1) setTimeout(() => { if (!stopF) return; gi++; run(); }, 1200); };
+      const prog = x => { bar.style.width = clamp(x, 0, 1) * 100 + '%'; };
+      let clip = null;
+      if (U.HLX) { try { clip = U.HLX.make(Object.assign({}, sceneArgs(g, atk), { atk, half: atk === 0 ? 1 : 2, seed, nameOf: opt.nameOf, ovrOf: U.hlOvr, teams: [0, 1].map(sd => ({ name: opt.teams[sd].name, short: opt.teams[sd].name, col: opt.teams[sd].col, fm: opt.teams[sd].fm, ln: teams[sd].ln })) })); } catch (e) { console.error(e); } }
+      if (clip) { stopF = U.HLX.play(cv, clip, { speed: () => spd, meId: 'ME', onEvent: k => { if (k === 'goal') onGoal(); }, onT: prog, done: doneF }); return; }
+      const M = U.MOT, S0 = M.mkState(teams, atk === 0 ? [1, -1] : [-1, 1], seed);
+      const frames = M.scene(S0, sceneArgs(g, atk));
+      const info = infoFor(S0, teams, [g.p, g.a].filter(Boolean), opt.nameOf);
+      stopF = playFrames(cv, frames, info, { speed: () => spd, onLabel: l => { if (l === 'goal') onGoal(); }, onT: prog, done: doneF });
     };
     const spdB = h('button', { class: 'btn ghost sm', onclick: e => { spd = spd === 1 ? .5 : spd === .5 ? 2 : 1; e.currentTarget.textContent = `속도 ${spd}x`; } }, '속도 1x');
     const ctrl = h('div', { class: 'rpctl' },
@@ -99,7 +115,7 @@ U.replayData = function (d, ms, names, cols) {
     const sh = ms && ms.shots ? ms.shots.find(x => x.s === e.s && x.m === e.m && x.p === e.p && x.res === '골') : null;
     return { s: e.k === 'o' ? e.s : e.s, m: e.m, p: e.p, a: e.a, k: e.k, sh: sh ? { dx: sh.dx, dy: sh.dy, sit: sh.sit, type: sh.type } : null, atk };
   }).sort((a, b) => a.m - b.m);
-  const teams = [0, 1].map(s => ({ name: names[s], col: cols[s], ln: ms && ms.PL ? ms.PL[s].map(p => ({ id: p.id, pos: p.pos, role: p.role, on: p.on, off: p.off })) : [] }));
+  const teams = [0, 1].map(s => ({ name: names[s], col: cols[s], fm: ms && ms.fm ? ms.fm[s] : null, ln: ms && ms.PL ? ms.PL[s].map(p => ({ id: p.id, pos: p.pos, role: p.role, sl: p.sl, on: p.on, off: p.off })) : [] }));
   return { goals, teams };
 };
 })(window);
@@ -111,8 +127,8 @@ const U = G.TCUI, h = U.h;
 U.liveField = function (o) {
   const M = U.MOT; if (!M) return null;
   const cv = h('canvas', { class: 'lfcv' }), SB = U.scoreboard(o.teams.map(t => t.name), o.teams.map(t => t.col));
-  const wrap = h('div', { class: 'lfwrap' }, cv, SB.el);
-  const box = h('div', { class: 'lfbox' }, wrap);
+  const wrap = h('div', { class: 'lfwrap' }, cv, SB.el), cap2 = h('div', { class: 'lfres' });
+  const box = h('div', { class: 'lfbox' }, wrap, cap2);
   const onAt = (sd, m) => (o.teams[sd].ln || []).filter(p => (p.on || 0) <= m && (p.off == null || p.off > m || (p.off >= 90 && m >= 90))).sort((a, b) => (b.role === 'GK') - (a.role === 'GK')).slice(0, 11);
   let busy = false, stopF = null, finF = null, hideT = null;
   const info = S => i => { const p = S.P[i]; if (!p) return null; const T = o.teams[p.s]; return { col: T.col, gkc: '#1d1d1d', ring: p.gk ? T.col : null, gk: p.gk, me: p.id === 'ME', label: p.id === 'ME' ? (U.shortName ? U.shortName(o.nameOf(p.id)) : '') : null, always: p.id === 'ME' }; };
@@ -125,15 +141,18 @@ U.liveField = function (o) {
         const m = ev.m, half = m > 45 ? 2 : 1;
         const teams = [0, 1].map(sd => ({ col: o.teams[sd].col, fm: o.teams[sd].fm, ln: onAt(sd, m) }));
         if (!teams[0].ln.length || !teams[1].ln.length) return res();
-        let frames, S;
-        try { S = M.mkState(teams, half === 1 ? [1, -1] : [-1, 1], M.hash((o.key || '') + '|' + m + '|' + ev.atk)); frames = M.scene(S, Object.assign({}, ev.args, { atk: ev.atk })); } catch (e) { console.error(e); return res(); }
-        if (!frames || frames.length < 2) return res();
-        busy = true; clearTimeout(hideT);
+        let frames = null, S = null, clip = null;
+        const seed = M.hash((o.key || '') + '|' + m + '|' + ev.atk);
+        if (U.HLX) { try { clip = U.HLX.make(Object.assign({}, ev.args, { atk: ev.atk, half, seed, nameOf: o.nameOf, ovrOf: U.hlOvr, teams: [0, 1].map(sd => ({ name: o.teams[sd].name, short: o.teams[sd].name, col: o.teams[sd].col, fm: o.teams[sd].fm, ln: onAt(sd, m) })) })); } catch (e) { console.error(e); clip = null; } }
+        if (!clip) { try { S = M.mkState(teams, half === 1 ? [1, -1] : [-1, 1], seed); frames = M.scene(S, Object.assign({}, ev.args, { atk: ev.atk })); } catch (e) { console.error(e); return res(); } if (!frames || frames.length < 2) return res(); }
+        busy = true; clearTimeout(hideT); cap2.textContent = '';
         const sc = ev.score.slice(); SB.set(sc[0], sc[1], ev.clock || (U.fmtMin ? U.fmtMin(m) : m + "'"));
         box.classList.add('on');
-        const fin = () => { if (!busy) return; busy = false; stopF = null; finF = null; hideT = setTimeout(() => box.classList.remove('on'), 900); res(); };
+        const fin = () => { if (!busy) return; busy = false; stopF = null; finF = null; hideT = setTimeout(() => { box.classList.remove('on'); cap2.textContent = ''; }, 900); res(); };
         finF = fin;
-        stopF = U.playFrames(cv, frames, info(S), { onLabel: l => { if (l === 'goal') { sc[ev.atk]++; SB.set(sc[0], sc[1]); } }, done: () => setTimeout(fin, 700) });
+        const onRes = k => { if (k === 'goal') { sc[ev.atk]++; SB.set(sc[0], sc[1]); } if (ev.cap) cap2.textContent = U.hlCaption(k === 'goal' || k === 'red' ? k : (ev.res || k), Object.assign({ nameOf: o.nameOf, clock: ev.clock }, ev.cap)); };
+        if (clip) stopF = U.HLX.play(cv, clip, { meId: 'ME', onEvent: k => onRes(k), done: () => setTimeout(fin, 900) });
+        else stopF = U.playFrames(cv, frames, info(S), { onLabel: l => { if (l === 'goal' || l === 'red' || l === 'shot') onRes(l === 'shot' ? (ev.res || 'miss') : l); }, done: () => setTimeout(fin, 900) });
       });
     },
     skip() { if (busy) { if (stopF) stopF(); if (finF) finF(); } },

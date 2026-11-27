@@ -665,11 +665,11 @@ U.wcLive = async function (m) {
   const keyEv = [];
   if (LF) {
     for (const x of T) {
-      if (x.k === 'goal' && x.e) { const e = x.e, sh = shots.find(z => z.s === e.s && z.m === e.m && z.p === e.p && z.res === '골'); keyEv.push({ m: x.m, lv: 1, atk: e.s, args: U.sceneArgs({ m: e.m, p: e.p, a: e.a, k: e.k, sh: sh ? { dx: sh.dx, dy: sh.dy, sit: sh.sit, type: sh.type } : null }, e.s) }); }
-      else if (x.k === 'r' && x.e) keyEv.push({ m: x.m, lv: 1, atk: 1 - x.e.s, args: { kind: 'red', foul: x.e.p } });
+      if (x.k === 'goal' && x.e) { const e = x.e, sh = shots.find(z => z.s === e.s && z.m === e.m && z.p === e.p && z.res === '골'); keyEv.push({ m: x.m, lv: 1, atk: e.s, cap: { p: e.p, a: e.a, k: e.k }, args: U.sceneArgs({ m: e.m, p: e.p, a: e.a, k: e.k, sh: sh ? { dx: sh.dx, dy: sh.dy, sit: sh.sit, type: sh.type } : null }, e.s) }); }
+      else if (x.k === 'r' && x.e) keyEv.push({ m: x.m, lv: 1, atk: 1 - x.e.s, cap: { p: x.e.p }, args: { kind: 'red', foul: x.e.p } });
     }
     const ch = shots.filter(z => z.res !== '골' && ['선방', '빗나감', '골대', '막힘'].includes(z.res) && (z.big || z.p === 'ME' || z.res === '골대' || (z.xg || 0) >= .15)).sort((a, b) => (b.p === 'ME') - (a.p === 'ME') || (b.xg || 0) - (a.xg || 0)).slice(0, 8);
-    for (const z of ch) keyEv.push({ m: z.m, lv: 2, atk: z.s, args: U.sceneArgs({ m: z.m, p: z.p, a: z.as, k: 'g', res: z.res, sh: { dx: z.dx, dy: z.dy, sit: z.sit, type: z.type } }, z.s) });
+    for (const z of ch) keyEv.push({ m: z.m, lv: 2, atk: z.s, res: { '선방': 'save', '빗나감': 'miss', '골대': 'post', '막힘': 'block' }[z.res] || 'miss', cap: { p: z.p }, args: U.sceneArgs({ m: z.m, p: z.p, a: z.as, k: 'g', res: z.res, sh: { dx: z.dx, dy: z.dy, sit: z.sit, type: z.type } }, z.s) });
     keyEv.sort((a, b) => a.m - b.m || a.lv - b.lv);
   }
   if (s.wc.hl == null) s.wc.hl = s.wc.slow === 0 ? 'off' : 'key';
