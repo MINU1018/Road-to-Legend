@@ -1332,6 +1332,96 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 .ovx:focus-visible{outline:2px solid var(--gold,#f2c14e);outline-offset:2px}
 .ovbox.hasx .mclose{display:none}
 .ovbox.hasx > .head,.ovbox.hasx > div > .head:first-child,.ovbox.hasx > .lvhead{padding-right:54px}
+/* v45 내 프로필 탭 */
+.pft7{overflow-x:auto;scrollbar-width:none}.pft7 button{flex:1 0 auto;padding:9px 10px;white-space:nowrap}
+@media (max-width:700px){.wcptabs.dsk{display:none}}
+/* v45 모바일 메뉴 서랍 */
+body > .side.drawer{position:fixed;top:0;left:0;bottom:0;height:100dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+body.navlock{overflow:hidden}
+/* v45 상자 접기·순서 바꾸기 */
+.foldb,.gripb{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--mute,#8a94a6);display:inline-grid;place-items:center;cursor:pointer;padding:0;vertical-align:middle}
+.foldb{margin-left:4px;order:99}
+.ph:has(.foldb){justify-content:flex-start;gap:6px}.ph:has(.foldb) > :first-child:not(.gripb),.ph:has(.foldb) > .gripb + *{margin-right:auto}
+h3:has(> .foldb){display:flex;align-items:center;gap:6px}h3:has(> .foldb) > .foldb{margin-left:auto}
+.foldb:hover,.gripb:hover{background:var(--panel2);border-color:var(--line);color:var(--text,#e9eef5)}
+.folded > .foldb svg,.folded > .ph .foldb svg,.folded > h3 .foldb svg{transform:rotate(-90deg)}
+.foldb svg{transition:transform .15s}
+.panel.folded > :not(.ph){display:none !important}
+.sec.folded > :not(h3){display:none !important}
+.sec.folded > h3{padding-bottom:14px}
+.gripb{cursor:grab;touch-action:none;margin-right:2px;order:-1}
+.gripabs{position:relative}.gripabs > .gripb{position:absolute;top:8px;right:8px;z-index:3;background:rgba(16,19,25,.7)}
+.dragging{position:fixed !important;z-index:80;opacity:.92;box-shadow:0 18px 40px rgba(0,0,0,.55);pointer-events:none;margin:0 !important}
+.dragph{border:2px dashed var(--line);border-radius:14px;background:rgba(255,255,255,.02)}
+@media (hover:hover){.gripb{opacity:.45}.panel:hover .gripb,.sec:hover .gripb,[data-dz] > :hover > .gripb,[data-dz] > :hover .gripb{opacity:1}}
+/* v45 중계 팀 구분 */
+.lvev{grid-template-columns:42px 22px minmax(0,1fr) auto;border-left:4px solid var(--tc,transparent);background:linear-gradient(90deg,color-mix(in srgb,var(--tc,#888) 14%,transparent),transparent 55%)}
+.lvev.s1{border-left:0;border-right:4px solid var(--tc,transparent);background:linear-gradient(270deg,color-mix(in srgb,var(--tc,#888) 14%,transparent),transparent 55%)}
+.lvev.k-goal{background:linear-gradient(90deg,color-mix(in srgb,var(--tc,#888) 30%,transparent),rgba(242,193,78,.08))}
+.lvev.s1.k-goal{background:linear-gradient(270deg,color-mix(in srgb,var(--tc,#888) 30%,transparent),rgba(242,193,78,.08))}
+.lvev .tm{display:flex;align-items:center;gap:4px;color:var(--mute);font-size:11px;white-space:nowrap}
+.lvev.me{box-shadow:inset 0 0 0 1px rgba(242,193,78,.45)}
+.mev.l{border-left:3px solid var(--tc,transparent);padding-left:8px}.mev.r{border-right:3px solid var(--tc,transparent);padding-right:8px}
+
+/* v45 에이전트·생활 탭 */
+.wclg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+.wclcol{display:grid;gap:16px;min-width:0}
+@media (max-width:900px){.wclg{grid-template-columns:minmax(0,1fr)}}
+.wclkvs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.wclkv{display:grid;gap:2px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.wclkv span{font-size:11.5px}.wclkv b{font-size:15px;font-variant-numeric:tabular-nums}
+.wclkv.big b{font-size:19px;color:var(--gold,#f2c14e)}.wclkv.bad b{color:var(--bad,#e5484d)}
+.wclints{display:grid;gap:0}
+.wclint{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.wclint:first-child{border-top:0}
+.wclint>div{display:grid;gap:1px;min-width:0}.wclint>div b,.wclint>div small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wclint.off{background:linear-gradient(90deg,rgba(242,193,78,.08),transparent 70%);border-radius:8px;padding-left:6px}
+.wclbrand{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-weight:800;background:var(--panel2);border:1px solid var(--line)}
+.wclbrand.on{background:rgba(70,167,88,.18);border-color:rgba(70,167,88,.5)}
+.wclnote{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--panel2);font-size:12.5px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.wclag{display:grid;gap:2px;padding:10px 12px;border-radius:10px;border:1px dashed var(--line)}
+.wclag.on{border-style:solid;border-color:rgba(70,167,88,.5);background:rgba(70,167,88,.08)}
+@media (max-width:700px){.wclkvs{grid-template-columns:repeat(2,minmax(0,1fr))}.wclint{grid-template-columns:auto minmax(0,1fr) auto}.wclint>.btn,.wclint>div:last-child:not(:nth-child(2)){grid-column:2/-1;justify-self:start}}
+
+/* v45 스토리 탭: 라이벌 · 대표팀 · 피드 */
+.wsfds{display:grid;gap:0;margin-top:8px}.wsfds.sm{margin-top:0}
+.wsfd{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;padding:8px 0;border-top:1px solid var(--line)}
+.wsfd:first-child{border-top:0}
+.wsfk{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);margin-top:2px;white-space:nowrap}
+.wsfd.fan .wsfk{background:rgba(88,166,255,.12);border-color:rgba(88,166,255,.4)}
+.wsfd.pos .wsft{color:var(--fg)}.wsfd.neg .wsft{color:#ff9c9c}
+.wsfd.big .wsft{font-weight:700}.wsfd.fan .wsft{font-style:italic}
+.wsft{font-size:13.5px;line-height:1.4}.wsfd small{font-size:11px}
+.wsfds.sm .wsft{font-size:12.5px}
+.wsrvh{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:center}
+.wsrvh>div{display:grid;gap:2px;justify-items:start}.wsrvh>div.r{justify-items:end;text-align:right}
+.wsrvh small{font-size:11.5px}
+.wsvs{font-weight:900;font-size:13px;color:var(--gold,#f2c14e);padding:4px 8px;border-radius:8px;border:1px solid rgba(242,193,78,.4)}
+.wsrv{display:grid;grid-template-columns:44px minmax(0,1fr) 44px minmax(0,1fr) 44px;gap:6px;align-items:center;font-size:12.5px;padding:3px 0}
+.wsrv>b{text-align:center;font-variant-numeric:tabular-nums}.wsrv>b.up{color:var(--gold,#f2c14e)}
+.wsrv>span{text-align:center;font-size:11.5px}
+.wsbar{height:6px;border-radius:3px;background:var(--panel2);overflow:hidden;display:flex;justify-content:flex-end}
+.wsbar i{display:block;height:100%;background:#f2c14e;border-radius:3px}
+.wsbar.r{justify-content:flex-start}.wsbar.r i{background:#58a6ff}
+.wsh2h{display:flex;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:13px}
+.wsh2l{display:grid;gap:4px;margin:6px 0 8px}.wsh2l>div{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px}
+.wsnt{display:grid;gap:6px;margin-top:10px}.wsnt>div{display:grid;gap:1px;padding:6px 10px;border-left:3px solid var(--gold,#f2c14e);background:var(--panel2);border-radius:0 8px 8px 0;font-size:12.5px}
+.wsrvmini{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:2px 8px;align-items:baseline;padding:6px 0 8px;border-bottom:1px solid var(--line);margin-bottom:2px;font-size:13px}
+.wsrvmini>small:last-child{grid-column:2/-1}
+
+/* v45 골 장면 다시보기 */
+.rpbox{max-width:760px}
+.rpstage{width:100%;aspect-ratio:111/74;border-radius:10px;overflow:hidden;background:#2b7238}
+.rpsv{width:100%;height:100%;display:block}
+.rpbar{height:3px;background:var(--panel2);border-radius:2px;overflow:hidden;margin-top:6px}.rpbar i{display:block;height:100%;width:0;background:var(--gold,#f2c14e)}
+.rpcap{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:13.5px;margin-top:8px}
+.rpmin{color:#fff;font-weight:800;font-size:12px;padding:1px 7px;border-radius:6px;text-shadow:0 1px 2px rgba(0,0,0,.6);margin-right:4px}
+.rpctl{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 6px}
+.rpleg{display:flex;gap:14px;font-size:12.5px;margin-bottom:6px}.rpleg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px;border:1px solid rgba(0,0,0,.4)}
+.rpbtn{margin-left:auto;border:1px solid var(--line);background:var(--panel2);color:var(--fg);border-radius:50%;width:24px;height:24px;font-size:10px;line-height:1;cursor:pointer;flex:none}
+.rpbtn:hover{border-color:var(--gold,#f2c14e);color:var(--gold,#f2c14e)}
+.lvev:has(.rpbtn){grid-template-columns:42px 22px minmax(0,1fr) auto 24px}
+.mev:has(.rpbtn){grid-template-columns:40px 22px minmax(0,1fr) 24px}
 </style>
 
 <div id="app"></div>
@@ -1370,6 +1460,8 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="game.js"></script>
 <script src="shop.js"></script>
 <script src="wcareer.js"></script>
+<script src="wclife.js"></script>
+<script src="wcstory.js"></script>
 <script src="achievements.js"></script>
 <script src="bio.js"></script>
 <script src="logos_pack.js"></script>
@@ -1380,6 +1472,7 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="ui_pages.js"></script>
 <script src="ui_world.js"></script>
 <script src="ui_match.js"></script>
+<script src="ui_replay.js"></script>
 <script src="ui_draw.js"></script>
 <script src="ui_db.js"></script>
 <script src="ui_mfind.js"></script>
@@ -1394,7 +1487,9 @@ button.drb{cursor:pointer}button.drb:hover{background:var(--line)}
 <script src="ui_viz.js"></script>
 <script src="ui_charts.js"></script>
 <script src="ui_games.js"></script>
-<script src="cloud.js"></script><script src="ui_settings.js"></script>
+<script src="cloud.js"></script><script src="ui_boxes.js"></script><script src="ui_settings.js"></script>
 <script src="ui_extra.js"></script>
 <script src="ui_wcareer.js"></script>
+<script src="ui_wclife.js"></script>
+<script src="ui_wcstory.js"></script>
 <script>TCUI.boot();</script>

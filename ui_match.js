@@ -274,6 +274,8 @@ U.showMatch = function (o) {
     const evOf = id => d.ev.filter(e => e.p === id || e.a === id);
     const icons = id => h('span', { class: 'mic' }, ...evOf(id).map(e => { const ast = e.a === id && e.p !== id; return h('span', { class: 'mi k' + (ast ? 'a' : e.k), title: ast ? '도움' : KIND[e.k] }, ast ? U.bootIcon(14) : ICON[e.k]); }));
 
+    // 골 장면 다시보기 (ui_replay.js): e가 없으면 이 경기의 모든 골을 차례로
+    const replay = e => { try { const R0 = U.replayData(d, getMs(), [tname(0), tname(1)], col); const i = e ? R0.goals.findIndex(g => g.m === e.m && g.p === e.p && g.s === e.s) : 0; U.goalReplay({ goals: R0.goals, teams: R0.teams, start: Math.max(0, i), auto: !e, key, nameOf, title: o.title || '골 장면', sub: `${tname(0)} ${o.ga} - ${o.gb} ${tname(1)}` }); } catch (err) { console.error(err); } };
     // ---------- 경기 ----------
     function facts(B) {
       if (mom) B.append(h('div', { class: 'mommain' }, h('span', { class: 'momst' }, '★'), h('span', { class: 'lbl' }, 'MOM'), pname(mom, close)));
@@ -290,12 +292,14 @@ U.showMatch = function (o) {
       tl.sort((a, b) => a.m - b.m);
       if (tl.length) {
         const ht = tl.findIndex(x => x.m > 45);
-        const rows = tl.map(x => x.vr ? h('div', { class: 'mev var ' + (x.s ? 'r' : 'l') }, h('span', { class: 'mm' }, U.fmtMin(x.m)), h('span', { class: 'mi kv' }, '⚽'),
+        const rows = tl.map(x => x.vr ? h('div', { class: 'mev var ' + (x.s ? 'r' : 'l'), style: { '--tc': col[x.s] } }, h('span', { class: 'mm' }, U.fmtMin(x.m)), h('span', { class: 'mi kv' }, '⚽'),
           h('span', null, pname(x.vr.p, close), h('span', { class: 'mute' }, ` · 골 취소 (VAR · ${x.vr.why})`)))
-          : h('div', { class: 'mev ' + (x.s ? 'r' : 'l') }, h('span', { class: 'mm' }, U.fmtMin(x.m)), h('span', { class: 'mi k' + x.e.k }, ICON[x.e.k]),
-            h('span', null, pname(x.e.p, close), h('span', { class: 'mute' }, ` · ${KIND[x.e.k]}`), x.e.a ? h('span', { class: 'mute evast' }, ' · ', U.bootIcon(14), ' ', pname(x.e.a, close)) : null)));
+          : h('div', { class: 'mev ' + (x.s ? 'r' : 'l'), style: { '--tc': col[x.s] } }, h('span', { class: 'mm' }, U.fmtMin(x.m)), h('span', { class: 'mi k' + x.e.k }, ICON[x.e.k]),
+            h('span', null, pname(x.e.p, close), h('span', { class: 'mute' }, ` · ${KIND[x.e.k]}`), x.e.a ? h('span', { class: 'mute evast' }, ' · ', U.bootIcon(14), ' ', pname(x.e.a, close)) : null),
+            hasLn && U.goalReplay && 'gpo'.includes(x.e.k) ? h('button', { class: 'rpbtn', title: '골 장면 다시보기', onclick: ev => { ev.stopPropagation(); replay(x.e); } }, '▶') : null));
         if (ht > 0) rows.splice(ht, 0, h('div', { class: 'mht' }, '하프타임'));
-        B.append(h('div', { class: 'msec' }, h('h4', null, '경기 이벤트'), h('div', { class: 'mtl' }, ...rows)));
+        const nG = d.ev.filter(e => 'gpo'.includes(e.k)).length;
+        B.append(h('div', { class: 'msec' }, h('h4', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, '경기 이벤트', hasLn && U.goalReplay && nG ? h('button', { class: 'btn ghost sm', style: { marginLeft: 'auto' }, onclick: () => replay(null) }, `▶ 골 장면 모아보기 (${nG})`) : null), h('div', { class: 'mtl' }, ...rows)));
       } else B.append(h('div', { class: 'mute', style: { fontSize: '13px' } }, '득점·카드 없음'));
       // 승부차기: 연장 끝까지 뛴 선수 중 공격수부터 차례로 (경기 기록으로 늘 같은 결과)
       if (o.pw && hasLn) { const so = shootout(getMs(), o.pw === o.a ? 0 : 1, o.key || ''); if (so) B.append(h('div', { class: 'msec' }, h('h4', null, `승부차기 ${so.sc[0]} - ${so.sc[1]}`),

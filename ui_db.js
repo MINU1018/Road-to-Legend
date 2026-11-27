@@ -292,7 +292,8 @@ function playerView(s, root, pid) {
     // 국가대표 기록은 클럽 합계에 넣지 않고 '국가대표' 탭에서 따로 (구단 대신 국기)
     const CATS = [['all', '클럽 전체'], ['league', '리그'], ['cup', '국내 컵'], ['cont', '대륙 대회'], ['nt', '국가대표']];
     const nt = d.pf === 'nt';
-    const pass = it => (nt ? it.cat === 'nt' : it.cat !== 'nt' && (d.pf === 'all' || it.cat === d.pf)) && (nt || !d.pc || it.club === d.pc);
+    // v45: 유스·연령별 팀 기록은 시즌별 기록에서 뺀다 (경력 탭의 유스 경력 칸에만)
+    const pass = it => !it.youth && (nt ? it.cat === 'nt' : it.cat !== 'nt' && (d.pf === 'all' || it.cat === d.pf)) && (nt || !d.pc || it.club === d.pc);
     const tb = h('tbody');
     const tot = { apps: 0, g: 0, a: 0, rs: 0, ra: 0, min: 0, minOk: true };
     const dash = (t, v) => t.nd && !t.apps ? '-' : v;

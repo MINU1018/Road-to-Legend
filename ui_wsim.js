@@ -214,6 +214,7 @@ U.pages.wsim = function () {
   const lm = leagueMini(s, sv); if (lm) aside.append(lm);
   const lc = lastSeasonCard(s); if (lc) aside.append(lc);
   aside.append(U.followManager(s));
+  main.dataset.dz = 'wsM'; aside.dataset.dz = 'wsA'; // 홈 상자 순서 바꾸기 (ui_boxes.js)
   root.append(h('div', { class: 'dash' }, main, aside));
   return root;
 };

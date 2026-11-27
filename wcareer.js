@@ -103,12 +103,13 @@ function growCore(S, ctx) {
   else if (ga > 30) o -= Math.max(0, ga - 30 - lg * .5) * rnd(.25, .75) + rnd(0, .7);
   if (ga >= 24 && ga <= 30 && pot > o) o += (pot - o) * rnd(.25, .6);
   // 갈림길
-  let ev = 0; const rr = R(), med = S.wc.sup && S.wc.sup.med, stg = (has(S, 'pro') ? .6 : 1) * (med ? .8 : 1);
+  let ev = 0; const rr = R(), med = S.wc.sup && S.wc.sup.med, LM = C.WCL ? C.WCL.growMod(S) : {}, stg = (has(S, 'pro') ? .6 : 1) * (med ? .8 : 1) * (LM.mental ? .75 : 1);
   if (ga >= 18 && ga <= 25 && rr < (ga <= 22 && pot >= o + 6 ? .09 : .055)) { o += rint(2, 5) + (ga <= 21 && pot >= o + 8 ? rint(0, 3) : 0); pot += rint(1, 4); ev = 1; }
   else if (ga <= 23 && rr < .055 + .08 * stg) { o -= Math.max(0, o - o0) * .7; pot -= rint(2, 5); ev = 2; }
   else if (ga >= 24 && ga <= 31 && rr < .055 + .1 * stg) { o -= rint(2, 4); ev = 3; }
   else if (ga >= 24 && ga <= 27 && rr < .185) { o += rint(2, 4); pot = Math.max(pot, o + 1); ev = 4; }
   if (ga >= 30 && !ev && R() < .1 * (has(S, 'pro') ? .7 : 1)) { o -= rint(2, 4); ev = 5; }
+  if (LM.trainer) o += ga <= 29 ? rnd(.15, .8) * (.5 + .5 * play) : rnd(.3, 1); // 개인 트레이너 (v45)
   if (ctx.ygb > 0) { o += ctx.ygb * .8; pot = Math.max(pot, o + ctx.ygb * .5); } // 1군에서 기대 이상 활약한 유망주 (경기마다 쌓인 보너스)
   if (ctx.bigInj) { o -= rnd(1, age >= 28 ? 4.5 : 3); pot -= rnd(0, 3); }
   if (o > o0) o = o0 + (o - o0) * C.diff().g;
@@ -407,7 +408,7 @@ const WEV = {
     { label: '팀을 이야기한다', desc: '모범 답안', out: [O(1, '무난한 인터뷰', 0, {}, null, { mgr: .03, lean: { humble: .3 } })] },
     { label: loss ? '부진을 내 탓으로 돌린다' : '내 활약을 어필한다', desc: loss ? '책임을 진다' : '존재감을 드러낸다', out: loss ? [O(1, '팬들이 진정성을 높이 샀다', 1, {}, null, { fans: .08, lean: { leader: .4 } })] : [O(.6, '헤드라인을 장식했다', 1, { rep: 2 }, null, { fans: .04, lean: { media: .5 } }), O(1, '동료들이 눈살을 찌푸렸다', -1, {}, null, { mates: -.06, lean: { hot: .2 } })] },
     { label: loss ? '감독 선택을 비판한다' : '감독 전술에 의문을 던진다', desc: '하고 싶은 말을 한다', out: [O(.35, '팬들은 당신 편', 0, { rep: 1 }, null, { mgr: -.22, fans: .1, lean: { hot: .7 } }), O(1, '구단이 벌금을 매겼다', -1, { money: -Math.max(3000, (S.car.wage || 1000) * 2) }, null, { mgr: -.28, lean: { hot: .7 } })] }] }; } },
-  fans: { w: S => { const v = rel(S).fans[S.car.club] || 0, r = S.ss && S.ss.recent ? S.ss.recent.slice(-4) : []; const a = r.length ? r.reduce((x, y) => x + y, 0) / r.length : 6.8; return S.car.status === 'first' && (a >= 7.3 || a <= 6.3 || Math.abs(v) > .5) ? 1.4 : 0; }, build: S => { const r = S.ss.recent.slice(-4), a = r.reduce((x, y) => x + y, 0) / r.length, good = a >= 6.8; return { title: good ? '팬들의 응원가' : '홈 팬들의 야유', desc: good ? '서포터즈가 당신 이름을 넣은 응원가를 만들었습니다.' : '최근 부진에 홈 팬들 일부가 야유를 보냈습니다.', icon: good ? 'star' : 'rain', opts: good ? [
+  fans: { w: S => { const v = rel(S).fans[S.car.club] || 0, r = S.ss && S.ss.recent ? S.ss.recent.slice(-4) : []; const a = r.length ? r.reduce((x, y) => x + y, 0) / r.length : 6.8; return S.car.status === 'first' && (a >= 7.3 || a <= 6.3 || Math.abs(v) > .5) ? 1.4 : 0; }, build: S => { const r = (S.ss.recent || []).slice(-4), a = r.length ? r.reduce((x, y) => x + y, 0) / r.length : 6.8 + ((S.wc.rel.fans[S.car.club] || 0) > 0 ? .3 : -.3), good = a >= 6.8; return { title: good ? '팬들의 응원가' : '홈 팬들의 야유', desc: good ? '서포터즈가 당신 이름을 넣은 응원가를 만들었습니다.' : '최근 부진에 홈 팬들 일부가 야유를 보냈습니다.', icon: good ? 'star' : 'rain', opts: good ? [
     { label: '경기 뒤 서포터즈석으로 간다', desc: '감사 인사', out: [O(1, '팬들과 한층 가까워졌다', 1, { morale: 6 }, null, { fans: .15, lean: { loyal: .4 } })] },
     { label: 'SNS에 짧게 감사를 남긴다', desc: '조용히', out: [O(1, '팬들이 반겼다', 1, {}, null, { fans: .06 })] }] : [
     { label: '박수를 치며 받아들인다', desc: '더 잘하겠다는 뜻', out: [O(.7, '분위기가 누그러졌다', 1, {}, null, { fans: .1, lean: { humble: .4 } }), O(1, '야유가 이어졌다', -1, { morale: -6 }, null, { fans: -.02 })] },
@@ -454,6 +455,8 @@ function applyWC(S, b, x) {
   if (x.mate && b.e) addMate(S, b.e, x.mate.k, x.mate.v);
   if (x.mates) for (const m of rel(S).mates) if (m.c === S.car.club) m.v = clamp(m.v + x.mates, -1, 1);
   if (x.lean) for (const k in x.lean) lean(S, k, x.lean[k]);
+  if (x.ask && C.WCL) C.WCL.setAsk(S, x.ask);
+  if (C.WCS) C.WCS.applyX(S, b, x);
   traitCheck(S);
 }
 WC.applyWC = applyWC;

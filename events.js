@@ -687,6 +687,7 @@ function perceived(S) {
   if (p.age >= 31) v -= (p.age - 30) * 1.1;
   return v;
 }
+C.perceived = perceived; C.contractYears = (a) => contractYears(a);
 function roleAt(S, club) {
   const me = C.ovrOf(S.p), slot = C.SLOT[S.p.pos];
   const riv = club.lite ? C.liteRivals(club, slot, S.w.year) : club.sq.filter(e => C.SLOT[e[1]] === slot).map(e => e[2]).sort((a, b) => b - a);

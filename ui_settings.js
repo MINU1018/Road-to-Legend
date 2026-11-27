@@ -61,6 +61,10 @@ U.viewSettings = function () {
   root.append(logoCard());
   root.append(saveCard());
   if (U.cloud) root.append(cloudCard());
+  if (U.boxesReset) { const bs = U.boxesState();
+    root.append(card('화면 상자', '상자 머리의 ▾로 접고 펴며, 홈 화면에서는 ⋮⋮ 손잡이를 끌어 순서를 바꿉니다. 이 브라우저에 기억합니다.', h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+      h('button', { class: 'btn ghost sm', onclick: () => { U.boxesReset('fold'); toast('접은 상자를 모두 펼쳤습니다.'); } }, `접은 상자 모두 펼치기 (${bs.folds})`),
+      h('button', { class: 'btn ghost sm', onclick: () => { U.boxesReset('ord'); toast('홈 화면 상자 순서를 처음대로 되돌렸습니다.'); } }, '홈 상자 순서 되돌리기')))); }
   root.append(h('div', { style: { display: 'flex', justifyContent: 'flex-end' } }, h('button', { class: 'btn ghost sm', onclick: async () => { C.setCfg(null); await saveCfg(); toast('설정을 기본값으로 되돌렸습니다.'); U.render(); } }, '설정 기본값으로')));
   return root;
 };

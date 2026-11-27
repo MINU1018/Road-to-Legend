@@ -486,7 +486,9 @@ C.afterSel = afterSel;
 async function userMatch(S, o, hooks) {
   // o: { d, kind, compKey, compName, opp, oppName, oppStr, home, imp(중요도 0~3), stage, ko, natTeam }
   const ss = S.ss, p = S.p;
-  const sel = selection(S, o.kind, o.imp || 0);
+  let sel = selection(S, o.kind, o.imp || 0);
+  // v45: 같은 날·바로 전날 이미 뛰었으면 (일정이 겹친 경우) 선발하지 않는다 — 같은 날이면 벤치, 전날이면 교체로만
+  if (sel && !sel.bench && o.d != null) { const prev = ss.matches.filter(m => m.played && m.d != null && o.d - m.d >= 0 && o.d - m.d <= 1).pop(); if (prev) sel = o.d === prev.d ? { bench: true } : sel.start ? (R() < .5 ? { start: false, minutes: rint(10, 30) } : { bench: true }) : sel; }
   const myStr = o.myStr != null ? o.myStr : teamStr(S, ss.club, !!(sel && sel.start));
   const home = o.home === null ? 0 : o.home ? 1 : -1;
   let [lamT, lamO] = C.lambdas(myStr, o.oppStr, home);

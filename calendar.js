@@ -42,9 +42,10 @@ function wcBlocked(n) { const [y, m, d] = ymd(n); return C.tournamentsOf(y).incl
 function inBreak(c, n) { if (c.length < 9) return false; const [, m, d] = ymd(n), a = md(m, d), s = md(c[5], c[6]), e = md(c[7], c[8]); return s <= e ? a >= s && a <= e : a >= s || a <= e; }
 C.intlBlocked = intlBlocked;
 // 리그 경기 날짜: 토요일을 고르게, 모자라면 수요일 추가 (A매치·휴식기·월드컵 기간 제외)
+// v45: 주중 리그 경기는 대륙 대회 경기일 앞뒤(±1일)를 피한다
 function leagueDates(nat, start, end, n) {
-  const c = calOf(nat);
-  const ok = d => !intlBlocked(d) && !inBreak(c, d) && !(c[0] === 'cy' && wcBlocked(d));
+  const c = calOf(nat), cb = contBusy(nat, ymd(start)[0]);
+  const ok = d => !intlBlocked(d) && !inBreak(c, d) && !(c[0] === 'cy' && wcBlocked(d)) && !(dowOf(d) !== 6 && dowOf(d) !== 0 && (cb.has(d) || cb.has(d - 1) || cb.has(d + 1)));
   const sats = [], mids = [], rest = [];
   for (let d = start; d <= end; d++) { if (!ok(d)) continue; const w = dowOf(d); if (w === 6) sats.push(d); else if (w === 3) mids.push(d); else if (w === 0) rest.push(d); }
   const spread = (arr, k) => { if (k <= 0) return []; if (k >= arr.length) return arr.slice(); const out = []; for (let i = 0; i < k; i++) out.push(arr[Math.round(i * (arr.length - 1) / Math.max(1, k - 1))]); return out; };
@@ -53,13 +54,47 @@ function leagueDates(nat, start, end, n) {
   let d = end + 1; while (dates.length < n) { dates.push(d); d += 3; }
   return [...new Set(dates)].sort((a, b) => a - b).slice(0, n);
 }
+// 대륙 대회 경기일 (요일 보정 뒤) — 그 나라 구단이 나갈 수 있는 대회 전부 (eu 달력: UEFA·AFC, cy 달력: 남미·북중미)
+const CONTWD = { UCL: 3, UEL: 4, UECL: 4, ACL: 2, LIB: 3, SUD: 4, CCC: 3 }, CONTFIN = { UCL: 6, UEL: 3, UECL: 3, ACL: 6, LIB: 6, SUD: 6, CCC: 6 };
+// 고정 날짜(월·일)를 그 주의 정해진 요일로 옮긴다 (해마다 요일이 바뀌어 유로파리그가 금요일에 잡히던 문제)
+const toWd = (d, wd) => { const k = dowOf(d); let sh = wd - k; if (sh > 3) sh -= 7; if (sh < -3) sh += 7; return d + sh; };
+C.contDayAdj = (k, d, fin) => CONTWD[k] == null ? d : toWd(d, fin ? CONTFIN[k] : CONTWD[k]);
+const CBUSY = new Map();
+const CONTCONF = { UCL: 'UEFA', UEL: 'UEFA', UECL: 'UEFA', ACL: 'AFC', LIB: 'CONMEBOL', SUD: 'CONMEBOL', CCC: 'CONCACAF' };
+function contBusy(nat, sy) {
+  const cy = calOf(nat)[0] === 'cy', cf = C.confOf ? C.confOf(nat) : 'UEFA', key = (cy ? 'cy' : 'eu') + cf + sy; let S0 = CBUSY.get(key); if (S0) return S0;
+  S0 = new Set();
+  for (const k in CONTSCH) { if (CONT_CY.has(k) !== cy || (CONTCONF[k] !== cf && !(cf === 'CONCACAF' && k === 'CCC'))) continue; const sc = CONTSCH[k], dd = x => day(sy + x[2], x[0], x[1]);
+    for (const x of sc.ph) S0.add(C.contDayAdj(k, dd(x)));
+    for (const r of sc.kd) { const fin = !r[1] && /결승/.test(r[2]); S0.add(C.contDayAdj(k, dd(r[0]), fin)); if (r[1]) S0.add(C.contDayAdj(k, dd(r[1]))); } }
+  CBUSY.set(key, S0); return S0;
+}
+C.contBusy = contBusy;
 // 컵 경기 날짜: 시즌 범위 안에서 고르게 (국내 컵 수요일, 리그컵 화요일)
-function cupDates(nat, kind, sy, T) {
+// v45: 그 나라 리그(모든 부) 경기일·대륙 대회 경기일과 같은 날이거나 바로 앞뒤 날이면 피한다 (자리가 모자라면 대륙 대회만 허용)
+function cupDates(nat, kind, sy, T, w) {
   const rg = seasonRange(nat, sy), len = rg.end - rg.start;
   const a = rg.start + 5, b = kind === 'lcup' ? rg.start + Math.round(len * .62) : rg.end - 4;
   const dw = kind === 'lcup' ? 2 : 3, c = calOf(nat);
-  const cand = []; for (let d = a; d <= b; d++) if (dowOf(d) === dw && !intlBlocked(d) && !inBreak(c, d)) cand.push(d);
-  const out = []; for (let i = 0; i < T; i++) out.push(cand[Math.round(i * (cand.length - 1) / Math.max(1, T - 1))] || b);
+  // 그 나라 리그 경기일: 1부 / 2~3부 / 그 아래
+  const L1 = new Set(), L2 = new Set(), L3 = new Set();
+  if (w && w.cal) for (const id in w.cal.lg) { const L = w.cal.lg[id], lg = w.lg[id]; if (L.nat !== nat || L.sy !== sy) continue; const t = (lg && lg.tier) || 1, S0 = t === 1 ? L1 : t <= 3 ? L2 : L3; for (const d of L.dates) S0.add(d); }
+  const cb = contBusy(nat, sy), near = (S0, d) => S0.has(d) || S0.has(d - 1) || S0.has(d + 1);
+  // 라운드마다 고르게 나눈 목표일 근처(±10일)에서 충돌이 가장 적은 화·수·목을 고른다
+  //  초반 라운드(하부 구단 위주): 하부 리그 주중 경기와 겹치지 않게 / 후반 라운드(상위 구단 합류): 1부·대륙 대회와 겹치지 않게
+  const out = [];
+  for (let i = 0; i < T; i++) {
+    const t = Math.round(a + (b - a) * (T > 1 ? i / (T - 1) : .5)), late = T > 1 ? i / (T - 1) : 1;
+    let best = null, bs = 1e9;
+    for (let d = t - 14; d <= t + 14; d++) {
+      if (d < a || d > b + 3) continue; const k = dowOf(d); if (k < 2 || k > 4) continue;
+      if (intlBlocked(d) || inBreak(c, d)) continue; if (out.length && d - out[out.length - 1] < 5) continue;
+      const sd = S0 => S0.has(d) ? 2.5 : 1; // 같은 날은 앞뒤 날보다 훨씬 나쁘다
+      const pen = (near(L1, d) ? 9 * sd(L1) : 0) + (near(L2, d) ? (late < .5 ? 4 : 2) * sd(L2) : 0) + (near(L3, d) ? (late < .4 ? 2 : .6) * sd(L3) : 0) + (near(cb, d) ? (late < .35 ? .6 : 5) * sd(cb) : 0) + (k === dw ? 0 : .4) + Math.abs(d - t) * .05;
+      if (pen < bs) { bs = pen; best = d; }
+    }
+    out.push(best != null ? best : (out.length ? out[out.length - 1] + 7 : t));
+  }
   for (let i = 1; i < out.length; i++) if (out[i] <= out[i - 1]) out[i] = out[i - 1] + 7;
   return out;
 }
@@ -92,6 +127,13 @@ function addAgg(agg, ci, list) {
     a[0] = ci; a[1]++; if (x.start) a[2]++; a[3] += Math.max(0, x.off - x.on); a[4] += x.g; a[5] += x.a; a[6] += x.y; a[7] += x.r; a[8] += Math.round(x.rt * 10); a[9] += x.cs || 0; if (x.mom) a[10] = (a[10] || 0) + 1;
   }
 }
+// 진행 중인 리그 시즌에서 한 선수의 기록 합계 (라이벌 비교용, v45): { apps, g, a, r }
+C.liveLgStats = function (w, pid) {
+  const o = { apps: 0, g: 0, a: 0, rs: 0, min: 0 }; if (!w || !w.cal) return o; pid = String(pid);
+  for (const id in w.cal.lg) { const LS = w.cal.lg[id]; if (LS.done) continue; const h = w.cal.h[LS.k], x = h && h.agg && h.agg[pid]; if (!x) continue; o.apps += x[1]; o.min += x[3]; o.g += x[4]; o.a += x[5]; o.rs += x[8]; }
+  o.r = o.apps ? +(o.rs / 10 / o.apps).toFixed(2) : null; return o;
+};
+C.findE = (w, pid) => findE(w, String(pid));
 C.calAggCols = ['club', 'apps', 'starts', 'min', 'g', 'a', 'y', 'r', 'rs10', 'cs', 'mom'];
 const curStore = w => {
   const lb = C.wLabel(w.year);
@@ -285,7 +327,7 @@ function cupCreate(w, nat, kind, sy) {
   const name = kind === 'cup' ? C.CUPNAME[nat] : C.LCUPNAME[nat]; if (!name) return null;
   const st = C.cupBuild(w, nat, kind, name); if (!st) return null;
   st.k = `C:${nat}:${kind}:${sy}`; st.sy = sy; st.label = seasonRange(nat, sy).label;
-  st.dates = cupDates(nat, kind, sy, st.rounds.length);
+  st.dates = cupDates(nat, kind, sy, st.rounds.length, w);
   w.cal.cup[st.k] = st; w.cal.h[st.k] = { rows: [], agg: {} };
   st.dates.forEach(d => idxAdd(w, d, st.k));
   // 1라운드 추첨: 첫 경기 3주 전 (이미 지났으면 오늘)
@@ -449,7 +491,7 @@ C.potSchedule = potSchedule;
 function contCreate(w, k, sy, parts) {
   const def = C.COMPS[k], sch = CONTSCH[k], teams = (parts || C.contParticipants(w))[k] || [];
   if (teams.length < 8) return null;
-  const dd = x => day(sy + x[2], x[0], x[1]);
+  const dd = (x, fin) => C.contDayAdj(k, day(sy + x[2], x[0], x[1]), fin); // v45: 정해진 요일로 (UCL 수 · UEL/UECL 목 · 결승은 대회별)
   const cs = { k, key: `E:${k}:${sy}`, name: def.name, sy, label: CONT_CY.has(k) ? String(sy) : C.wLabel(sy), teams: teams.slice(), table: C.newTable(teams), done: false, winner: null, ties: [], userOut: false };
   // 리그 페이즈 대진: 같은 나라끼리는 되도록 피하고, 경기일마다 한 팀이 한 경기만 하도록 배정
   const nPh = Math.min(def.phase, sch.ph.length);
@@ -476,8 +518,8 @@ function contCreate(w, k, sy, parts) {
     if (PK && teams.length === 36 && nPh === PK[0] * PK[1]) { const ps = potSchedule(w, teams, PK[0], PK[1]); if (ps) { cs.md = ps.md; cs.pots = ps.pots; cs.drawD = Math.max((w.cal && w.cal.d) || 0, day(sy, 8, 28)); } }
   }
   const nKO = Math.log2(def.ko);
-  cs.rounds = (def.playoff ? sch.kd : sch.kd.filter(r => r[2] !== '플레이오프').slice(-nKO)).map(r => [dd(r[0]), r[1] ? dd(r[1]) : null, r[2]]);
-  cs.dates = sch.ph.slice(0, nPh).map(dd); cs.phaseN = cs.dates.length;
+  cs.rounds = (def.playoff ? sch.kd : sch.kd.filter(r => r[2] !== '플레이오프').slice(-nKO)).map(r => [dd(r[0], !r[1] && /결승/.test(r[2])), r[1] ? dd(r[1]) : null, r[2]]);
+  cs.dates = sch.ph.slice(0, nPh).map(x => dd(x)); cs.phaseN = cs.dates.length;
   cs.kmap = [];
   cs.rounds.forEach((r, ri) => { cs.dates.push(r[0]); cs.kmap.push([ri, 0]); if (r[1]) { cs.dates.push(r[1]); cs.kmap.push([ri, 1]); } });
   cs.di = 0;
@@ -1261,6 +1303,7 @@ function dayEvents(S, d) {
   if (m === 1 && dd === 1) { newYear(S, y); applyWindow(S, 'winter', d, day(y, 1, 31)); }
   if (m === 6 && dd === 15) applyWindow(S, 'summer', d, day(y, 9, 1));
   if (dd === 1 && S.p && S.ss && C.curValueLive) { try { const v = C.curValueLive(S); (S.vm = S.vm || []).push({ d, v, club: S.car.club }); if (S.vm.length > 360) S.vm.shift(); S.value = v; } catch (e) { console.error(e); } } // 내 선수 가치: 매달 기록 (v44)
+  if (dd === 1 && S.wc && C.WCL) { try { C.WCL.month(S); } catch (e) { console.error(e); } } // 관심 구단·스폰서·생활 (v45)
   if (w.cal.win && d > w.cal.win.d1) w.cal.win = null;
   runQueue(S, d);
   if (C.mgrDaily) C.mgrDaily(S, d, !w.cal.started);

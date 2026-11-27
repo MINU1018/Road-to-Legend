@@ -368,7 +368,7 @@ function render() {
   else if (scr === 'academy') frag.append(viewAcademy());
   else if (scr === 'real') frag.append(viewReal());
   else if (scr === 'wcnew' && U.viewWCNew) frag.append(U.viewWCNew());
-  else if (scr === 'settings') { const inG = !!(S && (S.mode === 'world' || (S.car && S.car.club))); frag.append(topbar(inG)); frag.append(inG ? h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, U.viewSettings())) : U.viewSettings()); if (inG && st.navOpen) frag.append(h('div', { class: 'drawerbg', onclick: () => { st.navOpen = false; render(); } }), sideNav(true)); }
+  else if (scr === 'settings') { const inG = !!(S && (S.mode === 'world' || (S.car && S.car.club))); frag.append(topbar(inG)); frag.append(inG ? h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, U.viewSettings())) : U.viewSettings()); }
   else if (scr === 'ach') { frag.append(topbar(false)); frag.append(U.pages.ach(true)); }
   else frag.append(viewGame());
   // 비동기 기록 로딩으로 잠시 페이지가 짧아져도, 곧 이어지는 다시 그리기에서 원래 위치로 돌아간다
@@ -560,11 +560,26 @@ function navGroups() {
 U.navGroups = navGroups;
 const TABNAME = () => { const m = {}; for (const [, l] of navGroups()) for (const [k, n] of l) m[k] = n; return m; };
 function needsAction() { return S && ['window', 'training', 'preEvents', 'midEvents', 'mid', 'winter', 'review', 'reviewDone', 'freeYear'].includes(S.phase); }
+// v45: 모바일 메뉴(서랍)는 문서 맨 위(body)에 붙인다 — 화면 전환 애니메이션이 걸린 요소 안에 있으면 '고정'이 풀려 페이지 맨 위에만 보였다
+// 열면 스크롤 위치와 상관없이 화면 왼쪽에 고정, 메뉴가 길면 서랍 안에서만 스크롤. Esc·뒤로 버튼으로 닫힌다
+function openNav() {
+  if (document.querySelector('.side.drawer')) { closeNav(); return; }
+  const bg = h('div', { class: 'drawerbg', onclick: () => closeNav() }), nav = sideNav(true);
+  document.body.append(bg, nav); document.body.classList.add('navlock');
+  const ent = { pop: false, x: () => closeNav() }; OVS.push(ent); try { history.pushState({ ov: 1 }, ''); ent.hist = true; } catch (e) { }
+  U._navEnt = ent;
+}
+function closeNav() {
+  const ent = U._navEnt; U._navEnt = null;
+  document.querySelectorAll('body > .side.drawer, body > .drawerbg').forEach(x => x.remove()); document.body.classList.remove('navlock');
+  if (ent) { const i = OVS.indexOf(ent); if (i >= 0) OVS.splice(i, 1); if (!ent.pop && ent.hist) { ovIgnore++; try { history.back(); } catch (e) { ovIgnore--; } } }
+}
+U.openNav = openNav; U.closeNav = closeNav;
 function sideNav(drawer) {
   const groups = navGroups(), need = S && S.mode !== 'world' && needsAction();
   return h('nav', { class: 'side' + (drawer ? ' drawer' : '') },
     ...groups.map(([g, items]) => h('div', { class: 'sgrp' }, h('div', { class: 'sgl' }, g),
-      ...items.map(([k, l, ic]) => h('button', { class: 'sitem' + (tab === k ? ' on' : ''), 'data-tab': k, onclick: () => { if (busy && !st.simming) return; st.navOpen = false; scr = 'game'; U.setTab(k); } }, ico(ic), h('span', null, l), k === 'career' && need && tab !== 'career' ? h('span', { class: 'dot' }) : null)))),
+      ...items.map(([k, l, ic]) => h('button', { class: 'sitem' + (tab === k ? ' on' : ''), 'data-tab': k, onclick: () => { if (busy && !st.simming) return; closeNav(); scr = 'game'; U.setTab(k); } }, ico(ic), h('span', null, l), k === 'career' && need && tab !== 'career' ? h('span', { class: 'dot' }) : null)))),
     S && S.mode !== 'world' && S.p ? h('div', { class: 'sfoot' }, h('div', null, h('span', { class: 'lbl' }, '시즌'), h('b', null, seasonLabel())), h('div', null, h('span', { class: 'lbl' }, '재산'), h('b', null, C.fmtEUR(Math.max(0, S.p.money))))) : null);
 }
 // 위쪽 검색: 선수·구단·국가대표 바로 열기
@@ -603,7 +618,7 @@ function topbar(inGame) {
     else if (!world && tab !== 'career') cont = h('button', { class: 'btn sm contb' + (needsAction() ? ' need' : ''), onclick: () => { if (!busy || st.simming) U.setTab('career'); } }, needsAction() ? '할 일 있음 ▸' : '커리어 홈 ▸');
   }
   return h('div', { class: 'top' }, h('div', { class: 'wrap topw' },
-    inGame ? h('button', { class: 'gear burger', 'aria-label': '메뉴', onclick: () => { st.navOpen = !st.navOpen; render(); } }, ico('menu', 20)) : null,
+    inGame ? h('button', { class: 'gear burger', 'aria-label': '메뉴', onclick: () => openNav() }, ico('menu', 20)) : null,
     h('button', { class: 'brand', onclick: () => { if (!busy) U.go('home'); }, title: '처음 화면' }, h('span', { class: 'mk' }, 'R'), h('span', { class: 't' }, 'Road to Legend')),
     inGame ? h('span', { class: 'tpage' }, TABNAME()[tab] || '') : null,
     h('div', { style: { flex: 1 } }),
@@ -770,7 +785,6 @@ function viewGame() {
   const page = tab === 'career' ? viewHub() : U.pages[tab] ? U.pages[tab]() : h('div', { class: 'empty' }, '준비 중');
   w.append(h('div', { class: 'shell' }, sideNav(false), h('main', { class: 'mainc' }, page)));
   if (U.wsRunBar) { const rb = U.wsRunBar(); if (rb) w.append(rb); }
-  if (st.navOpen) w.append(h('div', { class: 'drawerbg', onclick: () => { st.navOpen = false; render(); } }), sideNav(true));
   return w;
 }
 function kvTotals() {
@@ -870,6 +884,7 @@ function viewHub() {
   const hero = (S.phase === 'h1' || S.phase === 'h2') && S.w.cal && U.tourHero ? U.tourHero(S) : null;
   const cerb = S.w.cal && U.cerBanner ? U.cerBanner(S, true) : null;
   const left = h('div', { style: { display: 'grid', gap: '16px', minWidth: 0 } }, playerCard(), cerb, actionPanel(), hero ? h('div', { class: 'panel', style: { overflow: 'hidden', padding: '12px' } }, hero) : null, txp, newsPanel(), U.followManager ? h('div', { class: 'prof' }, U.followManager(S)) : null);
+  left.dataset.dz = 'clL'; // 홈 상자 순서 바꾸기 (ui_boxes.js)
   hub.append(left, careerTable());
   return hub;
 }
