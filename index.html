@@ -1342,7 +1342,7 @@ body.navlock{overflow:hidden}
 .foldb,.gripb{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--mute,#8a94a6);display:inline-grid;place-items:center;cursor:pointer;padding:0;vertical-align:middle}
 .foldb{margin-left:4px;order:99}
 .ph:has(.foldb){justify-content:flex-start;gap:6px}.ph:has(.foldb) > :first-child:not(.gripb),.ph:has(.foldb) > .gripb + *{margin-right:auto}
-h3:has(> .foldb){display:flex;align-items:center;gap:6px}h3:has(> .foldb) > .foldb{margin-left:auto}
+h3:has(> .foldb){position:relative;padding-right:34px}h3:has(> .foldb) > .foldb{position:absolute;right:0;top:50%;transform:translateY(-50%);margin:0}h3:has(> .gripb){padding-left:40px !important}h3:has(> .gripb) > .gripb{position:absolute;left:8px;top:50%;transform:translateY(-50%);margin:0}.sec > h3:has(> .foldb){padding-top:0;margin-top:16px}
 .foldb:hover,.gripb:hover{background:var(--panel2);border-color:var(--line);color:var(--text,#e9eef5)}
 .folded > .foldb svg,.folded > .ph .foldb svg,.folded > h3 .foldb svg{transform:rotate(-90deg)}
 .foldb svg{transition:transform .15s}
@@ -1353,6 +1353,7 @@ h3:has(> .foldb){display:flex;align-items:center;gap:6px}h3:has(> .foldb) > .fol
 .gripabs{position:relative}.gripabs > .gripb{position:absolute;top:8px;right:8px;z-index:3;background:rgba(16,19,25,.7)}
 .dragging{position:fixed !important;z-index:80;opacity:.92;box-shadow:0 18px 40px rgba(0,0,0,.55);pointer-events:none;margin:0 !important}
 .dragph{border:2px dashed var(--line);border-radius:14px;background:rgba(255,255,255,.02)}
+.dzon{outline:1px dashed rgba(255,255,255,.14);outline-offset:4px;border-radius:12px;min-height:90px}
 @media (hover:hover){.gripb{opacity:.45}.panel:hover .gripb,.sec:hover .gripb,[data-dz] > :hover > .gripb,[data-dz] > :hover .gripb{opacity:1}}
 /* v45 중계 팀 구분 */
 .lvev{grid-template-columns:42px 22px minmax(0,1fr) auto;border-left:4px solid var(--tc,transparent);background:linear-gradient(90deg,color-mix(in srgb,var(--tc,#888) 14%,transparent),transparent 55%)}
@@ -1426,9 +1427,10 @@ h3:has(> .foldb){display:flex;align-items:center;gap:6px}h3:has(> .foldb) > .fol
 /* v46 2D 움직임: 다시보기 캔버스 · 중계 하이라이트 */
 .rpcv{width:100%;height:100%;display:block}
 .rpstage{position:relative}
-.lfbox{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s ease,margin .35s;margin:0}
-.lfbox.on{grid-template-rows:1fr;margin:0 0 10px}
-.lfbox > .lfwrap{min-height:0;overflow:hidden}
+.lfbox{max-height:0;overflow:hidden;opacity:0;margin:0;transition:max-height .35s ease,opacity .25s,margin .35s}
+.lfbox.on{max-height:75vh;opacity:1;margin:0}
+.lvpitch:has(.lfbox:not(.on)){margin-bottom:-12px}
+.lvfeed:empty::after{content:'아직 기록된 장면이 없습니다.';color:var(--mute);font-size:12.5px;padding:8px}
 .lfwrap{position:relative;width:100%;aspect-ratio:111/74;max-height:52vh;border-radius:10px;background:#123220}
 .lfwrap .lfcv{width:100%;height:100%;display:block}
 .sbd{position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#fff;background:rgba(8,12,16,.78);padding:4px 9px;border-radius:6px;pointer-events:none;font-variant-numeric:tabular-nums}
@@ -1436,7 +1438,7 @@ h3:has(> .foldb){display:flex;align-items:center;gap:6px}h3:has(> .foldb) > .fol
 .sbd b{font-size:13px;min-width:8px;text-align:center}.sbd em{font-style:normal;opacity:.6}
 .sbd .sbm{margin-left:6px;padding-left:8px;border-left:1px solid rgba(255,255,255,.25);color:#cfd6df}
 .lvhl{display:inline-flex;align-items:center;gap:6px}.lvhl .lbl{font-size:11.5px}
-@media (max-width:700px){.lfwrap{max-height:none}.lfbox.on{margin:0 -6px 8px}.sbd{font-size:11px;padding:3px 7px}}
+@media (max-width:700px){.lfwrap{max-height:none}.lfbox.on{margin:0 -6px}.sbd{font-size:11px;padding:3px 7px}}
 </style>
 
 <div id="app"></div>

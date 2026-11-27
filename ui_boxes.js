@@ -1,6 +1,6 @@
 // 상자 접기·펴기 + 홈 화면 상자 순서 바꾸기 (v45)
 // · 화면 안의 모든 상자(.panel 머리 · .sec 제목)에 접기 버튼(▾)을 붙인다. 접은 상태는 이 브라우저에 기억 (화면 + 제목 기준)
-// · 홈 화면의 상자 묶음([data-dz])은 손잡이(⋮⋮)를 끌어 순서를 바꾼다 (마우스·터치). 순서도 기억, 설정에서 되돌린다
+// · 홈 화면의 상자는 손잡이(⋮⋮)를 끌어 왼쪽·오른쪽 칸 어디로든 옮긴다 (마우스·터치, v48). 배치도 기억, 설정에서 되돌린다
 (function (G) {
 const U = G.TCUI = G.TCUI || {};
 const KEY = 'rtl-boxes';
@@ -32,43 +32,69 @@ function addFold(box) {
 }
 function h0(tag, cls, svg, label) { const b = document.createElement(tag); b.className = cls; b.type = 'button'; b.setAttribute('aria-label', label); b.title = label; b.append(svgEl(svg)); return b; }
 // ---------- 끌어서 순서 바꾸기 ----------
-const itemKey = el => { if (el.dataset.bk) return el.dataset.bk; const hd = el.querySelector('.ph, h3, h2'); const k = hd ? titleOf(hd) : ''; return k || (el.className || 'box').split(' ')[0]; };
-function applyOrder(zone) {
-  const z = zone.dataset.dz, ord = ST.ord[z]; const kids = [...zone.children].filter(x => x.nodeType === 1);
-  kids.forEach(k => { k.dataset.bk = itemKey(k); });
-  if (!ord || !ord.length) return;
-  const pos = new Map(ord.map((k, i) => [k, i]));
-  const sorted = kids.slice().sort((a, b) => (pos.has(a.dataset.bk) ? pos.get(a.dataset.bk) : 900 + kids.indexOf(a)) - (pos.has(b.dataset.bk) ? pos.get(b.dataset.bk) : 900 + kids.indexOf(b)));
-  if (sorted.some((x, i) => x !== kids[i])) sorted.forEach(x => zone.append(x));
+// 같은 화면의 상자 묶음(왼쪽·오른쪽 칸 등)은 한 무리(data-dz 앞 두 글자)로 보고, 칸을 넘어 어디로든 옮길 수 있다
+const groupOf = z => String(z).slice(0, 2);
+const zonesOf = (app, g) => [...app.querySelectorAll('[data-dz]')].filter(z => groupOf(z.dataset.dz) === g);
+// 열쇠는 제목(첫 굵은 글자)만, 날짜·요일·숫자는 뺀다 → 날이 바뀌어도 같은 상자
+const stable = t => norm(t).replace(/(^|\s)[월화수목금토일](?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
+const itemKey = el => { const hd = el.querySelector('.ph, h3, h2'); let k = ''; if (hd) { const b = hd.querySelector(':scope > b, :scope > strong, :scope > h2, :scope > h3'); k = stable(b ? b.textContent : titleOf(hd)); } return k || (el.className || 'box').split(' ')[0]; };
+// 무리 안에서 같은 이름이 겹치면 #2, #3 … 을 붙여 구분
+function keyAll(zones) {
+  const seen = {};
+  for (const z of zones) for (const k of z.children) { if (k.nodeType !== 1 || k.classList.contains('dragph')) continue; const b = itemKey(k); seen[b] = (seen[b] || 0) + 1; k.dataset.bk = seen[b] > 1 ? b + '#' + seen[b] : b; }
+}
+function applyGroup(zones) {
+  keyAll(zones);
+  const where = new Map(); // 열쇠 → [칸, 순번]
+  for (const z of zones) (ST.ord[z.dataset.dz] || []).forEach((k, i) => where.set(k, [z, i]));
+  if (!where.size) return;
+  const items = []; for (const z of zones) for (const k of z.children) if (k.nodeType === 1) items.push([k, z, items.length]);
+  for (const z of zones) {
+    const mine = items.filter(([el, home]) => { const w = where.get(el.dataset.bk); return w ? w[0] === z : home === z; });
+    mine.sort((a1, a2) => { const w1 = where.get(a1[0].dataset.bk), w2 = where.get(a2[0].dataset.bk); return (w1 ? w1[1] : 900 + a1[2]) - (w2 ? w2[1] : 900 + a2[2]); });
+    const cur = [...z.children].filter(x => x.nodeType === 1);
+    if (mine.length !== cur.length || mine.some((x, i) => x[0] !== cur[i])) mine.forEach(([el]) => z.append(el));
+  }
 }
 function addGrip(zone, item) {
   if (item.querySelector(':scope .gripb')) return;
   const hd = item.matches('.panel, .sec') ? headOf(item) : item.querySelector('.ph, .sec > h3');
-  const g = h0('button', 'gripb', GRIP, '끌어서 순서 바꾸기');
+  const g = h0('button', 'gripb', GRIP, '끌어서 옮기기');
   if (hd) hd.prepend(g); else { item.classList.add('gripabs'); item.append(g); }
-  g.addEventListener('pointerdown', e => startDrag(e, zone, item, g));
+  g.addEventListener('pointerdown', e => startDrag(e, item));
 }
 let drag = null;
-function startDrag(e, zone, item, g) {
+// 손가락·마우스 아래 칸: 칸 안이면 그 칸, 아니면 가장 가까운 칸
+function zoneAt(zones, x, y) {
+  let best = null, bd = 1e9;
+  for (const z of zones) { const r = z.getBoundingClientRect(); const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0, dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0; const d = dx * 3 + dy; if (d < bd) { bd = d; best = z; } }
+  return best;
+}
+function startDrag(e, item) {
   e.preventDefault(); e.stopPropagation();
+  const app = document.getElementById('app'), zone0 = item.parentElement, g = groupOf(zone0.dataset.dz), zones = zonesOf(app, g);
   const r = item.getBoundingClientRect();
-  drag = { zone, item, y0: e.clientY, top0: r.top, ph: document.createElement('div') };
-  drag.ph.className = 'dragph'; drag.ph.style.height = r.height + 'px';
-  item.classList.add('dragging'); item.style.width = r.width + 'px'; item.style.left = r.left + 'px'; item.style.top = r.top + 'px';
-  zone.insertBefore(drag.ph, item); document.body.append(item);
+  drag = { item, x0: e.clientX, y0: e.clientY, top0: r.top, left0: r.left, ph: document.createElement('div') };
+  drag.ph.className = 'dragph'; drag.ph.style.height = Math.min(r.height, 160) + 'px';
+  item.classList.add('dragging'); item.style.width = Math.min(r.width, 520) + 'px'; item.style.left = r.left + 'px'; item.style.top = r.top + 'px';
+  zone0.insertBefore(drag.ph, item); document.body.append(item);
+  zones.forEach(z => z.classList.add('dzon'));
   const mv = ev => {
-    if (!drag) return; const dy = ev.clientY - drag.y0; item.style.top = (drag.top0 + dy) + 'px';
-    const sib = [...zone.children].filter(x => x !== drag.ph);
+    if (!drag) return;
+    item.style.top = (drag.top0 + ev.clientY - drag.y0) + 'px'; item.style.left = (drag.left0 + ev.clientX - drag.x0) + 'px';
+    const z = zoneAt(zones, ev.clientX, ev.clientY); if (!z) return;
+    const sib = [...z.children].filter(x => x !== drag.ph && x.nodeType === 1);
     let before = null; for (const s of sib) { const b = s.getBoundingClientRect(); if (ev.clientY < b.top + b.height / 2) { before = s; break; } }
-    if (before) zone.insertBefore(drag.ph, before); else zone.append(drag.ph);
-    // 화면 끝에 가까우면 스크롤
+    if (before) z.insertBefore(drag.ph, before); else z.append(drag.ph);
     if (ev.clientY < 70) scrollBy(0, -12); else if (ev.clientY > innerHeight - 70) scrollBy(0, 12);
   };
   const up = () => {
     removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up);
-    if (!drag) return; const { ph } = drag; zone.insertBefore(item, ph); ph.remove();
+    if (!drag) return; const { ph } = drag; ph.parentElement.insertBefore(item, ph); ph.remove();
     item.classList.remove('dragging'); item.style.width = item.style.left = item.style.top = '';
-    ST.ord[zone.dataset.dz] = [...zone.children].map(x => x.dataset.bk || itemKey(x)); save(); drag = null;
+    zones.forEach(z => z.classList.remove('dzon'));
+    for (const z of zones) ST.ord[z.dataset.dz] = [...z.children].filter(x => x.nodeType === 1).map(x => x.dataset.bk || itemKey(x));
+    save(); drag = null;
   };
   addEventListener('pointermove', mv, { passive: true }); addEventListener('pointerup', up); addEventListener('pointercancel', up);
 }
@@ -78,7 +104,8 @@ function enhance() {
   busy = true;
   try {
     const app = document.getElementById('app'); if (!app) return;
-    for (const zone of app.querySelectorAll('[data-dz]')) { applyOrder(zone); for (const it of zone.children) if (it.nodeType === 1) addGrip(zone, it); }
+    const groups = {}; for (const z of app.querySelectorAll('[data-dz]')) (groups[groupOf(z.dataset.dz)] = groups[groupOf(z.dataset.dz)] || []).push(z);
+    for (const g in groups) { applyGroup(groups[g]); for (const zone of groups[g]) for (const it of zone.children) if (it.nodeType === 1) addGrip(zone, it); }
     for (const box of app.querySelectorAll('.mainc .panel, .mainc .sec, .hub .panel, .hub .sec')) addFold(box);
   } catch (e) { console.error('boxes', e); }
   busy = false;
