@@ -17,7 +17,10 @@ const hash = str => { let h = 2166136261; for (const c of String(str)) h = Math.
 // ---------- 대형 (자기 팀 기준: 자기 골문 x=0, 공격 방향 +x) ----------
 const BASE = { GK: [4, 34], CB: [19, 34], LB: [23, 10], RB: [23, 58], LWB: [30, 8], RWB: [30, 60], CDM: [32, 34], DM: [32, 34], CM: [40, 34], LM: [46, 11], RM: [46, 57], CAM: [52, 34], AM: [52, 34], LW: [58, 11], RW: [58, 57], ST: [64, 34], CF: [62, 34], LF: [62, 26], RF: [62, 42], LS: [64, 28], RS: [64, 40] };
 const SPREAD = { CB: 12, CDM: 13, DM: 13, CM: 17, CAM: 13, AM: 13, ST: 11, CF: 11 };
-function baseOf(list) {
+// 경기 기록의 포메이션(C.FORMS)과 자리 번호(sl)가 있으면 그 자리 그대로: x% 왼쪽→오른쪽, y% 우리 골문→상대 골문
+function baseOf(list, fm) {
+  const FS = fm && G.TC && G.TC.FORMS && G.TC.FORMS[fm];
+  if (FS && list.every(p => p.sl != null && FS[p.sl])) { const out = new Map(); for (const p of list) { const [, fx, fy] = FS[p.sl]; out.set(p.id, [2 + fy * .7, 3 + fx / 100 * 62]); } return out; }
   const by = {}, out = new Map();
   for (const p of list) { const k = BASE[p.pos] ? p.pos : (p.role === 'GK' ? 'GK' : 'CM'); (by[k] = by[k] || []).push(p); }
   for (const k in by) { const L = by[k], b = BASE[k], sp = SPREAD[k] || 8; L.forEach((p, i) => { const off = L.length > 1 ? (i - (L.length - 1) / 2) * sp * (L.length > 2 ? .8 : 1) : 0; out.set(p.id, [b[0] + (L.length > 2 && k !== 'CB' && i === Math.floor(L.length / 2) ? -4 : 0), clamp(b[1] + off, 4, 64)]); }); }
@@ -35,7 +38,7 @@ function mkState(teams, dirs, seed) {
   const r = RNG(seed || 1);
   const S = { t: 0, r, dirs: dirs.slice(), P: [], ball: { x: 52.5, y: 34, z: .11, vx: 0, vy: 0, owner: null, fl: null }, poss: 0, mode: 'play', ev: [], lastOwner: null };
   teams.forEach((T, s) => {
-    const L = (T.ln || []).slice(0, 11), B = baseOf(L);
+    const L = (T.ln || []).slice(0, 11), B = baseOf(L, T.fm);
     for (const q of L) { const b = B.get(q.id) || [40, 34]; const p = { id: q.id, s, pos: q.pos || 'CM', gk: q.role === 'GK' || q.pos === 'GK', b, x: 0, y: 0, vx: 0, vy: 0, face: 0, tx: 0, ty: 0, urg: .5, stun: 0, rx: 0, ry: 0, rt: 0, down: 0 }; p.vmax = VMAX(p) * (.96 + r() * .08); S.P.push(p); }
   });
   return S;
@@ -146,7 +149,7 @@ function control(S, allow) {
   const b = S.ball; if (b.owner || (b.fl && b.fl.kind !== 'pass' && b.fl.kind !== 'roll') || b.z > 1.4) return;
   if (b.fl && b.fl.u < .75 && !(allow && allow.intercept)) return;
   let best = null, bd = 1.2;
-  for (const p of S.P) { if (p.down || p.stun > 0 || (p.kickT && S.t - p.kickT < .35)) continue; const d = hyp(p.x - b.x, p.y - b.y); if (d < bd) { bd = d; best = p; } }
+  for (const p of S.P) { if (p.down || p.stun > 0 || (p.kickT && S.t - p.kickT < .35) || (S.only != null && p.s !== S.only)) continue; const d = hyp(p.x - b.x, p.y - b.y); if (d < bd) { bd = d; best = p; } }
   if (!best) return;
   if (b.fl && b.fl.to && best !== b.fl.to && !(allow && allow.intercept)) return;
   b.fl = null; b.roll = null; b.owner = best; best.recvT = S.t;
@@ -223,178 +226,206 @@ function ambientCtl(S, tasks) {
 function ambientStep(S) { S.ctlOpt = { intercept: true }; step(S, ambientCtl); }
 
 // 받을 선수가 제시간에 닿을 수 있는 지점으로 줄인다
-function reach(q, aim, T) { const dx = aim[0] - q.x, dy = aim[1] - q.y, d = hyp(dx, dy), m = q.vmax * .88 * Math.max(.2, T - .1); return d <= m ? aim : [q.x + dx / d * m, q.y + dy / d * m]; }
+function reach(q, aim, T) { const dx = aim[0] - q.x, dy = aim[1] - q.y, d = hyp(dx, dy), m = q.vmax * .85 * Math.max(.2, T - .15); return d <= m ? aim : [q.x + dx / d * m, q.y + dy / d * m]; }
 // ---------- 장면 (각본) ----------
-// o: { atk(공격 팀 side), scorer, ast, kind: 'goal'|'save'|'miss'|'post'|'block'|'red', sit, type, dx, dy, foul(반칙 선수 id) }
+// o: { atk, scorer, ast, kind: 'goal'|'save'|'miss'|'post'|'block'|'red', sit, type, dx, dy, k('p' PK·'o' 자책), pk(푸스카스 종류), foul }
+// 빌드업은 미리 정한 사슬이 아니라 그 순간의 위치로 고른다: 7~28m 패스, 받고 나서 0.6~1.4초 뒤 다음 판단, 전진·빈 공간 우선
 function scene(S, o) {
   const r = S.r, atk = o.atk, dfs = 1 - atk;
   const A = teamOf(S, atk), D = teamOf(S, dfs);
-  const W = (x, y) => tf(S, atk, x, y), Tf = (x, y) => tf(S, atk, x, y);
-  const byId = id => A.find(p => p.id === id);
+  const W = (x, y) => tf(S, atk, x, y), F = q => tf(S, atk, q.x, q.y); // 공격 팀 기준 좌표
   const outfield = A.filter(p => !p.gk);
+  const byId = id => A.find(p => p.id === id);
   let scorer = byId(o.scorer) || outfield.filter(isF)[0] || outfield[outfield.length - 1];
   let ast = o.ast ? byId(o.ast) : null; if (ast === scorer) ast = null;
+  const pk = o.pk || null;
   const pen = o.sit === '페널티킥' || o.k === 'p', head = o.type === '헤더';
-  const dx = pen ? 11 : clamp(o.dx != null ? o.dx : 8 + r() * 10, 3, 34), dyv = pen ? 0 : clamp(o.dy != null ? o.dy : (r() - .5) * 16, -25, 25);
-  const P = W(PL - dx, 34 + dyv); // 슈팅 지점 (경기장 좌표)
-  // 골문 쪽 목표
-  const gy = o.kind === 'post' ? 34 + (dyv >= 0 ? 1 : -1) * POST * (r() < .5 ? 1 : -1) : o.kind === 'miss' ? 34 + (r() < .5 ? 1 : -1) * (POST + .6 + r() * 3) : 34 + clamp(dyv * .1 + (r() < .5 ? -1 : 1) * (.8 + r() * 2.4), -3.3, 3.3);
+  const volley = pk === 'volley' || pk === 'bike' || pk === 'heel' || pk === 'scorp';
+  const longS = pk === 'curl' || pk === 'rocket' || pk === 'chip' || pk === 'half';
+  const dx = pen ? 11 : clamp(o.dx != null ? o.dx : 8 + r() * 10, 3, 60), dyv = pen ? 0 : clamp(o.dy != null ? o.dy : (r() - .5) * 16, -25, 25);
+  const P = W(PL - dx, 34 + dyv);
+  const gy = o.kind === 'post' ? 34 + (r() < .5 ? 1 : -1) * POST : o.kind === 'miss' ? 34 + (r() < .5 ? 1 : -1) * (POST + .6 + r() * 3) : 34 + clamp(dyv * .1 + (r() < .5 ? -1 : 1) * (.8 + r() * 2.4), -3.3, 3.3);
   const GL = W(o.kind === 'miss' ? PL + 2.5 : PL + .1, gy);
-  const shotZ = o.kind === 'miss' && r() < .5 ? 2.9 : head ? .9 : .25 + r() * 1.2;
-  const pick = (f, not) => { const L = outfield.filter(p => f(p) && !not.includes(p)); return L.length ? L[Math.floor(r() * L.length)] : outfield.find(p => !not.includes(p)); };
-  const sit = pen ? 'pen' : o.kind === 'red' ? 'red' : o.sit === '코너킥' ? 'corner' : o.sit === '세트피스' ? (dx > 17 ? 'fk' : 'setp') : o.sit === '역습' ? 'counter' : 'open';
+  const shotZ = pk === 'chip' ? 3.2 : pk === 'half' ? 6 : o.kind === 'miss' && r() < .5 ? 2.9 : head ? .9 : .25 + r() * 1.2;
+  const sit = pen ? 'pen' : o.kind === 'red' ? 'red' : pk === 'fk' || (o.sit === '세트피스' && dx > 17) ? 'fk' : o.sit === '코너킥' ? 'corner' : o.sit === '세트피스' ? 'setp' : pk === 'solo' ? 'solo' : o.sit === '역습' ? 'counter' : 'open';
+  const counter = sit === 'counter';
   const frames = []; frames.meta = { scorer: scorer && scorer.id, ast: ast && ast.id, P, sit, kind: o.kind, labels: [] };
-  const lab = (t) => frames.meta.labels.push([frames.length, t]);
-  // 공을 공격 팀에게: 지금 상대가 갖고 있으면 가장 가까운 선수가 빼앗는다
-  const takeBall = who => { const b = S.ball; if (b.owner && b.owner.s === atk) return b.owner; const w0 = who || A.filter(p => !p.gk).sort((p, q) => hyp(p.x - b.x, p.y - b.y) - hyp(q.x - b.x, q.y - b.y))[0]; if (b.owner) b.owner.stun = .6; b.owner = w0; b.fl = null; b.roll = null; S.poss = atk; w0.recvT = S.t; return w0; };
-  // 세트피스: 위치를 정해 놓는다
-  const setPiece = (bx, by, taker, layout) => {
-    S.mode = 'dead'; S.ball.x = bx; S.ball.y = by; S.ball.z = .11; S.ball.fl = null; S.ball.owner = null; S.poss = atk;
-    layout();
-    S.ball.owner = taker; taker.x = bx - S.dirs[atk] * .6; taker.y = by; taker.vx = taker.vy = 0;
-  };
-  // 각본 단계
-  const steps = [];
-  let chain = [];
+  const lab = t => frames.meta.labels.push([frames.length, t]);
+  const near = (L, q) => L.slice().sort((p1, p2) => hyp(p1.x - q.x, p1.y - q.y) - hyp(p2.x - q.x, p2.y - q.y));
+  const oppDist = q => D.reduce((m, p) => Math.min(m, hyp(p.x - q.x, p.y - q.y)), 99);
+  const takeBall = w0 => { const b = S.ball; if (b.owner) b.owner.stun = .5; b.owner = w0; b.fl = null; b.roll = null; S.poss = atk; w0.recvT = S.t; return w0; };
+  const setPiece = (bx, by, taker, layout) => { S.mode = 'dead'; S.ball.x = bx; S.ball.y = by; S.ball.z = .11; S.ball.fl = null; S.ball.owner = null; S.poss = atk; layout(); S.ball.owner = taker; taker.x = bx - S.dirs[atk] * .6; taker.y = by; taker.vx = taker.vy = 0; taker.recvT = S.t; };
+  // ---- 시작 배치 ----
+  let phase = 'build', passes = 0, minPass = counter ? 1 + Math.floor(r() * 2) : sit === 'red' ? 2 : 2 + Math.floor(r() * 3), last = null, scorerGo = false, endT = 0, t0 = S.t, sub = null;
   if (sit === 'pen') {
-    const tk = scorer;
-    setPiece(...W(PL - 11, 34), tk, () => { for (const p of S.P) { if (p === tk) continue; if (p.gk && p.s === dfs) { const [x, y] = W(PL - .3, 34); p.x = x; p.y = y; continue; } if (p.gk) continue; const [tx] = tf(S, atk, p.x, p.y); if (tx > 86) { const [x, y] = W(84 - r() * 4, 20 + r() * 28); p.x = x; p.y = y; } } });
-    { const [x, y] = W(PL - 14.5, 34 + (r() - .5)); tk.x = x; tk.y = y; }
-    steps.push({ k: 'wait', d: 1.6 }, { k: 'runup', to: W(PL - 11.6, 34), d: 1.1 }, { k: 'shot' });
-  } else if (sit === 'corner') {
-    const top = dyv < 0, cr = ast || pick(isW, [scorer]);
-    setPiece(...W(PL - .4, top ? .4 : PW - .4), cr, () => { cornerLayout(S, atk, scorer, P, top, r); });
-    steps.push({ k: 'wait', d: 2.4 }, { k: 'final', kind: 'cross', wait: 0 }, { k: 'shot' });
+    setPiece(...W(PL - 11, 34), scorer, () => { for (const p of S.P) { if (p === scorer) continue; if (p.gk && p.s === dfs) { const [x, y] = W(PL - .3, 34); p.x = x; p.y = y; continue; } if (p.gk) continue; const [tx] = F(p); if (tx > 86) { const [x, y] = W(84 - r() * 4, 20 + r() * 28); p.x = x; p.y = y; } } });
+    { const [x, y] = W(PL - 14.5, 34 + (r() - .5)); scorer.x = x; scorer.y = y; }
+    phase = 'pen'; sub = { t: S.t + 1.6 };
+  } else if (sit === 'corner' || sit === 'setp') {
+    const top = dyv < 0, cr = ast || near(outfield.filter(p => p !== scorer && (isW(p) || isM(p))), { x: P[0], y: P[1] })[0] || outfield.find(p => p !== scorer);
+    const sp = sit === 'corner' ? W(PL - .4, top ? .4 : PW - .4) : W(clamp(PL - dx - 24, 50, 82), clamp(34 + dyv + (dyv >= 0 ? 14 : -14), 6, 62));
+    setPiece(sp[0], sp[1], cr, () => cornerLayout(S, atk, scorer, P, top, r));
+    ast = cr; phase = 'wait'; sub = { t: S.t + 2.4, next: 'final' };
   } else if (sit === 'fk') {
-    const tk = scorer;
-    setPiece(P[0], P[1], tk, () => { fkLayout(S, atk, P, r); });
-    steps.push({ k: 'wait', d: 2.2 }, { k: 'shot', curve: (dyv > 0 ? -1 : 1) * .8 });
-  } else if (sit === 'setp') {
-    const tk = ast || pick(p => isM(p) || isW(p), [scorer]);
-    const fp = W(clamp(PL - dx - 24, 50, 82), clamp(34 + dyv + (dyv >= 0 ? 14 : -14), 6, 62));
-    setPiece(fp[0], fp[1], tk, () => { cornerLayout(S, atk, scorer, P, dyv < 0, r); });
-    steps.push({ k: 'wait', d: 2 }, { k: 'final', kind: 'cross', wait: 0 }, { k: 'shot' });
+    setPiece(P[0], P[1], scorer, () => fkLayout(S, atk, P, r));
+    phase = 'wait'; sub = { t: S.t + 2.4, next: 'shoot' };
   } else {
-    // 빌드업 사슬: 뒤 → 앞, 마지막은 도움 선수
-    const counter = sit === 'counter', n = counter ? 1 + Math.floor(r() * 2) : 2 + Math.floor(r() * 3);
-    const roles = counter ? [p => isM(p) || isD(p), p => isF(p) || isW(p)] : [p => isD(p) || isM(p), p => isM(p), p => isM(p) || isW(p), p => isW(p) || isF(p) || isM(p)];
-    for (let i = 0; i < n; i++) { const prev = chain[chain.length - 1]; const p = pick(roles[Math.min(i, roles.length - 1)], [scorer, ast, prev].filter(Boolean)); if (p) chain.push(p); }
-    if (ast) chain.push(ast); else if (!chain.length) chain.push(scorer);
-    if (o.kind === 'red') { chain = chain.slice(0, 2); }
-    // 시작: 공을 첫 선수가 갖고, 그 위치에 맞는 대형
-    if (S.live) { const b = S.ball, own = b.owner && b.owner.s === atk ? b.owner : outfield.slice().sort((p, q) => hyp(p.x - b.x, p.y - b.y) - hyp(q.x - b.x, q.y - b.y))[0]; chain = [own].concat(chain.filter(p => p !== own)); if (own === scorer) chain = [own].concat(chain.slice(1).filter(p => p !== scorer)); }
-    const c0 = chain[0];
-    if (!S.live) {
-      const [sx, sy] = counter ? [30 + r() * 12, 20 + r() * 28] : [24 + r() * 14, 34 + (r() - .5) * 30];
-      place(S, ...W(sx, sy), counter ? dfs : atk);
-      if (counter) { for (const p of D) { if (p.gk) continue; const [x, y] = tf(S, atk, p.x, p.y); const q = W(x - 12, y); p.x = q[0]; p.y = q[1]; } }
-      const q = W(sx, sy); c0.x = q[0] - S.dirs[atk] * .6; c0.y = q[1];
-      takeBall(c0);
-    } else steps.push({ k: 'gain', who: c0 });
-    for (let i = 1; i < chain.length; i++) { steps.push({ k: 'pass', to: chain[i] }); if (r() < (counter ? .6 : .35)) steps.push({ k: 'drib', d: 6 + r() * 9 }); }
-    if (o.kind === 'red') { steps.push({ k: 'drib', d: 12, foul: o.foul }); }
-    else {
-      if (!ast && chain[chain.length - 1] !== scorer) steps.push({ k: 'pass', to: scorer });
-      if (!ast) steps.push({ k: 'solo' }); else steps.push({ k: 'final', kind: head ? 'cross' : 'pass' });
-      steps.push({ k: 'shot', curve: dx > 18 ? (dyv > 0 ? -1 : 1) * .5 : 0 });
-    }
+    // 열린 플레이: 수비 진영·미드필드에서 시작
+    const sx = counter ? 30 + r() * 12 : sit === 'solo' ? clamp(PL - dx - 28 - r() * 10, 30, 60) : 18 + r() * 14, sy = 34 + (r() - .5) * 34;
+    place(S, ...W(sx, sy), atk);
+    if (counter) for (const p of D) { if (p.gk) continue; const [x, y] = F(p); const q = W(Math.max(8, x - 14), y); p.x = q[0]; p.y = q[1]; }
+    const st0 = counter ? near(outfield.filter(p => (isM(p) || isD(p)) && p !== scorer && p !== ast), { x: W(sx, sy)[0], y: W(sx, sy)[1] })[0] : near(outfield.filter(p => p !== scorer && p !== ast && (isD(p) || /CDM|DM/.test(p.pos))), { x: W(sx, sy)[0], y: W(sx, sy)[1] })[0];
+    const c0 = st0 || outfield.find(p => p !== scorer) || scorer;
+    const q0 = W(sx, sy); c0.x = q0[0] - S.dirs[atk] * .6; c0.y = q0[1]; takeBall(c0); c0.recvT = S.t - .3;
+    if (counter) { const loser = near(D.filter(p => !p.gk), c0)[0]; if (loser) { loser.x = c0.x + S.dirs[atk] * 1.5; loser.y = c0.y + .8; loser.stun = .6; } }
   }
   S.mode = S.mode === 'dead' ? 'dead' : 'play';
-  // ---- 실행 ----
-  let si = 0, st0 = S.t, phase = 'run', endT = 0, scorerRun = false;
-  const crossFrom = () => { // 헤더 골: 마지막 패스는 측면 깊은 곳에서
-    const [cx, cy] = tf(S, atk, S.ball.x, S.ball.y); return cx > 70 ? null : W(clamp(PL - dx - 8 - r() * 10, 76, 97), dyv >= 0 ? 61 + r() * 4 : 3 + r() * 4);
-  };
-  let headTarget = null;
-  const ctl = (S2, tasks) => {
-    const b = S2.ball, s0 = steps[si];
-    // 득점자: 마지막 단계가 가까워지면 슈팅 지점으로 침투
-    if (scorer && phase === 'run' && sit !== 'pen' && sit !== 'fk' && sit !== 'red' && b.owner !== scorer) {
-      const near = s0 && (s0.k === 'final' || (si >= steps.length - 3));
-      const [px, py] = tf(S2, atk, P[0], P[1]);
-      const pre = W(px - 7, clamp(py + (py < 34 ? -5 : 5), 4, 64));
-      if (near || scorerRun) { scorerRun = true; tasks.set(scorer, [P[0], P[1], 1]); } else tasks.set(scorer, [pre[0], pre[1], .7]);
+  frames.meta.cut = ['pen', 'corner', 'fk', 'setp'].includes(sit);
+  // 도움 위치·침투 위치 (공격 팀 기준)
+  const [Px, Py] = tf(S, atk, P[0], P[1]);
+  const wide = head || volley;
+  const astSpot = wide ? [clamp(Px - 6 - r() * 8, 74, 96), Py >= 34 ? 60 + r() * 5 : 3 + r() * 5] : [clamp(Px - 10 - r() * 10, 55, 88), clamp(Py + (r() - .5) * 26, 6, 62)];
+  const preSpot = [clamp(Px - 9, 50, 92), clamp(Py + (Py < 34 ? -4 : 4), 6, 62)];
+  // 빌드업 판단: 받을 선수 고르기
+  function pickRecv(c) {
+    const [cx] = F(c), ready = passes >= minPass - 1;
+    const L = [];
+    for (const q of outfield) {
+      if (q === c) continue;
+      if (q === scorer && (ast || !ready) && sit !== 'solo') continue; // 득점자는 마지막에
+      if (q === ast && !ready) continue;
+      const d = hyp(q.x - c.x, q.y - c.y); const longOK = d <= 45 && (isW(q) || isF(q)) && r() < .12;
+      if (d < 7 || (d > 28 && !longOK)) continue;
+      const [qx] = F(q), prog = qx - cx, free = oppDist(q);
+      let v = (free > 3 ? 1 : free > 1.8 ? .45 : .12) * (1 + clamp(prog / 18, -.7, 1.1));
+      if (q === last) v *= .3;
+      if (ready) v *= 1 + clamp((60 - hyp(q.x - P[0], q.y - P[1])) / 40, 0, 1.2);
+      if (ready && (q === ast || (!ast && q === scorer))) v *= 2.5;
+      if (qx > Px + 4) v *= .5;
+      L.push([q, v * (.7 + r() * .6), d]);
     }
-    // 다른 공격수: 박스 안으로
-    if (phase === 'run' && (sit === 'open' || sit === 'counter')) { const [bx] = tf(S2, atk, b.x, b.y); if (bx > 62) for (const p of A) if (p !== scorer && p !== b.owner && isF(p) && !tasks.has(p)) { const [x, y] = tf(S2, atk, p.x, p.y); const t2 = W(Math.min(95, Math.max(x, 86)), clamp(y, 22, 46)); tasks.set(p, [t2[0], t2[1], .85]); } }
+    L.sort((x1, x2) => x2[1] - x1[1]);
+    return L[0] || null;
+  }
+  const holdFor = c => (counter ? .35 + r() * .35 : .65 + r() * .75) + (c.gk ? .6 : 0);
+  function doPass(c, q, kind) {
+    const T = flightTime(hyp(q.x - c.x, q.y - c.y), 'pass');
+    const [qx, qy] = tf(S, atk, q.x + q.vx * T * .7, q.y + q.vy * T * .7);
+    const aim = reach(q, W(clamp(qx + .8 + r() * 1.6, 3, Px + 2), clamp(qy, 3, 65)), T);
+    const d = hyp(aim[0] - c.x, aim[1] - c.y), k = kind || (d > 30 ? 'long' : 'pass');
+    kick(S, aim, k, { to: q, onEnd: (S3, f) => { if (f.kind !== 'pass' && hyp(q.x - S3.ball.x, q.y - S3.ball.y) < 2.2) { S3.ball.owner = q; S3.ball.roll = null; q.recvT = S3.t; } } });
+    last = c; passes++;
+  }
+  const ctl = (S2, tasks) => {
+    const b = S2.ball, c = b.owner;
+    for (const p of D) if (p.gk && p.dive && S2.t >= p.dive.at) { const d0 = p.dive; p.dive = null; p.vx = clamp((d0.to[0] - p.x) / .45, -7, 7); p.vy = clamp((d0.to[1] - p.y) / .45, -7, 7); p.down = .9; }
+    if (phase === 'cele') { if (S2.celeCtl) S2.celeCtl(S2, tasks); return; }
     if (b.fl && b.fl.to && !b.owner) tasks.set(b.fl.to, [b.fl.x1, b.fl.y1, 1]);
-    if (!b.owner && !b.fl && phase === 'run') { const ch = (s0 && s0.k === 'shot') ? scorer : A.filter(p => !p.gk).sort((p, q) => hyp(p.x - b.x, p.y - b.y) - hyp(q.x - b.x, q.y - b.y))[0]; if (ch) tasks.set(ch, [b.x, b.y, 1]); }
-    if (phase !== 'run') return;
-    if (!s0) return;
-    const c = b.owner;
-    if (s0.k === 'wait') { if (!s0.t0) s0.t0 = S2.t; if (c) tasks.set(c, [c.x, c.y, .2]); if (S2.t - s0.t0 >= s0.d) { si++; S2.mode = 'play'; } return; }
-    if (s0.k === 'runup') { if (!s0.t0) { s0.t0 = S2.t; b.owner = null; } const tk = scorer; tasks.set(tk, [s0.to[0], s0.to[1], .55]); if (S2.t - s0.t0 >= s0.d) { b.owner = tk; si++; } return; }
-    if (s0.k === 'gain') { const w0 = s0.who; if (c && c.s === atk) { si++; return; } const tgt = c || b; tasks.set(w0, [tgt.x, tgt.y, 1]); if (hyp(w0.x - tgt.x, w0.y - tgt.y) < 1.3) { takeBall(w0); si++; } if (!s0.t0) s0.t0 = S2.t; if (S2.t - s0.t0 > 3) { takeBall(w0); si++; } return; }
-    if (!c) return; // 공이 날아가는 중
-    if (c.s !== atk) { const w0 = A.filter(p => !p.gk).sort((p, q) => hyp(p.x - c.x, p.y - c.y) - hyp(q.x - c.x, q.y - c.y))[0]; steps.splice(si, 0, { k: 'gain', who: w0 }); return; }
-    if (s0.k === 'drib') {
-      if (!s0.to) { const [cx, cy] = tf(S2, atk, c.x, c.y); s0.to = W(Math.min(cx + s0.d, s0.foul ? 99 : PL - dx - 2), clamp(cy + (r() - .5) * 8, 4, 64)); s0.t0 = S2.t; }
-      tasks.set(c, [s0.to[0], s0.to[1], .78]);
-      if (s0.foul != null) { const fd = D.find(p => p.id === s0.foul) || D.filter(p => !p.gk).sort((p, q) => hyp(p.x - c.x, p.y - c.y) - hyp(q.x - c.x, q.y - c.y))[0]; if (fd) { tasks.set(fd, [c.x, c.y, 1]); if (hyp(fd.x - c.x, fd.y - c.y) < .9 || S2.t - s0.t0 > 3.2) { c.down = 2.6; fd.vx *= .3; fd.vy *= .3; b.owner = null; b.roll = { vx: c.vx * .6, vy: c.vy * .6 }; phase = 'end'; endT = S2.t + 2.6; lab('반칙 — 퇴장'); S2.mode = 'dead'; } } return; }
-      if (hyp(c.x - s0.to[0], c.y - s0.to[1]) < 1 || S2.t - s0.t0 > 2.4) si++;
+    if (phase === 'end' || phase === 'shotFly') return;
+    // 득점자·도움 선수의 움직임
+    if (phase !== 'pen' && sit !== 'fk' && scorer && c !== scorer) {
+      const [bx] = tf(S2, atk, b.x, b.y);
+      if (scorerGo) tasks.set(scorer, [P[0], P[1], 1]);
+      else if (bx > 40 || sit === 'solo') { const q = W(preSpot[0], preSpot[1]); tasks.set(scorer, [q[0], q[1], .7]); }
+    }
+    if (ast && c !== ast && phase === 'build' && passes >= minPass - 2) { const [bx] = tf(S2, atk, b.x, b.y); if (bx > 35) { let q = W(astSpot[0], astSpot[1]); if (passes >= minPass && hyp(q[0] - b.x, q[1] - b.y) > 24) q = [b.x + (q[0] - b.x) * .5, b.y + (q[1] - b.y) * .5]; tasks.set(ast, [q[0], q[1], .8]); } }
+    if (phase === 'pen') { if (!sub.run) tasks.set(scorer, [scorer.x, scorer.y, .2]);
+      if (!sub.run && S2.t >= sub.t) { sub.run = S2.t; b.owner = null; }
+      if (sub.run) { const q = W(PL - 11.6, 34); tasks.set(scorer, [q[0], q[1], .55]); if (S2.t - sub.run > 1.05) { b.owner = scorer; phase = 'shoot'; sub = { t: S2.t }; } }
       return;
     }
-    if (s0.k === 'pass') {
-      if (!s0.t0) s0.t0 = S2.t + .25 + r() * .45;
-      tasks.set(c, [c.x + S2.dirs[atk] * 1.2, c.y, .3]);
-      if (S2.t < s0.t0) return;
-      const q = s0.to, T = flightTime(hyp(q.x - c.x, q.y - c.y), 'pass');
-      const [qx, qy] = tf(S2, atk, q.x + q.vx * T * .7, q.y + q.vy * T * .7);
-      const aim = reach(q, W(clamp(qx + 1 + r() * 2.5, 3, PL - dx - 3), clamp(qy, 3, 65)), T), d = hyp(aim[0] - c.x, aim[1] - c.y);
-      kick(S2, aim, d > 32 ? 'long' : 'pass', { to: q, onEnd: (S3, f) => { if (f.kind === 'long') { S3.ball.owner = q; S3.ball.roll = null; q.recvT = S3.t; } } });
-      tasks.set(q, [aim[0], aim[1], 1]); si++; return;
+    // 흐르는 공: 가까운 공격수가 잡으러 간다
+    if (!c && !b.fl) { const ch = phase === 'shoot' || phase === 'solo' ? scorer : near(outfield, b)[0]; if (ch) tasks.set(ch, [b.x, b.y, 1]); return; }
+    if (!c) return;
+    if (c.s !== atk) { const w0 = near(outfield, c)[0]; tasks.set(w0, [c.x, c.y, 1]); if (hyp(w0.x - c.x, w0.y - c.y) < 1.3) takeBall(w0); return; }
+    const held = S2.t - (c.recvT != null ? c.recvT : S2.t);
+    if (phase === 'wait') { tasks.set(c, [c.x, c.y, .2]); if (S2.t >= sub.t) { S2.mode = 'play'; phase = sub.next; sub = null; } return; }
+    if (phase === 'build') {
+      if (S2.t - t0 > 12) passes = Math.max(passes, minPass); // 너무 길어지면 마무리 쪽으로 (패스 거리 제한은 그대로)
+      if (S2.t - t0 > 24 && held > .5) { const fin0 = ast || scorer; if (c === fin0) { phase = ast ? 'final' : 'solo'; return; } const L = outfield.filter(q => q !== c && hyp(q.x - c.x, q.y - c.y) <= 30 && hyp(q.x - c.x, q.y - c.y) >= 6).sort((q1, q2) => hyp(q1.x - fin0.x, q1.y - fin0.y) - hyp(q2.x - fin0.x, q2.y - fin0.y)); if (L[0]) { doPass(c, L[0]); return; } }
+      const [cx] = F(c);
+      if (sit === 'red' && passes >= minPass) { phase = 'foul'; sub = { t: S2.t, to: W(Math.min(cx + 14, 96), clamp(F(c)[1] + (r() - .5) * 10, 5, 63)) }; return; }
+      if (c === ast && passes >= minPass - 1) { phase = 'final'; return; }
+      if (c === scorer && (!ast || sit === 'solo') && passes >= minPass - 1) { phase = 'solo'; return; }
+      if (held < holdFor(c)) { tasks.set(c, [c.x + S2.dirs[atk] * 1.5, c.y, .35]); return; }
+      // 가까이 마무리 선수가 있고 패스를 충분히 돌렸으면 그쪽으로
+      const fin = ast || scorer;
+      if (passes >= minPass && hyp(fin.x - c.x, fin.y - c.y) <= 28 && hyp(fin.x - c.x, fin.y - c.y) >= 5) { doPass(c, fin); return; }
+      // 앞에 공간이 있으면 몰고 간다
+      const ahead = D.filter(p => !p.gk).some(p => { const [px, py] = F(p), [qx, qy] = F(c); return px > qx && px - qx < 9 && Math.abs(py - qy) < 5; });
+      if (!ahead && cx < 78 && r() < .35 && !c.drib) { c.drib = { to: W(Math.min(cx + 6 + r() * 8, Px - 4), clamp(F(c)[1] + (r() - .5) * 8, 4, 64)), until: S2.t + 1.6 }; }
+      if (c.drib) { if (S2.t < c.drib.until && hyp(c.x - c.drib.to[0], c.y - c.drib.to[1]) > 1) { tasks.set(c, [c.drib.to[0], c.drib.to[1], .72]); return; } c.drib = null; c.recvT = S2.t - holdFor(c) + .25; return; }
+      const pk2 = pickRecv(c);
+      if (pk2) doPass(c, pk2[0]); else { c.recvT = S2.t - holdFor(c) + .3; tasks.set(c, [c.x + S2.dirs[atk] * 1, c.y, .4]); }
+      return;
     }
-    if (s0.k === 'solo') { tasks.set(c, [P[0], P[1], .8]); if (hyp(c.x - P[0], c.y - P[1]) < 1.2) si++; return; }
-    if (s0.k === 'final') {
-      // 마지막 패스: 득점자가 슈팅 지점에 도착하는 시간에 맞춰 찬다
-      if (head && !headTarget && sit === 'open') { const cf = crossFrom(); headTarget = cf || 'here'; if (cf) s0.carry = cf; }
-      if (s0.carry) { tasks.set(c, [s0.carry[0], s0.carry[1], .85]); if (hyp(c.x - s0.carry[0], c.y - s0.carry[1]) > 1.5 && !(s0.ct > 3)) { s0.ct = (s0.ct || 0) + DT; return; } }
-      if (!s0.t0) s0.t0 = S2.t;
-      const kind = s0.kind, dB = hyp(P[0] - c.x, P[1] - c.y), T = flightTime(dB, kind === 'cross' ? 'cross' : 'pass');
-      const eta = hyp(scorer.x - P[0], scorer.y - P[1]) / (scorer.vmax * .95) + .15;
-      tasks.set(c, [c.x + S2.dirs[atk] * .8, c.y, .3]);
-      if (eta > T + .15 && S2.t - s0.t0 < 3.5 && s0.wait !== 0) return;
-      const aimF = reach(scorer, P, T);
-      kick(S2, aimF, kind === 'cross' ? 'cross' : 'pass', { to: scorer, onEnd: (S3) => { if (hyp(scorer.x - S3.ball.x, scorer.y - S3.ball.y) < 2.2) { S3.ball.owner = scorer; S3.ball.roll = null; scorer.recvT = S3.t; } if (kind === 'cross' || head) S3.ball.z = 1.6; } });
-      scorerRun = true; si++; return;
+    if (phase === 'foul') {
+      tasks.set(c, [sub.to[0], sub.to[1], .8]);
+      const fd = D.find(p => p.id === o.foul) || near(D.filter(p => !p.gk), c)[0];
+      if (fd) { tasks.set(fd, [c.x, c.y, 1]); if (hyp(fd.x - c.x, fd.y - c.y) < .9 || S2.t - sub.t > 3.5) { c.down = 2.6; fd.vx *= .3; fd.vy *= .3; b.owner = null; b.roll = { vx: c.vx * .6, vy: c.vy * .6 }; phase = 'end'; endT = S2.t + 2.6; lab('red'); S2.mode = 'dead'; } }
+      return;
     }
-    if (s0.k === 'shot') {
-      if (c !== scorer) { if (c.s === atk && sit !== 'pen' && sit !== 'fk') { steps.splice(si, 0, { k: 'pass', to: scorer }); return; } takeBall(scorer); return; }
-      if (!s0.t0) s0.t0 = S2.t + (head ? 0 : sit === 'pen' || sit === 'fk' ? .1 : .15 + r() * .25);
-      if (S2.t < s0.t0) { tasks.set(c, [c.x + S2.dirs[atk] * .6, c.y, .35]); return; }
-      lab(o.kind === 'goal' ? '슈팅' : '슈팅');
+    if (phase === 'final') {
+      // 헤더·발리: 측면 깊은 곳까지 몰고 가서 크로스
+      const spot = W(astSpot[0], astSpot[1]);
+      if (wide && sit === 'open' || wide && sit === 'counter' || wide && sit === 'solo') { if (hyp(c.x - spot[0], c.y - spot[1]) > 3 && !(sub && sub.carry > 4)) { sub = sub || { carry: 0 }; sub.carry += DT; tasks.set(c, [spot[0], spot[1], .82]); return; } }
+      if (held < (counter ? .3 : .5)) { tasks.set(c, [c.x + S2.dirs[atk] * 1, c.y, .3]); return; }
+      const dB = hyp(P[0] - c.x, P[1] - c.y);
+      if (dB > 30 && !wide && sit !== 'corner' && sit !== 'setp') { tasks.set(c, [P[0], P[1], .75]); return; } // 너무 멀면 조금 더 몰고 간다
+      const kind = wide || sit === 'corner' || sit === 'setp' || dB > 25 ? 'cross' : 'pass', T = flightTime(dB, kind);
+      scorerGo = true;
+      const eta = hyp(scorer.x - P[0], scorer.y - P[1]) / (scorer.vmax * .92) + .1;
+      sub = sub || {}; sub.w = (sub.w || 0) + DT;
+      tasks.set(c, [c.x + S2.dirs[atk] * .6, c.y, .25]);
+      if (eta > T + .15 && sub.w < 3) return;
+      const aim = reach(scorer, P, T);
+      kick(S2, aim, kind, { to: scorer, onEnd: (S3) => { if (hyp(scorer.x - S3.ball.x, scorer.y - S3.ball.y) < 2.2) { S3.ball.owner = scorer; S3.ball.roll = null; scorer.recvT = S3.t; } if (kind === 'cross') S3.ball.z = 1.4; } });
+      passes++; phase = 'shoot'; sub = { first: kind === 'cross' || head || volley || r() < .25 }; return;
+    }
+    if (phase === 'solo') {
+      // 혼자 몰고 들어가 슈팅 지점까지 (빈 쪽으로 조금씩 꺾는다)
+      scorerGo = false; sub = sub || { zz: 0 };
+      const dP = hyp(c.x - P[0], c.y - P[1]);
+      if (dP < 1.2) { phase = 'shoot'; sub = { first: false }; c.recvT = S2.t - .3; return; }
+      sub.zz += DT; const wob = Math.sin(sub.zz * 2.2) * Math.min(4, dP * .25);
+      const [qx, qy] = tf(S2, atk, P[0], P[1]), tgt = W(qx, qy + wob);
+      tasks.set(c, [tgt[0], tgt[1], pk === 'solo' ? .9 : .75]); return;
+    }
+    if (phase === 'shoot') {
+      if (c !== scorer) { if (c.s === atk) { doPass(c, scorer); phase = 'shoot'; } return; }
+      const wait = sub && sub.first ? 0 : sit === 'pen' || sit === 'fk' ? .1 : longS ? .5 + r() * .3 : .4 + r() * .35;
+      if (!sub) sub = {}; if (sub.at == null) sub.at = S2.t + wait;
+      if (S2.t < sub.at) { tasks.set(c, [c.x + S2.dirs[atk] * .8, c.y, .35]); return; }
+      lab('shot');
       const gk = D.find(p => p.gk);
-      const T = kick(S2, GL, head ? 'head' : 'shot', { z: shotZ, z1: o.kind === 'miss' && shotZ > 2.5 ? 3.2 : Math.min(2.2, shotZ * (.6 + r() * .8)), curve: s0.curve || 0, onEnd: shotEnd });
-      // 골키퍼 반응: 막는 장면은 공 쪽으로, 나머지는 한발 늦게
-      if (gk) { const reach = o.kind === 'save' ? GL : [GL[0], 34 + (GL[1] - 34) * (o.kind === 'goal' ? .45 : .2)]; gk.dive = { at: S2.t + T * (o.kind === 'save' ? .35 : .55), to: reach }; }
-      // 막힘: 가까운 수비가 슈팅 길목에 몸을 던진다
-      if (o.kind === 'block') { const bl = D.filter(p => !p.gk).sort((p, q) => hyp(p.x - P[0], p.y - P[1]) - hyp(q.x - P[0], q.y - P[1]))[0]; if (bl) { const bp = [P[0] + (GL[0] - P[0]) * .2, P[1] + (GL[1] - P[1]) * .2]; bl.vx = clamp((bp[0] - bl.x) / .35, -7, 7); bl.vy = clamp((bp[1] - bl.y) / .35, -7, 7); bl.down = .8; S2.ball.fl.T *= .2; S2.ball.fl.x1 = bp[0]; S2.ball.fl.y1 = bp[1]; S2.ball.fl.onEnd = (S3) => { kick(S3, W(clamp(PL - dx + 4 - r() * 10, 60, 100), clamp(34 + (r() - .5) * 40, 3, 65)), 'clear'); phase = 'end'; endT = S3.t + 2.2; lab('막혔다'); }; } }
-      phase = 'shot'; si++; return;
+      const curve = sit === 'fk' ? (dyv > 0 ? -1 : 1) * .8 : pk === 'curl' ? (dyv > 0 ? -1 : 1) * .9 : dx > 18 ? (dyv > 0 ? -1 : 1) * .4 : 0;
+      const z1 = o.kind === 'miss' && shotZ > 2.5 ? 3.2 : pk === 'chip' || pk === 'half' ? 1.8 : Math.min(2.2, shotZ * (.6 + r() * .8));
+      const T = kick(S2, GL, head ? 'head' : 'shot', { z: shotZ, z1, curve, onEnd: shotEnd });
+      if (pk === 'chip' || pk === 'half') { b.fl.T *= pk === 'half' ? 1.9 : 1.6; if (gk) { const q = W(PL - 6, 34); gk.x = gk.x * .7 + q[0] * .3; } }
+      if (gk) { const reach0 = o.kind === 'save' ? GL : [GL[0], 34 + (GL[1] - 34) * (o.kind === 'goal' ? .45 : .2)]; gk.dive = { at: S2.t + b.fl.T * (o.kind === 'save' ? .35 : .55), to: reach0 }; }
+      if (o.kind === 'block') { const bl = near(D.filter(p => !p.gk), { x: P[0], y: P[1] })[0]; if (bl) { const bp = [P[0] + (GL[0] - P[0]) * .2, P[1] + (GL[1] - P[1]) * .2]; bl.vx = clamp((bp[0] - bl.x) / .35, -7, 7); bl.vy = clamp((bp[1] - bl.y) / .35, -7, 7); bl.down = .8; b.fl.T *= .2; b.fl.x1 = bp[0]; b.fl.y1 = bp[1]; b.fl.onEnd = (S3) => { kick(S3, W(clamp(PL - dx + 4 - r() * 10, 60, 100), clamp(34 + (r() - .5) * 40, 3, 65)), 'clear'); phase = 'end'; endT = S3.t + 2.2; }; } }
+      phase = 'shotFly';
+      void T;
     }
   };
   function shotEnd(S3) {
     const b = S3.ball;
-    if (o.kind === 'goal') { b.roll = { vx: S3.dirs[atk] * 3, vy: 0 }; b.z = Math.min(b.z, 2); S3.mode = 'cele'; phase = 'cele'; endT = S3.t + 3.6; lab('GOAL'); celebrate(S3, atk, scorer); return; }
-    if (o.kind === 'save') { const gk = D.find(p => p.gk); if (gk && hyp(gk.x - b.x, gk.y - b.y) < 1.8 && r() < .5) { b.owner = gk; S3.poss = dfs; lab('선방'); } else { kick(S3, W(PL - 3 - r() * 5, b.y < 34 ? 2 + r() * 8 : 60 - r() * 8), 'clear'); lab('선방'); } phase = 'end'; endT = S3.t + 2.4; return; }
-    if (o.kind === 'post') { kick(S3, W(PL - 6 - r() * 8, 34 + (r() - .5) * 18), 'pass'); lab('골대'); phase = 'end'; endT = S3.t + 2.4; return; }
-    b.roll = { vx: S3.dirs[atk] * 4, vy: 0 }; lab('빗나감'); phase = 'end'; endT = S3.t + 2; S3.mode = 'dead';
+    if (o.kind === 'goal') { b.roll = { vx: S3.dirs[atk] * 3, vy: 0 }; b.z = Math.min(b.z, 2); S3.mode = 'cele'; phase = 'cele'; endT = S3.t + 3.6; lab('goal'); celebrate(S3, atk, scorer); return; }
+    if (o.kind === 'save') { const gk = D.find(p => p.gk); if (gk && hyp(gk.x - b.x, gk.y - b.y) < 1.8 && r() < .5) { b.owner = gk; S3.poss = dfs; } else kick(S3, W(PL - 3 - r() * 5, b.y < 34 ? 2 + r() * 8 : 60 - r() * 8), 'clear'); phase = 'end'; endT = S3.t + 2.4; return; }
+    if (o.kind === 'post') { kick(S3, W(PL - 6 - r() * 8, 34 + (r() - .5) * 18), 'pass'); phase = 'end'; endT = S3.t + 2.4; return; }
+    b.roll = { vx: S3.dirs[atk] * 4, vy: 0 }; phase = 'end'; endT = S3.t + 2; S3.mode = 'dead';
   }
-  // 골키퍼 다이빙은 매 걸음 확인
-  const gkCtl = (S2, tasks) => { for (const p of D) if (p.gk && p.dive && S2.t >= p.dive.at) { const d = p.dive; p.dive = null; p.vx = (d.to[0] - p.x) / .45; p.vy = (d.to[1] - p.y) / .45; p.vx = clamp(p.vx, -7, 7); p.vy = clamp(p.vy, -7, 7); p.down = .9; } };
-  const full = (S2, tasks) => { gkCtl(S2, tasks); if (phase === 'cele' && S2.celeCtl) S2.celeCtl(S2, tasks); else ctl(S2, tasks); };
-  frames.meta.cut = ['pen', 'corner', 'fk', 'setp'].includes(sit);
-  if (frames.meta.cut) lab({ pen: '페널티킥', corner: '코너킥', fk: '프리킥', setp: '프리킥' }[sit]);
   rec(S, frames);
+  S.only = atk; // 장면 동안 공은 공격 팀만 잡는다 (기록에 없는 가로채기 없음)
   let guard = 0;
-  while (guard++ < 1500) {
+  while (guard++ < 1600) {
     S.ctlOpt = null;
-    step(S, full);
+    step(S, ctl);
     rec(S, frames);
     if ((phase === 'end' || phase === 'cele') && S.t >= endT) break;
-    if (phase === 'run' && S.t - st0 > 26) { // 안전장치: 너무 오래 걸리면 바로 마지막 단계로
-      si = steps.findIndex(x => x.k === 'final' || x.k === 'shot'); if (si < 0) break; if (S.ball.owner !== scorer && steps[si].k === 'shot') takeBall(scorer); st0 = S.t;
-    }
+    if (S.t - t0 > 40) break;
   }
+  S.only = null;
   return frames;
 }
 function cornerLayout(S, atk, scorer, P, top, r) {

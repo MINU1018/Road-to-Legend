@@ -48,20 +48,60 @@ function replay(s, x, opts) {
   play();
   return { node: h('div', { class: 'pkstage' }, svg, cap), play, stop: () => cancelAnimationFrame(raf) };
 }
+// v46: 골 장면 다시보기와 같은 2D 움직임 엔진으로 재현. 그 경기 출전 명단·포메이션이 보관돼 있으면 그대로, 없으면 기본 대형
 U.pkReplay = function (s, x) {
   const w = s.w, T = C.PKT[x[7]];
+  const opp = w.clubs[x[4]] || {}, mine = w.clubs[x[3]] || {};
+  const nameOf = id => id === 'ME' ? s.p.name : (C.MD && C.MD.nameOf ? C.MD.nameOf(id, s) : '') || '';
+  const start = async (stage, SB, cap) => {
+    let o = null; try { o = U.findRecMatch ? await U.findRecMatch(s, x[3], x[5], x[4]) : null; } catch (e) { o = null; }
+    let ms = null; if (o && o.d && o.d.ln && U.matchMs) { try { ms = U.matchMs(o); } catch (e) { ms = null; } }
+    const atk = o ? (o.a === x[3] ? 0 : 1) : 0, m = x[6];
+    const ids = [x[3], x[4]], sideId = sd => atk === 0 ? ids[sd] : ids[1 - sd];
+    const cols = [0, 1].map(sd => U.teamColor ? U.teamColor(sideId(sd), null, sd) : (sd ? '#5fa8ff' : '#f2c14e'));
+    const DEF = ['GK', 'LB', 'CB', 'CB', 'RB', 'CDM', 'CM', 'CM', 'LW', 'ST', 'RW'];
+    const gen = (sd, pre) => DEF.map((pos, i) => ({ id: pre + i, pos, role: pos === 'GK' ? 'GK' : pos, sl: i, on: 0, off: 90 }));
+    let teams;
+    if (ms && ms.PL) teams = [0, 1].map(sd => ({ col: cols[sd], fm: ms.fm && ms.fm[sd], ln: ms.PL[sd].filter(p => (p.on || 0) <= m && (p.off == null || p.off >= m)).sort((a, b) => (b.role === 'GK') - (a.role === 'GK')).slice(0, 11).map(p => ({ id: p.id, pos: p.pos, role: p.role, sl: p.sl })) }));
+    else teams = [{ col: cols[0], fm: '4-3-3', ln: gen(0, 'a') }, { col: cols[1], fm: '4-3-3', ln: gen(1, 'b') }];
+    let gen0 = !(ms && ms.PL);
+    for (let sd = 0; sd < 2; sd++) if (teams[sd].ln.length < 7) { teams[sd] = { col: cols[sd], fm: '4-3-3', ln: gen(sd, sd ? 'b' : 'a') }; gen0 = true; }
+    if (gen0) ms = null;
+    if (!teams[atk].ln.some(p => String(p.id) === String(x[1]))) { const st = teams[atk].ln.find(p => /ST|CF/.test(p.pos)) || teams[atk].ln[teams[atk].ln.length - 1]; st.id = x[1]; }
+    const e = o && o.d && o.d.ev ? o.d.ev.find(z => z.k === 'g' && String(z.p) === String(x[1]) && z.m === m) : null;
+    const dist = x[9], dyv = clamp(x[10] || 0, -25, 25), dxv = Math.sqrt(Math.max(4, dist * dist - dyv * dyv));
+    const k = T.k, args = { scorer: x[1], ast: e && e.a ? e.a : null, kind: 'goal', pk: k, sit: k === 'fk' ? '세트피스' : '일반 플레이', type: k === 'volley' || k === 'bike' ? '오른발' : null, dx: dxv, dy: dyv };
+    if (k === 'solo' || k === 'curl' || k === 'rocket' || k === 'chip' || k === 'half') args.ast = null;
+    const names = [0, 1].map(sd => { const c = w.clubs[sideId(sd)] || {}; return c.short || c.name || ''; });
+    SB.names(names, cols);
+    const run = () => {
+      const S0 = U.MOT.mkState(teams, [1, -1], U.MOT.hash('pk|' + x[5] + '|' + x[1] + '|' + m));
+      const fr = U.MOT.scene(S0, Object.assign({ atk: 0 }, args, { atk: 0 }));
+      // 장면 안에서는 득점 팀을 0번(오른쪽 공격)으로 둔다
+      const info = U.motionInfo(S0, teams, [], nameOf);
+      const sc = [0, 0]; SB.set(sc[0], sc[1], U.fmtMin(m));
+      return U.playFrames(stage, fr, info, { onLabel: l => { if (l === 'goal') { sc[0]++; SB.set(sc[0], sc[1]); } } });
+    };
+    // 득점 팀이 0번이 되도록 팀 순서를 맞춘다
+    if (atk === 1) { teams = [teams[1], teams[0]]; names.reverse(); cols.reverse(); SB.names(names, cols); }
+    cap.textContent = `${C.pkName(s, x)} · ${T.n} · 약 ${Math.round(dist)}m${ms ? '' : ' · 경기 명단이 보관되지 않아 기본 대형으로 재현'}`;
+    return run;
+  };
   U.overlay(close => {
-    const R = replay(s, x);
-    const opp = w.clubs[x[4]] || {}, mine = w.clubs[x[3]] || {};
+    const cv = h('canvas', { class: 'rpcv' }), sbx = h('div', { class: 'sbd' }), stage = h('div', { class: 'rpstage' }, cv, sbx), cap = h('div', { class: 'mute', style: { fontSize: '12.5px' } }, '불러오는 중…');
+    const SB = { names(n, c) { this.n = n; this.c = c; }, set(a, b, mm) { if (mm != null) this.m = mm; sbx.replaceChildren(h('i', { style: { background: this.c[0] } }), h('span', null, this.n[0]), h('b', null, a), h('em', null, '-'), h('b', null, b), h('span', null, this.n[1]), h('i', { style: { background: this.c[1] } }), h('span', { class: 'sbm' }, this.m || '')); } };
+    let runF = null, stopF = null;
+    start(cv, SB, cap).then(r => { runF = r; stopF = r(); }).catch(e => { console.error(e); cap.textContent = '재현을 만들지 못했습니다.'; });
+    close.x = () => { if (stopF) stopF(); close(); };
     return h('div', null,
       h('div', { class: 'head', style: { gridTemplateColumns: '1fr auto', alignItems: 'center' } }, h('div', null, h('b', { style: { fontSize: '16px' } }, `${C.pkName(s, x)} · ${T.n}`), h('div', { class: 'mute', style: { fontSize: '12px' } }, `${mine.name || ''} vs ${opp.name || ''} · ${x[12] || KIND[x[8]] || ''} · ${C.fmtDateY(x[5])} · ${U.fmtMin(x[6])} · 약 ${Math.round(x[9])}m`)),
-        h('button', { class: 'btn ghost sm', onclick: () => { R.stop(); close(); } }, '닫기')),
-      h('div', { class: 'body' }, R.node, h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' } },
-        h('button', { class: 'btn sm', onclick: () => R.play() }, '다시 보기'),
-        U.openRecMatch ? h('button', { class: 'btn ghost sm', onclick: () => U.openRecMatch(s, x[3], x[5], x[4]) }, '경기 기록') : null),
-        h('div', { class: 'mute', style: { fontSize: '11.5px', textAlign: 'center' } }, '기록(종류·거리·시간)을 바탕으로 만든 간단한 재현입니다. ★ 득점자 · 노란색 골키퍼')));
-  }, { clickClose: true, cls: 'pkov' });
+        h('button', { class: 'btn ghost sm', onclick: () => { if (stopF) stopF(); close(); } }, '닫기')),
+      h('div', { class: 'body' }, stage, cap, h('div', { style: { display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' } },
+        h('button', { class: 'btn sm', onclick: () => { if (stopF) stopF(); if (runF) stopF = runF(); } }, '다시 보기'),
+        U.openRecMatch ? h('button', { class: 'btn ghost sm', onclick: () => U.openRecMatch(s, x[3], x[5], x[4]) }, '경기 기록') : null)));
+  }, { clickClose: true, cls: 'pkov rpbox' });
 };
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
 // ---------- 목록 ----------
 function row(s, x, rank) {

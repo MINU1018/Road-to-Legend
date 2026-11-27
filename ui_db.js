@@ -502,6 +502,14 @@ function openRecMatch(s, id, d, opp) {
   go();
 }
 U.openRecMatch = (s, id, d, opp) => openRecMatch(s, id, d, opp);
+// 경기 기록 객체만 찾는다 (화면을 열지 않음) — 푸스카스상 2D 재현용 (v46)
+U.findRecMatch = (s, id, d, opp) => new Promise(res => {
+  const cap = it => { let o = null; const orig = U.showMatch; U.showMatch = x => { o = x; }; try { it.open(); } catch (e) { console.error(e); } finally { U.showMatch = orig; } return o; };
+  const { out, wait } = recMatches(s, id, d, d, x => x.opp === opp);
+  if (out[0] && out[0].open) return res(cap(out[0]));
+  if (wait.length) return Promise.all(wait.map(lb => U.getMx(lb))).then(() => { const r = recMatches(s, id, d, d, x => x.opp === opp); res(r.out[0] && r.out[0].open ? cap(r.out[0]) : null); }).catch(() => res(null));
+  res(null);
+});
 function openRecRange(s, id, d0, d1, filt, title) {
   U.overlay(close => {
     const body = h('div', { class: 'body', style: { gap: '2px', maxHeight: '70vh', overflow: 'auto' } }), tried = new Set();

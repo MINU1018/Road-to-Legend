@@ -659,16 +659,21 @@ U.wcLive = async function (m) {
   const col = [U.teamColor ? U.teamColor(o.a, o.nat, 0) : '#4a8', U.teamColor ? U.teamColor(o.b, o.nat, 1) : '#a48'];
   { const rgb = x => { const c = String(x || '#888').replace('#', '').padEnd(6, '0'); return [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) || 0); }, dist = (a, b) => { const A = rgb(a), B = rgb(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
     if (dist(col[0], col[1]) < 90) col[1] = dist(col[0], '#5fa8ff') > 90 ? '#5fa8ff' : '#e9ecf1'; }
-  // 2D 경기장 (v46): 평소엔 빠르게 흐르고, 골·결정적 기회·퇴장 직전에 실제 속도로
-  const LF = ms && ms.PL && U.liveField ? U.liveField({ teams: [0, 1].map(sd => ({ col: col[sd], name: tnm(sd), ln: ms.PL[sd].map(p => ({ id: p.id, pos: p.pos, role: p.role, on: p.on, off: p.off })) })), nameOf, key: o.key || '', home: 0 }) : null;
+  // 2D 하이라이트 (v46): 중계는 원래대로 흐르고, 하이라이트 순간에만 경기장이 나타나 실제 속도로 재생
+  // 핵심 = 골·자책골·퇴장 / 주요 = 핵심 + 결정적 기회·선방·빗나감·골대·막힌 슈팅·내 슈팅
+  const LF = ms && ms.PL && U.liveField ? U.liveField({ teams: [0, 1].map(sd => ({ col: col[sd], name: tnm(sd), fm: ms.fm && ms.fm[sd], ln: ms.PL[sd].map(p => ({ id: p.id, pos: p.pos, role: p.role, sl: p.sl, on: p.on, off: p.off })) })), nameOf, key: o.key || '' }) : null;
   const keyEv = [];
-  if (LF) for (const x of T) {
-    if (x.k === 'goal' && x.e) { const e = x.e, sh = shots.find(z => z.s === e.s && z.m === e.m && z.p === e.p && z.res === '골'); keyEv.push({ m: x.m, kind: 'goal', atk: e.s, args: U.sceneArgs({ m: e.m, p: e.p, a: e.a, k: e.k, sh: sh ? { dx: sh.dx, dy: sh.dy, sit: sh.sit, type: sh.type } : null }, e.s), cap: `${U.fmtMin ? U.fmtMin(x.m) : x.m + "'"} ${x.t}` }); }
-    else if (x.k === 'chance' && x.sh) { const z = x.sh; keyEv.push({ m: x.m, kind: 'chance', atk: z.s, args: U.sceneArgs({ m: z.m, p: z.p, a: z.as, k: 'g', res: z.res, sh: { dx: z.dx, dy: z.dy, sit: z.sit, type: z.type } }, z.s), cap: `${U.fmtMin ? U.fmtMin(x.m) : x.m + "'"} ${x.t} · ${x.sub}` }); }
-    else if (x.k === 'r' && x.e) keyEv.push({ m: x.m, kind: 'red', atk: 1 - x.e.s, args: { kind: 'red', foul: x.e.p }, cap: `${U.fmtMin ? U.fmtMin(x.m) : x.m + "'"} ${x.t} 퇴장` });
+  if (LF) {
+    for (const x of T) {
+      if (x.k === 'goal' && x.e) { const e = x.e, sh = shots.find(z => z.s === e.s && z.m === e.m && z.p === e.p && z.res === '골'); keyEv.push({ m: x.m, lv: 1, atk: e.s, args: U.sceneArgs({ m: e.m, p: e.p, a: e.a, k: e.k, sh: sh ? { dx: sh.dx, dy: sh.dy, sit: sh.sit, type: sh.type } : null }, e.s) }); }
+      else if (x.k === 'r' && x.e) keyEv.push({ m: x.m, lv: 1, atk: 1 - x.e.s, args: { kind: 'red', foul: x.e.p } });
+    }
+    const ch = shots.filter(z => z.res !== '골' && ['선방', '빗나감', '골대', '막힘'].includes(z.res) && (z.big || z.p === 'ME' || z.res === '골대' || (z.xg || 0) >= .15)).sort((a, b) => (b.p === 'ME') - (a.p === 'ME') || (b.xg || 0) - (a.xg || 0)).slice(0, 8);
+    for (const z of ch) keyEv.push({ m: z.m, lv: 2, atk: z.s, args: U.sceneArgs({ m: z.m, p: z.p, a: z.as, k: 'g', res: z.res, sh: { dx: z.dx, dy: z.dy, sit: z.sit, type: z.type } }, z.s) });
+    keyEv.sort((a, b) => a.m - b.m || a.lv - b.lv);
   }
-  keyEv.sort((a, b) => a.m - b.m);
-  if (s.wc.slow == null) s.wc.slow = 1;
+  if (s.wc.hl == null) s.wc.hl = s.wc.slow === 0 ? 'off' : 'key';
+  const HL = [['off', '끔'], ['key', '핵심'], ['all', '주요']];
   return overlay(close => {
     let t = 0, spd = s.wc.speed || 2, playing = true, done = false, timer = null;
     const shut = r => { clearTimeout(timer); if (LF) LF.destroy(); close(r); };
@@ -699,9 +704,9 @@ U.wcLive = async function (m) {
       if (LF && LF.busy()) { timer = setTimeout(step, 150); return; }
       const nt = Math.min(end, t + .5);
       // 다음 주요 장면: 시계를 그 직전에 세우고 실제 속도로 보여 준 뒤 이어 간다
-      const kev = LF && s.wc.slow ? keyEv.find(x => !x.done && x.m > t && x.m <= nt) : null;
-      if (kev) { kev.done = 1; t = Math.max(t, kev.m - .3); paint(); LF.setMin(t); const pr = LF.scene(kev); ctl(); pr.then(() => { if (done) return; t = kev.m; paint(); LF.setMin(t); ctl(); if (playing) timer = setTimeout(step, 500 / spd); }); return; }
-      t = nt; if (LF) LF.setMin(t);
+      const kev = LF && s.wc.hl !== 'off' ? keyEv.find(x => !x.done && x.m > t && x.m <= nt && (x.lv === 1 || s.wc.hl === 'all')) : null;
+      if (kev) { kev.done = 1; t = Math.max(t, kev.m - .3); paint(); kev.score = score(kev.m - .01); kev.clock = clock.textContent; const pr = LF.scene(kev); ctl(); pr.then(() => { if (done) return; t = kev.m; paint(); ctl(); if (playing) timer = setTimeout(step, 500 / spd); }); return; }
+      t = nt;
       if (t >= end) { done = true; playing = false; }
       paint(); ctl();
       if (!done) timer = setTimeout(step, t > 45 && t < 46 ? 900 / spd : 260 / spd);
@@ -712,8 +717,8 @@ U.wcLive = async function (m) {
         done ? null : h('button', { class: 'btn ghost sm', onclick: () => { playing = !playing; if (playing) step(); ctl(); } }, playing ? '일시정지' : '재생'),
         done ? null : seg(SPD.map(([k, l]) => [k, l]), spd, k => { spd = k; s.wc.speed = k; }),
         LF && LF.busy() ? h('button', { class: 'btn sm', onclick: () => LF.skip() }, '장면 건너뛰기') : null,
-        done ? null : h('button', { class: 'btn ghost sm', onclick: () => { clearTimeout(timer); if (LF) LF.skip(); t = end; done = true; playing = false; if (LF) LF.setMin(t); paint(); ctl(); } }, '결과로'),
-        LF && !done ? h('button', { class: 'btn ghost sm' + (s.wc.slow ? ' on' : ''), title: '골·결정적 기회·퇴장 직전에 실제 속도로 보여 줍니다', onclick: () => { s.wc.slow = s.wc.slow ? 0 : 1; ctl(); } }, s.wc.slow ? '주요 장면 정속: 켬' : '주요 장면 정속: 끔') : null,
+        done ? null : h('button', { class: 'btn ghost sm', onclick: () => { clearTimeout(timer); if (LF) LF.skip(); t = end; done = true; playing = false; paint(); ctl(); } }, '결과로'),
+        LF && !done ? h('span', { class: 'lvhl', title: '핵심: 골·자책골·퇴장 · 주요: 핵심 + 결정적 기회·선방·빗나감·골대·막힌 슈팅' }, h('span', { class: 'lbl' }, '하이라이트'), seg(HL, s.wc.hl, k => { s.wc.hl = k; })) : null,
         h('button', { class: 'btn ghost sm', onclick: () => U.showMatch(o) }, '경기 기록'),
         done && ms && U.goalReplay && T.some(x => x.k === 'goal') ? h('button', { class: 'btn ghost sm', onclick: () => rpl(null) }, '▶ 골 장면') : null,
         h('span', { style: { flex: 1 } }),
