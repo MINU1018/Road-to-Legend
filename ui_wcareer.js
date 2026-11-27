@@ -533,7 +533,7 @@ U.wcAfterMatch = m => { const s = S(); if (!s || !s.wc) return; let r; try { r =
 U.wcPending = () => !!(pend.watch || pend.ev.length);
 // 내가 뛴 경기의 골·도움·카드 시간 (경기 기록이 저장된 뒤 그 기록에서): m.evm = [[분, 'g'|'p'|'a'|'y'|'r'|'o']]
 U.wcAnnot = function (m) {
-  const s = S(); if (!m || !m.played || m.evm || m.comp === 'youth' || m.comp === 'nt' || m.comp === 'ntY') return;
+  const s = S(); if (!m || !m.played || m.evm || m.comp === 'youth' || m.comp === 'ntY') return;
   const st = m.st || {}; if (!(st.goals || st.assists || st.yellow || st.red)) { m.evm = []; return; }
   const o = findMatch(s, m); if (!o || !o.d) return;
   m.evm = (o.d.ev || []).filter(e => e.p === 'ME' || e.a === 'ME').map(e => [e.m, e.p === 'ME' ? (e.k === '2' ? 'r' : e.k) : 'a']).filter(x => 'gpayro'.includes(x[1]));
@@ -584,7 +584,18 @@ U.openMyMatch = function (clubId, d, wy) {
   const go = () => { const o = findAt(s, clubId, d, src); if (o) U.showMatch(o); else toast('이 경기는 상세 기록이 없습니다.'); };
   if (live || U.mxCached(src)) go(); else { toast('경기 기록을 불러오는 중…', 1500); U.withMx(src, go); }
 };
+// 대표팀 경기 (A매치·국제 대회): 그날 기록된 행에서 찾는다 (v46)
+function findNt(s, m) {
+  const w = s.w, nat = s.p.nat, cal = w.cal; if (!cal || !C.MD) return null;
+  const st = U.liveSt ? U.liveSt() : null;
+  const hit = (rows, title, key) => { const r = (rows || []).find(x => x[8] === m.d && (x[1] === nat || x[2] === nat) && (x[1] === m.opp || x[2] === m.opp)); if (!r) return null; return { title: `${title} · ${r[0]} · ${C.fmtDateY(r[8])}`, a: r[1], b: r[2], ga: r[3], gb: r[4], pw: r[7] || null, d: C.MD.decode(st, r), nat: true, key: key + '|' + r[1] + '|' + r[2] + '|' + r[0] }; };
+  for (const k in cal.intl || {}) { const T = cal.intl[k]; const x = hit((cal.h[k] || {}).rows, `${T.n} ${T.y}`, 'I|' + T.k + '|' + T.y); if (x) return x; }
+  for (const k in cal.h) if (k.startsWith('A:')) { const c = k.split(':')[1]; const x = hit(cal.h[k].rows, (C.TDEF && C.TDEF[c] && C.TDEF[c].name) || 'A매치', 'A|' + k); if (x) return x; }
+  if (st && st.INTL) for (const k in st.INTL) { const x = hit(st.INTL[k], (C.TDEF && C.TDEF[k] && C.TDEF[k].name) || k, 'S|' + k); if (x) return x; }
+  return null;
+}
 function findMatch(s, m) {
+  if (m && m.comp === 'nt') { try { return findNt(s, m); } catch (e) { console.error(e); return null; } }
   if (!U.clubFx || !s.ss) return null;
   const items = U.clubFx(s, s.ss.club, 'live') || [];
   const it = items.filter(x => !x.pend && x.open && x.d === m.d && (x.a === m.opp || x.b === m.opp))[0];
@@ -599,7 +610,7 @@ U.wcLive = async function (m) {
   const o = findMatch(s, m);
   if (!o || !o.d) return null;
   let ms = null; try { ms = U.matchMs(o); } catch (e) { console.error(e); }
-  const d = o.d, side = o.a === s.ss.club ? 0 : 1;
+  const d = o.d, side = o.nat ? (o.a === s.p.nat ? 0 : 1) : o.a === s.ss.club ? 0 : 1;
   const nameOf = id => C.MD && C.MD.nameOf ? C.MD.nameOf(id, s) : String(id);
   const meIn = d.ln ? (d.ln[side] || []).find(x => x.id === 'ME') : null, meBench = !meIn && d.bn && (d.bn[side] || []).includes('ME');
   // 타임라인
@@ -607,14 +618,14 @@ U.wcLive = async function (m) {
   for (const e of d.ev || []) {
     if ('gpo'.includes(e.k)) T.push({ m: e.m, s: e.s, k: 'goal', e, t: e.k === 'o' ? `자책골 · ${nameOf(e.p)}` : `${nameOf(e.p)}${e.k === 'p' ? ' (PK)' : ''}`, sub: e.a ? `도움 ${nameOf(e.a)}` : '', me: e.p === 'ME' || e.a === 'ME' });
     else if (e.k === 'y') T.push({ m: e.m, s: e.s, k: 'y', t: nameOf(e.p), sub: '경고', me: e.p === 'ME' });
-    else if (e.k === 'r' || e.k === '2') T.push({ m: e.m, s: e.s, k: 'r', t: nameOf(e.p), sub: e.k === '2' ? '경고 누적 퇴장' : '퇴장', me: e.p === 'ME' });
+    else if (e.k === 'r' || e.k === '2') T.push({ m: e.m, s: e.s, k: 'r', e, t: nameOf(e.p), sub: e.k === '2' ? '경고 누적 퇴장' : '퇴장', me: e.p === 'ME' });
   }
   if (d.ln) for (let sd = 0; sd < 2; sd++) for (const x of d.ln[sd] || []) if (!x.start && x.on > 0) T.push({ m: x.on, s: sd, k: 'sub', t: nameOf(x.id), sub: '교체 투입', me: x.id === 'ME' });
   const shots = ms && ms.shots ? ms.shots.slice().sort((a, b) => a.m - b.m) : [];
-  for (const x of shots) if (x.res !== '골' && (x.big || x.p === 'ME' || x.res === '골대')) T.push({ m: x.m, s: x.s, k: 'chance', t: x.p ? nameOf(x.p) : '', sub: x.res === '골대' ? '골대 강타' : x.big ? `결정적 기회 · ${x.res}` : `슈팅 · ${x.res}`, me: x.p === 'ME' });
+  for (const x of shots) if (x.res !== '골' && (x.big || x.p === 'ME' || x.res === '골대')) T.push({ m: x.m, s: x.s, k: 'chance', sh: x, t: x.p ? nameOf(x.p) : '', sub: x.res === '골대' ? '골대 강타' : x.big ? `결정적 기회 · ${x.res}` : `슈팅 · ${x.res}`, me: x.p === 'ME' });
   T.sort((a, b) => a.m - b.m || (a.k === 'goal') - (b.k === 'goal'));
   // 골 장면 다시보기 (v45)
-  const tnm = sd => { const c = w.clubs[sd ? o.b : o.a] || {}; return c.short || c.name || ''; };
+  const tnm = sd => { if (o.nat) return C.natName(sd ? o.b : o.a); const c = w.clubs[sd ? o.b : o.a] || {}; return c.short || c.name || ''; };
   const rpl = e => { if (!U.goalReplay || !U.replayData || !ms) return; try { const R0 = U.replayData(d, ms, [tnm(0), tnm(1)], [U.teamColor(o.a, o.nat, 0), U.teamColor(o.b, o.nat, 1)]); const i = e ? R0.goals.findIndex(g => g.m === e.m && g.p === e.p && g.s === e.s) : 0; U.goalReplay({ goals: R0.goals, teams: R0.teams, start: Math.max(0, i), auto: !e, key: o.key || '', nameOf, title: o.title || '골 장면', sub: `${tnm(0)} ${o.ga} - ${o.gb} ${tnm(1)}` }); } catch (err) { console.error(err); } };
   const end = Math.max(93, ...T.map(x => x.m + 1));
   // 내 평점: 골·도움은 그 순간에, 나머지는 뛴 시간만큼 고르게
@@ -643,17 +654,29 @@ U.wcLive = async function (m) {
     const items = [['출전', `${Math.max(0, Math.round(Math.min(t, off0) - on0))}'`], ['골', gl], ['도움', as], ['슈팅', `${shN}${sotN ? ` (${sotN})` : ''}`], ['패스', pa ? `${po}/${pa}` : '0'], ['키패스', q('chances')], ['드리블', `${q('dribOk')}/${q('dribAtt')}`], ['경합 승리', `${q('duelW')}/${q('duelA')}`], gk ? ['선방', q('saves')] : ['태클·차단', q('tackles') + q('ints')], ['터치', q('touches')]];
     return h('div', { class: 'lvmyst' }, ...items.map(([l, v]) => h('div', null, h('span', { class: 'lbl' }, l), h('b', null, String(v)))));
   };
-  const cA = w.clubs[o.a], cB = w.clubs[o.b];
-  const col = [U.teamColor ? U.teamColor(o.a, null, 0) : '#4a8', U.teamColor ? U.teamColor(o.b, null, 1) : '#a48'];
+  const cA = o.nat ? null : w.clubs[o.a], cB = o.nat ? null : w.clubs[o.b];
+  const tmark = (sd, sz) => o.nat ? flag(sd ? o.b : o.a, sz) : crest(sd ? cB : cA, sz);
+  const col = [U.teamColor ? U.teamColor(o.a, o.nat, 0) : '#4a8', U.teamColor ? U.teamColor(o.b, o.nat, 1) : '#a48'];
   { const rgb = x => { const c = String(x || '#888').replace('#', '').padEnd(6, '0'); return [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) || 0); }, dist = (a, b) => { const A = rgb(a), B = rgb(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
     if (dist(col[0], col[1]) < 90) col[1] = dist(col[0], '#5fa8ff') > 90 ? '#5fa8ff' : '#e9ecf1'; }
+  // 2D 경기장 (v46): 평소엔 빠르게 흐르고, 골·결정적 기회·퇴장 직전에 실제 속도로
+  const LF = ms && ms.PL && U.liveField ? U.liveField({ teams: [0, 1].map(sd => ({ col: col[sd], name: tnm(sd), ln: ms.PL[sd].map(p => ({ id: p.id, pos: p.pos, role: p.role, on: p.on, off: p.off })) })), nameOf, key: o.key || '', home: 0 }) : null;
+  const keyEv = [];
+  if (LF) for (const x of T) {
+    if (x.k === 'goal' && x.e) { const e = x.e, sh = shots.find(z => z.s === e.s && z.m === e.m && z.p === e.p && z.res === '골'); keyEv.push({ m: x.m, kind: 'goal', atk: e.s, args: U.sceneArgs({ m: e.m, p: e.p, a: e.a, k: e.k, sh: sh ? { dx: sh.dx, dy: sh.dy, sit: sh.sit, type: sh.type } : null }, e.s), cap: `${U.fmtMin ? U.fmtMin(x.m) : x.m + "'"} ${x.t}` }); }
+    else if (x.k === 'chance' && x.sh) { const z = x.sh; keyEv.push({ m: x.m, kind: 'chance', atk: z.s, args: U.sceneArgs({ m: z.m, p: z.p, a: z.as, k: 'g', res: z.res, sh: { dx: z.dx, dy: z.dy, sit: z.sit, type: z.type } }, z.s), cap: `${U.fmtMin ? U.fmtMin(x.m) : x.m + "'"} ${x.t} · ${x.sub}` }); }
+    else if (x.k === 'r' && x.e) keyEv.push({ m: x.m, kind: 'red', atk: 1 - x.e.s, args: { kind: 'red', foul: x.e.p }, cap: `${U.fmtMin ? U.fmtMin(x.m) : x.m + "'"} ${x.t} 퇴장` });
+  }
+  keyEv.sort((a, b) => a.m - b.m);
+  if (s.wc.slow == null) s.wc.slow = 1;
   return overlay(close => {
     let t = 0, spd = s.wc.speed || 2, playing = true, done = false, timer = null;
-    close.x = () => { clearTimeout(timer); close('go'); }; // X·Esc·뒤로 = '나가기' (진행은 계속)
+    const shut = r => { clearTimeout(timer); if (LF) LF.destroy(); close(r); };
+    close.x = () => shut('go'); // X·Esc·뒤로 = '나가기' (진행은 계속)
     const clock = h('div', { class: 'lvclock' }), sc = h('div', { class: 'lvscore' }), prog = h('div', { class: 'lvprog' }, h('i'));
     const feed = h('div', { class: 'lvfeed' }), stats = h('div', { class: 'lvstats' }), me = h('div', { class: 'lvme' });
     const head = h('div', { class: 'head lvhead' }, h('div', { class: 'lbl' }, o.title || ''),
-      h('div', { class: 'lvrow' }, h('div', { class: 'lvt' }, crest(cA, 36), h('b', null, (cA || {}).name || '')), h('div', { class: 'lvmid' }, sc, clock), h('div', { class: 'lvt r' }, h('b', null, (cB || {}).name || ''), crest(cB, 36))), prog);
+      h('div', { class: 'lvrow' }, h('div', { class: 'lvt' }, tmark(0, 36), h('b', null, o.nat ? C.natName(o.a) : (cA || {}).name || '')), h('div', { class: 'lvmid' }, sc, clock), h('div', { class: 'lvt r' }, h('b', null, o.nat ? C.natName(o.b) : (cB || {}).name || ''), tmark(1, 36))), prog);
     const shown = new Set();
     const ICON = { goal: '⚽', y: '🟨', r: '🟥', sub: '↔', chance: '◎' };
     const paint = () => {
@@ -661,7 +684,7 @@ U.wcLive = async function (m) {
       sc.textContent = `${a} - ${b}`;
       clock.textContent = done ? '경기 종료' : t <= 45 ? `${Math.floor(t)}'` : t < 46 ? '하프타임' : t <= 90 ? `${Math.floor(t)}'` : `90+${Math.floor(t - 90)}'`;
       prog.firstChild.style.width = Math.min(100, t / end * 100) + '%';
-      T.forEach((x, i) => { if (x.m <= t && !shown.has(i)) { shown.add(i); feed.prepend(h('div', { class: 'lvev s' + x.s + (x.me ? ' me' : '') + ' k-' + x.k, style: { '--tc': col[x.s] } }, h('span', { class: 'mn' }, U.fmtMin ? U.fmtMin(x.m) : x.m + "'"), h('span', { class: 'ic' }, ICON[x.k] || '·'), h('span', { class: 'tx' }, h('b', null, x.t), x.sub ? h('small', null, x.sub) : null), h('span', { class: 'tm' }, crest(x.s === 0 ? cA : cB, 18), h('small', null, ((x.s === 0 ? cA : cB) || {}).short || '')), x.k === 'goal' && ms && U.goalReplay ? h('button', { class: 'rpbtn', title: '골 장면 다시보기', onclick: () => { if (playing) { playing = false; clearTimeout(timer); ctl(); } rpl(x.e); } }, '▶') : null)); if (x.k === 'goal') { sc.classList.remove('flash'); void sc.offsetWidth; sc.classList.add('flash'); } } });
+      T.forEach((x, i) => { if (x.m <= t && !shown.has(i)) { shown.add(i); feed.prepend(h('div', { class: 'lvev s' + x.s + (x.me ? ' me' : '') + ' k-' + x.k, style: { '--tc': col[x.s] } }, h('span', { class: 'mn' }, U.fmtMin ? U.fmtMin(x.m) : x.m + "'"), h('span', { class: 'ic' }, ICON[x.k] || '·'), h('span', { class: 'tx' }, h('b', null, x.t), x.sub ? h('small', null, x.sub) : null), h('span', { class: 'tm' }, tmark(x.s, 18), h('small', null, o.nat ? tnm(x.s) : ((x.s === 0 ? cA : cB) || {}).short || '')), x.k === 'goal' && ms && U.goalReplay ? h('button', { class: 'rpbtn', title: '골 장면 다시보기', onclick: () => { if (playing) { playing = false; clearTimeout(timer); ctl(); } rpl(x.e); } }, '▶') : null)); if (x.k === 'goal') { sc.classList.remove('flash'); void sc.offsetWidth; sc.classList.add('flash'); } } });
       const A = stat(t, 0), B = stat(t, 1);
       const row = (l, va, vb, fmt) => { const tot = (va + vb) || 1; return h('div', { class: 'lvst' }, h('span', { class: 'v' }, fmt ? fmt(va) : va), h('div', { class: 'lb' }, h('span', { class: 'lbl' }, l), h('div', { class: 'bars' }, h('i', { style: { width: (va / tot * 100) + '%', background: col[0] } }), h('i', { style: { width: (vb / tot * 100) + '%', background: col[1] } }))), h('span', { class: 'v' }, fmt ? fmt(vb) : vb)); };
       stats.replaceChildren(row('점유율', A.pos, B.pos, v => v + '%'), row('슈팅', A.sh, B.sh), row('유효 슈팅', A.sot, B.sot), row('기대 득점 (xG)', +A.xg.toFixed(2), +B.xg.toFixed(2), v => v.toFixed(2)), row('코너킥', A.corn, B.corn), row('파울', A.foul, B.foul));
@@ -673,7 +696,12 @@ U.wcLive = async function (m) {
     };
     const step = () => {
       if (!playing || done) return;
-      t = Math.min(end, t + .5);
+      if (LF && LF.busy()) { timer = setTimeout(step, 150); return; }
+      const nt = Math.min(end, t + .5);
+      // 다음 주요 장면: 시계를 그 직전에 세우고 실제 속도로 보여 준 뒤 이어 간다
+      const kev = LF && s.wc.slow ? keyEv.find(x => !x.done && x.m > t && x.m <= nt) : null;
+      if (kev) { kev.done = 1; t = Math.max(t, kev.m - .3); paint(); LF.setMin(t); const pr = LF.scene(kev); ctl(); pr.then(() => { if (done) return; t = kev.m; paint(); LF.setMin(t); ctl(); if (playing) timer = setTimeout(step, 500 / spd); }); return; }
+      t = nt; if (LF) LF.setMin(t);
       if (t >= end) { done = true; playing = false; }
       paint(); ctl();
       if (!done) timer = setTimeout(step, t > 45 && t < 46 ? 900 / spd : 260 / spd);
@@ -683,16 +711,18 @@ U.wcLive = async function (m) {
       ctlBox.replaceChildren(...[
         done ? null : h('button', { class: 'btn ghost sm', onclick: () => { playing = !playing; if (playing) step(); ctl(); } }, playing ? '일시정지' : '재생'),
         done ? null : seg(SPD.map(([k, l]) => [k, l]), spd, k => { spd = k; s.wc.speed = k; }),
-        done ? null : h('button', { class: 'btn ghost sm', onclick: () => { clearTimeout(timer); t = end; done = true; playing = false; paint(); ctl(); } }, '결과로'),
+        LF && LF.busy() ? h('button', { class: 'btn sm', onclick: () => LF.skip() }, '장면 건너뛰기') : null,
+        done ? null : h('button', { class: 'btn ghost sm', onclick: () => { clearTimeout(timer); if (LF) LF.skip(); t = end; done = true; playing = false; if (LF) LF.setMin(t); paint(); ctl(); } }, '결과로'),
+        LF && !done ? h('button', { class: 'btn ghost sm' + (s.wc.slow ? ' on' : ''), title: '골·결정적 기회·퇴장 직전에 실제 속도로 보여 줍니다', onclick: () => { s.wc.slow = s.wc.slow ? 0 : 1; ctl(); } }, s.wc.slow ? '주요 장면 정속: 켬' : '주요 장면 정속: 끔') : null,
         h('button', { class: 'btn ghost sm', onclick: () => U.showMatch(o) }, '경기 기록'),
         done && ms && U.goalReplay && T.some(x => x.k === 'goal') ? h('button', { class: 'btn ghost sm', onclick: () => rpl(null) }, '▶ 골 장면') : null,
         h('span', { style: { flex: 1 } }),
-        h('button', { class: 'btn ghost sm', onclick: () => { clearTimeout(timer); close('stop'); } }, '진행 멈추기'),
-        h('button', { class: 'btn sm lvgo', onclick: () => { clearTimeout(timer); close('go'); } }, done ? '계속' : '나가기')].filter(Boolean));
+        h('button', { class: 'btn ghost sm', onclick: () => shut('stop') }, '진행 멈추기'),
+        h('button', { class: 'btn sm lvgo', onclick: () => shut('go') }, done ? '계속' : '나가기')].filter(Boolean));
     };
     paint(); ctl();
     setTimeout(step, 400);
-    return [head, h('div', { class: 'body lvbody' }, me, h('div', { class: 'lvgrid' }, feed, stats), ctlBox)];
+    return [head, h('div', { class: 'body lvbody' }, LF ? h('div', { class: 'lvpitch' }, LF.el) : null, me, h('div', { class: 'lvgrid' }, feed, stats), ctlBox)];
   }, { cls: 'wclive' });
 };
 const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;

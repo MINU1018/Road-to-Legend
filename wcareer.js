@@ -330,7 +330,7 @@ WC.onMatch = function (S, m) {
   let ev = null;
   if (W.q.length) { const q = W.q.shift(); ev = buildWC(S, q.id, m, q) || null; }
   if (!ev && !youth && PAUSE[W.pause] && R() < PAUSE[W.pause]) ev = drawLive(S, m);
-  const watch = !youth && !nt && W.watch !== 'none' && (W.watch === 'all' ? m.played || m.bench || R() < .35 : W.watch === 'mine' ? !!(m.played || m.bench) : isBig(S, m) && (m.played || m.bench || R() < .5));
+  const watch = !youth && m.comp !== 'ntY' && W.watch !== 'none' && (W.watch === 'all' ? m.played || m.bench || R() < .35 : W.watch === 'mine' ? !!(m.played || m.bench) : isBig(S, m) && (m.played || m.bench || R() < .5));
   return { ev, watch };
 };
 // 시즌 끝: 관계가 정리되고, 성장·경험에 따라 성격이 덧붙는다
