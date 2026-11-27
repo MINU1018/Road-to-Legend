@@ -64,14 +64,79 @@ MD.natSide = (w, nat, pools, y) => {
   }
   return { key: nat, sq };
 };
-// 선발·교체 (조금씩 로테이션)
+// ---------- 흐름 (v43, 숨은 값) ----------
+// 선수: w.mo[id] = [e(최근 활약 − 기대, 지수 평균), m(능력치 보정)] — 기대 이상 활약이 이어지면 서서히 오르고, 부진이 이어지면 서서히 내려간다
+// 구단: c.moE(최근 승점 − 기대 승점), c.mo(전력 보정). 기대치는 전력 차이로 정하므로 강팀의 무패보다 약팀의 무패가 더 크게 오른다
+const MOCAP = 4.2, CMOCAP = 2.4;
+MD.moOf = (w, id) => { const v = w && w.mo && w.mo[id]; return v ? v[1] : 0; };
+MD.moStep = (v, perf, f, cap, sc) => { // v = [e, m] (바뀐 값을 돌려준다). 목표치 = cap·tanh(e/sc): 처음엔 빠르게, 높아질수록 더디게 (비선형)
+  const e = v[0] + (perf - v[0]) * .22 * f, T = cap * Math.tanh(e / (sc || .42));
+  return [Math.round(e * 1000) / 1000, Math.round((v[1] + (T - v[1]) * .22 * f) * 100) / 100];
+};
+// 감독이 시즌 동안 선수를 보는 시각 (구단·선수·시즌마다 고정, 평균 0 · 표준편차 약 0.9)
+const PREF = new Map();
+MD.prefOf = (cid, id, y) => { const k = cid + '|' + id + '|' + y; let v = PREF.get(k); if (v == null) { const r = C.seeded('pf|' + k), u = r() || 1e-9, z = r(); v = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * z) * .9; if (PREF.size > 60000) PREF.clear(); PREF.set(k, v); } return v; };
+// 구단의 최근 주전 명단 (리그·대륙 대회 기준): w.lxi[구단] = 'id,id,…'
+// 'id,…|id,…' = 직전 · 그 전 경기 선발. 값: 직전 선발 1, 그 전에만 선발 .6 (한 경기 쉬어도 주전은 주전)
+MD.prevXI = (w, cid) => { const s = w && w.lxi && w.lxi[cid]; if (!s) return null; if (!MD._pxc || MD._pxc.w !== w) MD._pxc = { w, m: new Map() }; let c = MD._pxc.m.get(cid);
+  if (!c || c.s !== s) { const [a, b] = s.split('|'), m = new Map(); if (b) for (const id of b.split(',')) m.set(id, .6); for (const id of a.split(',')) m.set(id, 1); c = { s, m }; MD._pxc.m.set(cid, c); } return c.m; };
+// 2팀 포아송 결과 확률 → [기대 승점(홈), 기대 승점(원정), 기대 결과(−1~1, 홈 기준)]
+function expPts(la, lb) {
+  const pa = [], pb = []; let fa = 1, fb = 1;
+  for (let k = 0; k <= 9; k++) { if (k) { fa *= k; } pa.push(Math.exp(-la) * Math.pow(la, k) / fa); pb.push(Math.exp(-lb) * Math.pow(lb, k) / fa); }
+  let w = 0, d = 0; for (let i = 0; i <= 9; i++) for (let j = 0; j <= 9; j++) { const q = pa[i] * pb[j]; if (i > j) w += q; else if (i === j) d += q; }
+  const l = Math.max(0, 1 - w - d); return [w * 3 + d, l * 3 + d, w - l];
+}
+MD.expPts = expPts;
+// 기대치 = 흐름을 절반만 넣은 전력 (흐름이 저절로 계속 커지거나 끝없이 가라앉지 않도록)
+const baseStr = (w, id) => { const c = w.clubs[id]; return c ? (c.str || 60) + (c.fm || 0) + (c.injd || 0) + (c.tac || 0) + (c.mo || 0) * .5 : 60; };
+function flowAfter(cx, kind, sides, P, ev, ga, gb) {
+  const w = cx.w; if (!w || !w.clubs) return;
+  const ka = sides[0].key, kb = sides[1].key, A = w.clubs[ka], B = w.clubs[kb];
+  const lam = C.lambdas ? C.lambdas(baseStr(w, ka), baseStr(w, kb), kind === 'cont' && cx.neutral ? 0 : 1) : [1.4, 1.2];
+  const [ea, eb, er] = expPts(lam[0], lam[1]);
+  // 구단 흐름
+  const pts = [ga > gb ? 3 : ga === gb ? 1 : 0, gb > ga ? 3 : ga === gb ? 1 : 0], ex = [ea, eb];
+  [A, B].forEach((c, s) => { if (!c || c.lite || !c.sq) return; const e = (c.moE || 0) + ((pts[s] - ex[s]) - (c.moE || 0)) * .15; c.moE = Math.round(e * 1000) / 1000; const T = CMOCAP * Math.tanh(e / .7); c.mo = Math.round(((c.mo || 0) + (T - (c.mo || 0)) * .25) * 100) / 100; });
+  // 선수 흐름: 기대(기본 능력치 기준) 대비 골·도움·결과·실점·카드·그날 컨디션
+  const MO = w.mo = w.mo || {};
+  for (let s = 0; s < 2; s++) {
+    const c = w.clubs[sides[s].key]; if (!c || c.lite) continue;
+    const lamT = lam[s], lamO = lam[1 - s], eRes = s === 0 ? er : -er, res = goals(s, ga, gb);
+    const st = P[s].filter(x => x.id !== 'ME' && (x.off - x.on) > 0), top = Math.max(60, ...st.map(x => x.ovr0 || x.ovr));
+    const wg = st.map(x => gw(x.pos) * Math.exp(((x.ovr0 || x.ovr) - top) * .1)), wa = st.map(x => aw(x.pos) * Math.exp(((x.ovr0 || x.ovr) - top) * .08));
+    // 팀 기대 득점을 뛴 시간 × 득점 가중치로 나눈다 (모두 더하면 팀 기대 득점)
+    const fr = st.map(x => Math.min(90, x.off - x.on) / 90);
+    const sg = wg.reduce((a, b, i) => a + b * fr[i], 0) || 1, sa = wa.reduce((a, b, i) => a + b * fr[i], 0) || 1;
+    st.forEach((x, i) => {
+      if (String(x.id)[0] === '~') return;
+      const mm = Math.min(90, x.off - x.on); if (mm < 15) return;
+      const f = mm / 90, role = C.ROLE[x.pos];
+      const gE = lamT * f * wg[i] / sg, aE = lamT * .7 * f * wa[i] / sa;
+      const cc = { GK: .13, CB: .085, FB: .07, DM: .04, CM: .02 }[role] || 0, cs = { GK: .45, CB: .32, FB: .26, DM: .16, CM: .06 }[role] || 0;
+      const perf = (x.g - gE) * .55 + (x.a - aE) * .35 + (res - eRes) * .22 - ((x.cn || 0) - lamO * f) * cc + (mm >= 60 ? (x.cs ? 1 : 0) - Math.exp(-lamO) : 0) * cs - x.y * .15 - x.r * 1.2 + (x.nz || 0);
+      MO[x.id] = MD.moStep(MO[x.id] || [0, 0], perf, f, MOCAP);
+    });
+  }
+}
+const goals = (s, ga, gb) => { const a = s === 0 ? ga : gb, b = s === 0 ? gb : ga; return a > b ? 1 : a < b ? -1 : 0; };
+// 시즌이 바뀌면 흐름은 대부분 사라진다
+MD.flowReset = w => {
+  if (w.mo) { const o = {}; for (const id in w.mo) { const v = w.mo[id], m = v[1] * .25; if (Math.abs(m) >= .3) o[id] = [Math.round(v[0] * .2 * 1000) / 1000, Math.round(m * 100) / 100]; } w.mo = o; }
+  for (const id in w.clubs) { const c = w.clubs[id]; if (c.mo || c.moE) { c.mo = Math.round((c.mo || 0) * .3 * 100) / 100; c.moE = 0; } }
+  w.lxi = {};
+};
+
+// 선발·교체
+// 구단마다 시즌 주전 명단이 있다: 직전 리그·대륙 대회 선발은 그대로 가려는 경향(관성), 감독의 고정된 선호, 선수 흐름이 섞인다
+// 리그는 거의 고정(피로·부상·부진이면 바뀐다), 대륙 대회는 정예, 국내 컵은 실험적으로 돌린다
 // yb: 유망주·임대 복귀 선수에게 주는 출전 기회 가산 (컵 경기에서는 더 크게, 로테이션도 더 많이)
 // cx: { ban: Set(출전 정지 선수), fat: id → 피로 감점 } — 연전이면 주전을 쉬게 한다 (로테이션)
 function lineup(sq, excludeId, cup, cx, form) {
   // 포메이션 자리(슬롯)에 맞춰 배치 (tactics.js). 선수 객체를 복사해 sp(자리)·sl(슬롯 번호)를 붙인다
   const src = sq.filter(x => x.id !== excludeId);
   const imp = cx && cx.imp != null ? cx.imp : (cup ? .45 : .7);
-  const L = C.pickLineup(src, { form, ban: cx && cx.ban, fat: cx && cx.fat, imp, nb: cx && cx.nb || 9, gkRot: cup && imp < .8 && R() < .72 });
+  const L = C.pickLineup(src, { form, ban: cx && cx.ban, fat: cx && cx.fat, imp, nb: cx && cx.nb || 9, gkRot: cup && imp < .8 && R() < .72, kind: cx && cx.kind, prev: cx && cx.prev, mo: cx && cx.mo, pref: cx && cx.pref });
   const xi = L.xi.map(s => Object.assign({}, s.x, { sp: s.slot, sl: s.i }));
   // 벤치가 규정 인원보다 모자라면 2군·유스에서 콜업
   const nb = cx && cx.nb || 9;
@@ -173,7 +238,10 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   const st9 = 2 + Math.floor(R() * 6); // 이 경기의 후반 추가시간
   // 포메이션: 구단은 감독 성향, 국가대표는 기본 4-3-3/4-2-3-1
   const formOf = sd => { const w = CX ? CX.w : C._w; if (opt && opt.nat) return C.seeded('nf|' + sd.key)() < .5 ? '4-3-3' : '4-2-3-1'; const M = w && C.mgrOf ? C.mgrOf(w, sd.key) : null; if (M) { C.mgrStyle(M, (w.clubs[sd.key] || {}).nat); return C.formFor(w, sd.key, M, sd.sq); } return '4-2-3-1'; };
-  const Ls = sides.map(sd => { const cx = CX ? discCx(CX, sd, kind) : { ban: null, fat: null }; cx.imp = CX && CX.imp != null ? (Array.isArray(CX.imp) ? CX.imp[sides.indexOf(sd)] : CX.imp) : null; cx.nb = MD.benchN(CX ? CX.w : C._w, kind, sd.key); if (CX && CX.w) cx.call = () => MD.callUps(CX.w, sd.key, CX.d); return lineup(sd.sq, null, cup, cx, formOf(sd)); });
+  const W0 = CX ? CX.w : null, flowOn = !!(W0 && W0.clubs && (kind === 'lg' || kind === 'cup' || kind === 'cont'));
+  const Ls = sides.map(sd => { const cx = CX ? discCx(CX, sd, kind) : { ban: null, fat: null }; cx.imp = CX && CX.imp != null ? (Array.isArray(CX.imp) ? CX.imp[sides.indexOf(sd)] : CX.imp) : null; cx.nb = MD.benchN(CX ? CX.w : C._w, kind, sd.key); if (CX && CX.w) cx.call = () => MD.callUps(CX.w, sd.key, CX.d);
+    if (flowOn && W0.clubs[sd.key]) { cx.kind = kind; cx.prev = MD.prevXI(W0, sd.key); cx.mo = id => MD.moOf(W0, id); const yy = W0.year; cx.pref = id => MD.prefOf(sd.key, id, yy); }
+    return lineup(sd.sq, null, cup, cx, formOf(sd)); });
   const avg = Ls.map(L => L.xi.length ? L.xi.reduce((a, x) => a + x.ovr, 0) / L.xi.length : 60);
   for (let s = 0; s < 2; s++) {
     const me = u && u.side === s && u.rec && u.rec.played ? u.rec : null;
@@ -212,9 +280,16 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
       const meObj = { id: 'ME', pos: myPos, ovr: u.ovr || 70 };
       if (me.start) { let k = xi.findIndex(x => x.sp === myPos); if (k < 0) k = xi.findIndex(x => GRP[x.sp || x.pos] === GRP[myPos]); if (k < 0) k = xi.length - 1; meObj.sp = xi[k].sp; meObj.sl = xi[k].sl; xi.splice(k, 1, meObj); }
       else { bench.unshift(meObj); L.bnF = [meObj].concat(L.bnF); }
+    } else if (u && u.side === s && u.rec && u.rec.bench && !(opt && opt.nat)) { // 교체 명단에만 든 경기 (출전 없음)
+      const meObj = { id: 'ME', pos: u.pos || 'CM', ovr: u.ovr || 70 };
+      let bn = (L.bnF || bench).filter(b => b.id !== 'ME');
+      if (bn.length >= L.bench.length) { let k = -1; for (let j = bn.length - 1; j >= 0; j--) if (GRP[bn[j].pos] !== 'G') { k = j; break; } if (k >= 0) bn.splice(k, 1); }
+      L.bnF = [meObj].concat(bn); bench = bench.filter(b => L.bnF.includes(b));
     }
     // 경기에서의 포지션 = 포메이션 자리 (득점 확률·통계도 그 자리 기준). 본래 포지션은 bp
-    for (const x of xi) P[s].push({ id: x.id, pos: x.sp || x.pos, bp: x.pos, sl: x.sl, ovr: x.id === 'ME' ? x.ovr : Math.round(C.posEff ? C.posEff(x, x.sp || x.pos) : x.ovr), on: 0, off: 90, start: 1, g: 0, a: 0, y: 0, r: 0 });
+    // 흐름(숨은 값)은 그날 실제로 낼 수 있는 실력에 더해진다 (ovr0 = 흐름을 뺀 값)
+    const moA = id => flowOn ? MD.moOf(W0, id) : 0;
+    for (const x of xi) { const o0 = x.id === 'ME' ? x.ovr : Math.round(C.posEff ? C.posEff(x, x.sp || x.pos) : x.ovr); P[s].push({ id: x.id, pos: x.sp || x.pos, bp: x.pos, sl: x.sl, ovr: x.id === 'ME' ? o0 : Math.round(o0 + moA(x.id)), ovr0: o0, on: 0, off: 90, start: 1, g: 0, a: 0, y: 0, r: 0 }); }
     Ls[s].xiP = P[s].slice();
     // 교체: 특별한 일이 없으면 5명을 거의 다 쓴다. 경기 중 교체 타이밍은 3번(+하프타임)이라 두세 명씩 묶어서 들어간다
     // 교체 인원 (유럽 4대 리그 실측: 5명 54.9% · 4명 25.1% · 3명 13.0% · 2명 6.4% · 1명 0.6%)
@@ -258,7 +333,7 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
       const same = outs.filter(x => GRP[x.pos] === GRP[sb.pos]);
       const o = same.length ? same[(R() * same.length) | 0] : outs[Math.floor(R() * outs.length)];
       o.off = minute;
-      P[s].push({ id: sb.id, pos: o.pos, bp: sb.pos, sl: o.sl, ovr: sb.id === 'ME' ? sb.ovr : Math.round(C.posEff ? C.posEff(sb, o.pos) : sb.ovr), on: minute, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 });
+      { const o0 = sb.id === 'ME' ? sb.ovr : Math.round(C.posEff ? C.posEff(sb, o.pos) : sb.ovr); P[s].push({ id: sb.id, pos: o.pos, bp: sb.pos, sl: o.sl, ovr: sb.id === 'ME' ? o0 : Math.round(o0 + moA(sb.id)), ovr0: o0, on: minute, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 }); }
     }
     if (me && me.start && me.min < 90) { const mp = P[s].find(x => x.id === 'ME'); mp.off = me.min; const gkMe = GRP[mp.pos] === 'G', b2 = bench.filter(b => !P[s].some(x => x.id === b.id) && (GRP[b.pos] === 'G') === gkMe)[0]; if (b2) P[s].push({ id: b2.id, pos: mp.pos, bp: b2.pos, sl: mp.sl, ovr: b2.ovr, on: me.min, off: 90, start: 0, g: 0, a: 0, y: 0, r: 0 }); }
   }
@@ -317,13 +392,19 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
     const res = goals[s] > goals[1 - s] ? 1 : goals[s] < goals[1 - s] ? -1 : 0, conc = goals[1 - s];
     for (const x of P[s]) {
       const mm = x.off - x.on;
-      x.cs = conc === 0 && mm >= 60 ? 1 : 0;
+      // 뛰는 동안 내준 실점만 (교체로 들어오기 전 실점은 그 선수 책임이 아니다)
+      const cn = ev.filter(e => e[2] === 1 - s && 'gpo'.includes(e[0]) && e[1] >= x.on && e[1] <= (x.off >= 90 ? 120 : x.off)).length;
+      x.cn = cn;
+      x.cs = cn === 0 && conc === 0 && mm >= 60 ? 1 : 0;
       if (x.id === 'ME') { x.rt = +(u.rec.rating || 6.5).toFixed(1); continue; }
-      const role = C.ROLE[x.pos];
-      const csB = conc === 0 && mm >= 60 ? ({ GK: .45, CB: .32, FB: .26, DM: .16, CM: .06 }[role] || 0) : 0;
-      const concP = conc * ({ GK: .13, CB: .085, FB: .07, DM: .04, CM: .02 }[role] || 0);
-      let r = 6.6 + (ROLEB[role] || 0) + (x.ovr - ref) * .033 + res * .22 + x.g * .55 + x.a * .35 + csB - concP - x.y * .15 - x.r * 1.2 + N(0, .3);
-      if (!x.start) r = 6.6 + (r - 6.6) * .6;
+      const role = C.ROLE[x.pos], f = clamp(mm / 90, 0, 1);
+      const csB = x.cs ? ({ GK: .45, CB: .32, FB: .26, DM: .16, CM: .06 }[role] || 0) : 0;
+      const concP = cn * ({ GK: .13, CB: .085, FB: .07, DM: .04, CM: .02 }[role] || 0);
+      const nz = N(0, .3); x.nz = nz;
+      // 평점 기준은 흐름을 뺀 실력(ovr0): 흐름은 골·도움 같은 결과로만 평점에 드러난다
+      let r = 6.6 + (ROLEB[role] || 0) + ((x.ovr0 != null ? x.ovr0 : x.ovr) - ref) * .033 + res * .22 * (x.start ? 1 : Math.max(.35, f)) + x.g * .55 + x.a * .35 + csB - concP - x.y * .15 - x.r * 1.2 + nz;
+      // 짧게 뛴 교체 선수: 실수(카드)가 없으면 6점대 초중반에 모인다
+      if (!x.start) { r = 6.5 + (r - 6.5) * (.45 + .25 * f); if (!x.y && !x.r && !cn) r = Math.max(r, 6.1); }
       x.rt = Math.round(clamp(r, 4.5, 10) * 10) / 10;
     }
   }
@@ -338,6 +419,11 @@ MD.play = function (st, A, B, ga, gb, u, opt) {
   const real = sd => sd.sq.some(x => x.id[0] !== '~') || (u && u.rec);
   // 라인업 기록: 맨 앞 '~포메이션번호', 선수마다 끝에 '@슬롯' (포메이션 자리)
   const lnS = real(A) || real(B) ? P.map((list, s) => (Ls[s].form && C.FORMK ? ['~' + C.FORMK.indexOf(Ls[s].form)] : []).concat(list.map(x => enc(x.id) + B62[Math.round(clamp(x.rt, 4.5, 10) * 10) - 45] + (x.start ? (x.off < 90 ? '-' + x.off : '') : '+' + x.on + (x.off < 90 ? '-' + x.off : '')) + (x.sl != null ? '@' + x.sl.toString(36) : ''))).concat((Ls[s].bnF || []).filter(b => !list.some(x => x.id === b.id)).map(b => '!' + enc(b.id))).join(',')).join('/') : ''; // '!선수' = 교체 명단에 있었지만 안 뛴 선수
+  if (flowOn) try {
+    flowAfter(CX, kind, sides, P, ev, ga, gb);
+    // 주전 명단 기억 (리그·대륙 대회만: 컵 로테이션은 주전 구상을 바꾸지 않는다)
+    if (kind === 'lg' || kind === 'cont') { const LX = W0.lxi = W0.lxi || {}; for (let s = 0; s < 2; s++) { const k = sides[s].key; if (!W0.clubs[k] || W0.clubs[k].lite) continue; LX[k] = P[s].filter(x => x.start && x.id !== 'ME').map(x => x.id).join(',') + (LX[k] ? '|' + LX[k].split('|')[0] : ''); } }
+  } catch (e) { console.error('flow', e); }
   if (CX) try { discAfter(CX, kind, sides, P, ev); recAfter(CX, kind, sides, P, ev, ga, gb, id => { for (const sd of sides) { const x = sd.sq.find(z => z.id === id); if (x) return x.n; } return id; }); if (C.pkHook) C.pkHook(CX, kind, sides, ev, ga, gb); if (C.lrecHook) C.lrecHook(CX, sides, P, ev, ga, gb); if (C.crMatch && CX.w && CX.ck) C.crMatch(CX.w, sides[0].key, sides[1].key, ga, gb, CX.ck); } catch (e) { console.error('rec', e); }
   return { ev: evS, ln: lnS, P };
 };

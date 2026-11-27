@@ -169,7 +169,7 @@ const EVENTS = [
   { id: 'bench', when: ['mid'], cond: S => first(S) && ['backup', 'reserve'].includes(role(S)), w: 2.6, build: S => ({ title: '출전 시간 불만', desc: '벤치에 앉아 있는 시간이 길어지고 있습니다.', icon: 'bench', opts: [
     { label: '감독 면담', desc: '기회를 달라고 요구', out: [O(.45, '신뢰 +18', 1, { trust: 18 }), O(.55, '신뢰 −10', -1, { trust: -10 })] },
     { label: '묵묵히 훈련', desc: '언젠가 기회는 온다', out: [O(.65, '+1 OVR', 1, { ovr: 1 }), O(.35, '의욕 저하 · 사기 −10', -1, { morale: -10 })] },
-    ...(S.p.age <= 25 ? [{ label: '임대 요청', desc: '겨울 이적시장에서 임대', out: [O(1, '겨울 임대 제안', 0, { loanReq: 1 })] }] : [])] }) },
+    ...(S.p.age <= 25 ? [{ label: '임대 요청', desc: '겨울 이적시장에서 임대', out: [O(1, '겨울 임대 제안', 0, { loanReq: 1 })] }] : [])] }), post3: (S, b, oi, o) => { if (oi === 0 && o && o.good > 0 && S.ss) S.ss.chance = Math.max(S.ss.chance || 0, 3); } }, // 면담 성공: 다음 3경기 선발
   { id: 'injrush', when: ['mid'], cond: S => S.ss && S.ss.inj >= 20, w: 6, build: S => ({ title: '부상 복귀 시점', desc: `${S.ss.inj}일 정도 더 쉬어야 한다는 진단입니다. 팀은 당신이 빨리 돌아오길 원합니다.`, icon: 'medic', opts: [
     { label: '조기 복귀', desc: '진통제를 맞고 뛴다', out: [O(.6, '복귀 기간 절반 · 신뢰 +6', 1, { trust: 6 }), O(.4, '재발 · 기간 2배 · 성장세 하락', -1, { pot: -2 })] },
     { label: '완전히 회복', desc: '서두르지 않는다', out: [O(1, '재발 위험 없음 · 신뢰 −3', 0, { trust: -3 })] },
@@ -815,7 +815,9 @@ function renewDecision(S, c) {
   const p = S.p, w = S.w, r = roleAt(S, c), ovr = C.ovrOf(p);
   const pf = perfScore(S);
   const roleB = { key: 1.5, starter: 1, rotation: .3, backup: -.6, reserve: -1.5 }[r] || 0;
-  const sc = pf.score + roleB - Math.max(0, p.age - 31) * .35 + (S.car.trust - 50) / 40 - Math.max(0, p.age - 35) * .4;
+  // v43: 젊은 선수는 지금 역할보다 미래(추정 잠재력·나이)를 본다 → 괜찮게 하는 유망주를 쉽게 내보내지 않는다
+  const pe = C.potEstimate ? C.potEstimate(p).est : ovr, fut = p.age <= 23 ? clamp((pe - c.str) / 4, -.6, 1.6) + (p.age <= 21 ? .55 : .25) + (pf.rating >= 6.85 ? .3 : 0) : 0;
+  const sc = pf.score + roleB + fut - Math.max(0, p.age - 31) * .35 + (S.car.trust - 50) / 40 - Math.max(0, p.age - 35) * .4;
   const prob = clamp(1 / (1 + Math.exp(-(sc * 1.4 - .3))), .03, .98);
   const renew = R() < prob;
   let wage = Math.round(wageFor(c, ovr, w.lg[c.lg].nation) * (pf.score > 2 ? 1.12 : 1) * (p.age >= 33 ? .85 : 1));
@@ -852,8 +854,10 @@ function clubStance(S) {
     const lr = S.hist[S.hist.length - 1];
     const yGood = lr && lr.youth && lr.youth.apps >= 8 && lr.youthRating >= 7.15;
     const pApps = lr && lr.total ? lr.total.apps : 0;
-    const ok = p.age >= 17 && (['key', 'starter', 'rotation'].includes(r) || ovr >= c.str - 13 || pApps >= 6 || (yGood && ovr >= c.str - 19) || (lr && lr.youthRating >= 7.6 && ovr >= c.str - 22));
-    if (p.age >= 19 && !ok) return { release: ovr < c.str - 18, youthEnd: true, role: r };
+    // 프로 계약: 지금 실력뿐 아니라 잠재력(구단 추정)·1군 활약·유스 활약을 함께 본다
+    const pe = C.potEstimate ? C.potEstimate(p).est : ovr, fGood = lr && lr.total && lr.total.rated >= 3 && lr.rating >= 6.85;
+    const ok = p.age >= 17 && (['key', 'starter', 'rotation'].includes(r) || ovr >= c.str - 13 || pApps >= 6 || fGood || (yGood && ovr >= c.str - 20) || (lr && lr.youthRating >= 7.4 && ovr >= c.str - 22) || (pe >= c.str - 2 && ovr >= c.str - 22) || (p.age <= 18 && pe >= c.str - 5 && ovr >= c.str - 24));
+    if (p.age >= 19 && !ok) return { release: ovr < c.str - 18 && pe < c.str - 5, youthEnd: true, role: r };
     return { promote: ok, role: r };
   }
   if (car.contract < w.year) return Object.assign({ expired: true }, renewDecision(S, c));

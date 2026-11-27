@@ -109,6 +109,7 @@ function growCore(S, ctx) {
   else if (ga >= 24 && ga <= 31 && rr < .055 + .1 * stg) { o -= rint(2, 4); ev = 3; }
   else if (ga >= 24 && ga <= 27 && rr < .185) { o += rint(2, 4); pot = Math.max(pot, o + 1); ev = 4; }
   if (ga >= 30 && !ev && R() < .1 * (has(S, 'pro') ? .7 : 1)) { o -= rint(2, 4); ev = 5; }
+  if (ctx.ygb > 0) { o += ctx.ygb * .8; pot = Math.max(pot, o + ctx.ygb * .5); } // 1군에서 기대 이상 활약한 유망주 (경기마다 쌓인 보너스)
   if (ctx.bigInj) { o -= rnd(1, age >= 28 ? 4.5 : 3); pot -= rnd(0, 3); }
   if (o > o0) o = o0 + (o - o0) * C.diff().g;
   // 재능 한계(난이도 분포에서 정해짐)는 넘기 어렵다
@@ -307,7 +308,7 @@ WC.onMatch = function (S, m) {
   WC.mgrCheck(S);
   const r = m.played && m.rating ? m.rating : null;
   // 출전 기록 (1군 경기만): S 선발 · B 교체 · X 명단 제외/결장
-  if (!nt && !youth) { W.sel.push(m.played ? (m.start ? 'S' : 'B') : (m.why === '부상' ? 'I' : 'X')); if (W.sel.length > 12) W.sel.shift(); }
+  if (!nt && !youth) { W.sel.push(m.played ? (m.start ? 'S' : 'B') : m.bench ? 'U' : (m.why === '부상' ? 'I' : 'X')); if (W.sel.length > 12) W.sel.shift(); }
   if (r) {
     const d = r - 6.8;
     if (nt) ntV(S, d * .035);
@@ -328,7 +329,7 @@ WC.onMatch = function (S, m) {
   let ev = null;
   if (W.q.length) { const q = W.q.shift(); ev = buildWC(S, q.id, m, q) || null; }
   if (!ev && !youth && PAUSE[W.pause] && R() < PAUSE[W.pause]) ev = drawLive(S, m);
-  const watch = !youth && !nt && W.watch !== 'none' && (W.watch === 'all' ? m.played || R() < .35 : isBig(S, m) && (m.played || R() < .5));
+  const watch = !youth && !nt && W.watch !== 'none' && (W.watch === 'all' ? m.played || m.bench || R() < .35 : W.watch === 'mine' ? !!(m.played || m.bench) : isBig(S, m) && (m.played || m.bench || R() < .5));
   return { ev, watch };
 };
 // 시즌 끝: 관계가 정리되고, 성장·경험에 따라 성격이 덧붙는다
@@ -369,7 +370,7 @@ const O = (p, chip, good, eff, text, wc) => ({ p, chip, good, eff: eff || {}, te
 const mgrName = S => (rel(S).mgr || {}).n || '감독';
 const clubName = S => (S.w.clubs[S.car.club] || {}).name || '';
 const recentStarts = S => S.wc.sel.slice(-5).filter(x => x === 'S').length;
-const benched = S => { const s = S.wc.sel.slice(-4); return s.length >= 4 && s.filter(x => x === 'X' || x === 'B').length >= 3; };
+const benched = S => { const s = S.wc.sel.slice(-4); return s.length >= 4 && s.filter(x => x === 'X' || x === 'B' || x === 'U').length >= 3; };
 const mv = S => (rel(S).mgr || {}).v || 0;
 // 확률은 숨은 관계 값에서 나온다 (같은 선택도 상황에 따라 결과가 다르다)
 const pr = (base, x) => clamp(base + x, .08, .92);
@@ -379,7 +380,7 @@ const WEV = {
     { label: '훈련장에서 보여 준다', desc: '말없이 증명한다', out: [O(pr(.6, M.fit * .3), '묵묵한 태도가 눈에 띄었다', 1, {}, null, { mgr: .1, lean: { quiet: .3, pro: .3 } }), O(1, '아직 존재감이 없다', 0, {}, null, { mgr: 0 })] },
     { label: '미래를 고민한다고 털어놓는다', desc: '이적도 생각하고 있다고 솔직하게', out: [O(1, '감독이 이적을 막지 않겠다고 했다', 0, { transferReq: 1 }, '다음 이적시장에서 제안이 늘어날 수 있습니다.', { mgr: -.15, fans: -.05, lean: { amb: .5 } })] }] }; } },
   bench: { w: S => benched(S) && S.car.status !== 'youth' ? 3 : 0, build: S => ({ title: '감독실 문을 두드릴까', desc: `최근 경기에서 거의 기회를 받지 못했습니다. ${mgrName(S)} 감독과 이야기할 수 있습니다.`, icon: 'brief', opts: [
-    { label: '출전 시간을 요구한다', desc: '분명하게 말한다', out: [O(pr(.42, mv(S) * .45 + (S.p.rep - 40) * .004), '다음 몇 경기 기회를 주겠다는 답', 1, {}, '감독이 기회를 약속했습니다. 증명할 차례입니다.', { mgr: .05, rb: 1.2, lean: { amb: .4 } }), O(1, '감독이 불쾌해했다', -1, {}, '"자리는 훈련장에서 따는 겁니다."', { mgr: -.16, lean: { hot: .5 } })] },
+    { label: '출전 시간을 요구한다', desc: '분명하게 말한다', out: [O(pr(.42, mv(S) * .45 + (S.p.rep - 40) * .004), '다음 몇 경기 기회를 주겠다는 답', 1, {}, '감독이 기회를 약속했습니다. 증명할 차례입니다.', { mgr: .05, rb: 1.2, chance: 3, lean: { amb: .4 } }), O(1, '감독이 불쾌해했다', -1, {}, '"자리는 훈련장에서 따는 겁니다."', { mgr: -.16, lean: { hot: .5 } })] },
     { label: '훈련으로 증명한다', desc: '불평 없이 기다린다', out: [O(pr(.5, mv(S) * .3), '코치진이 태도를 칭찬했다', 1, {}, null, { mgr: .1, lean: { pro: .5, humble: .3 } }), O(1, '달라진 건 없다', 0, { morale: -5 }, null, { mgr: .02 })] },
     { label: '임대를 원한다고 말한다', desc: S.p.age <= 23 ? '뛸 수 있는 곳으로' : '출전 우선', out: [O(1, '구단이 임대처를 알아보기로 했다', 0, { loanReq: 1, transferReq: S.p.age > 23 ? 1 : 0 }, null, { mgr: -.04 })] }] }) },
   praise: { w: (S, m) => m && m.played && m.rating >= 7.9 ? 2.5 : 0, build: (S, m) => ({ title: '감독의 공개 칭찬', desc: `${m.oppName}전 활약 뒤 ${mgrName(S)} 감독이 기자회견에서 당신 이름을 먼저 꺼냈습니다.`, icon: 'star', opts: [
@@ -393,7 +394,7 @@ const WEV = {
     { label: '간다', desc: '팀 밖에서도 가까워진다', out: [O(.85, `${n}과 가까워졌다`, 1, { morale: 5 }, null, { mate: { k: 'friend', v: .35 }, lean: { leader: .2 } }), O(1, '어색한 자리였다', 0, {}, null, { mate: { k: 'friend', v: .08 } })] },
     { label: '정중히 사양한다', desc: '쉬고 싶다', out: [O(1, '다음에 보자고 했다', 0, {}, null, { mate: { k: 'friend', v: .02 }, lean: { quiet: .3 } })] }] }; } },
   rivalry: { w: S => S.car.status === 'first' && mateCands(S, 'rival').length ? (has(S, 'comp') ? 1.6 : 1) : 0, build: S => { const e = mateCands(S, 'rival')[0]; const n = C.pName(S.w, e); return { title: `주전 경쟁: ${n}`, desc: `같은 자리의 ${n}(${e[3]}세)과 훈련장에서 신경전이 붙었습니다.`, icon: 'feud', e, opts: [
-    { label: '정면으로 맞선다', desc: '훈련에서 밀리지 않는다', out: [O(pr(.5, has(S, 'comp') ? .12 : 0), '훈련장에서 우위를 보였다', 1, {}, null, { mgr: .1, rb: .8, mate: { k: 'rival', v: -.15 }, lean: { comp: .5 } }), O(1, '오히려 밀렸다', -1, {}, null, { mgr: -.06, rb: -.6, mate: { k: 'rival', v: -.1 } })] },
+    { label: '정면으로 맞선다', desc: '훈련에서 밀리지 않는다', out: [O(pr(.5, has(S, 'comp') ? .12 : 0), '훈련장에서 우위를 보였다', 1, {}, null, { mgr: .1, rb: .8, chance: 1, mate: { k: 'rival', v: -.15 }, lean: { comp: .5 } }), O(1, '오히려 밀렸다', -1, {}, null, { mgr: -.06, rb: -.6, mate: { k: 'rival', v: -.1 } })] },
     { label: '먼저 손을 내민다', desc: '경쟁은 경기장에서만', out: [O(.7, '선의의 경쟁자가 됐다', 1, {}, null, { mate: { k: 'rival', v: .35 }, lean: { humble: .4, leader: .3 } }), O(1, '받아 주지 않았다', 0, {}, null, { mate: { k: 'rival', v: -.05 } })] },
     { label: '신경 쓰지 않는다', desc: '내 할 일만', out: [O(1, '아무 일도 없었다', 0, {}, null, { mate: { k: 'rival', v: 0 }, lean: { quiet: .3 } })] }] }; } },
   mentor: { w: S => S.p.age <= 23 && mateCands(S, 'mentor').length ? 1.2 : 0, build: S => { const e = mateCands(S, 'mentor')[0]; const n = C.pName(S.w, e); return { title: `베테랑 ${n}의 제안`, desc: `${e[3]}세 베테랑 ${n}이 훈련 뒤 따로 남아 보자고 합니다.`, icon: 'mentor', e, opts: [
@@ -445,6 +446,7 @@ function applyWC(S, b, x) {
   if (!x) return;
   if (x.mgr) mgrV(S, x.mgr * (x.mgr < 0 && has(S, 'hot') ? 1.2 : 1));
   if (x.rb) { S.wc.rb = (S.wc.rb || 0) + x.rb; if (S.ss) C.updateRole(S); }
+  if (x.chance && S.ss) S.ss.chance = Math.max(S.ss.chance || 0, x.chance); // 감독이 약속한 기회: 다음 n경기 선발
   if (x.fans) fansV(S, x.fans);
   if (x.nt) ntV(S, x.nt);
   if (x.ntMet) S.wc.ntMet = 1;
@@ -699,8 +701,8 @@ function joinTerms(S, o) {
 WC.joinTerms = joinTerms;
 // 약속받은 역할과 실제 출전이 다르면 (리그 10경기쯤) 한 번 문제가 된다
 WEV.promise = { w: 0, build: S => { const P = S.wc.promise; return { title: '약속과 다른 현실', desc: `입단할 때 ${C.ROLELABEL[P.role]} 역할을 약속받았지만, 최근 선발 기회가 많지 않습니다.`, icon: 'brief', opts: [
-  { label: '감독에게 약속을 상기시킨다', desc: '단호하게', out: [O(pr(.45, mv(S) * .4), '다음 경기부터 기회를 주겠다는 답', 1, {}, null, { rb: 1.4, mgr: -.02 }), O(1, '"자리는 실력으로"라는 답', -1, {}, null, { mgr: -.18, lean: { hot: .4 } })] },
-  { label: '구단 수뇌부에 이야기한다', desc: '감독을 건너뛴다', out: [O(.5, '구단이 감독과 이야기했다', 0, {}, null, { rb: 1, mgr: -.12 }), O(1, '감독이 불쾌해했다', -1, {}, null, { mgr: -.25 })] },
+  { label: '감독에게 약속을 상기시킨다', desc: '단호하게', out: [O(pr(.45, mv(S) * .4), '다음 경기부터 기회를 주겠다는 답', 1, {}, null, { rb: 1.4, mgr: -.02, chance: 4 }), O(1, '"자리는 실력으로"라는 답', -1, {}, null, { mgr: -.18, lean: { hot: .4 } })] },
+  { label: '구단 수뇌부에 이야기한다', desc: '감독을 건너뛴다', out: [O(.5, '구단이 감독과 이야기했다', 0, {}, null, { rb: 1, mgr: -.12, chance: 2 }), O(1, '감독이 불쾌해했다', -1, {}, null, { mgr: -.25 })] },
   { label: '참고 기다린다', desc: '증명할 기회를 노린다', out: [O(1, '말없이 기다리기로 했다', 0, {}, null, { mgr: .04, lean: { humble: .4, pro: .3 } })] }] }; } };
 // ---------- 지원 스태프·생활 (주급으로 쓰는 돈) ----------
 // 시즌마다 비용이 나간다. 효과는 숫자로 보이지 않고 확률로만 작용한다

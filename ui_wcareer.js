@@ -10,7 +10,7 @@ const fmtD = d => C.fmtDateY(d);
 
 // ================= 시작 화면 =================
 const PAUSEL = [['often', '자주'], ['normal', '보통'], ['rare', '드물게'], ['off', '끔']];
-const WATCHL = [['all', '모든 경기'], ['big', '주요 경기'], ['none', '끔']];
+const WATCHL = [['all', '모든 경기'], ['mine', '출전 경기'], ['big', '주요 경기'], ['none', '끔']]; // 출전 경기 = 교체 명단에 든 경기 (벤치 미출전 포함)
 U.PAUSEL = PAUSEL; U.WATCHL = WATCHL;
 function seg(list, cur, on) {
   const box = h('div', { class: 'seg' });
@@ -133,7 +133,7 @@ function runSec(d) {
 }
 
 // ================= 홈 =================
-const DOTS = { S: ['선발', 'S'], B: ['교체', 'B'], X: ['결장', 'X'], I: ['부상', 'I'] };
+const DOTS = { S: ['선발', 'S'], B: ['교체 출전', 'B'], U: ['벤치 (미출전)', 'U'], X: ['명단 제외', 'X'], I: ['부상', 'I'] };
 function selDots(sel) { return h('div', { class: 'wcdots' }, ...sel.slice(-10).map(x => h('i', { class: 'd' + x, title: DOTS[x][0] }, DOTS[x][1]))); }
 function sixBars(p) {
   return h('div', { class: 'wcsix' }, ...WC().six(p).map(([k, l, v]) => h('div', null, h('span', { class: 'lbl' }, l), h('div', { class: 'bar' }, h('i', { style: { width: v + '%', background: U.barCol(v) } })), h('b', { class: 'num' }, v))));
@@ -420,11 +420,11 @@ U.wcOpenMine = openMine;
 function myPanel() {
   const s = S(); if (!s.ss) return null;
   const v = U.st.wcmine = U.st.wcmine || { all: false };
-  const ms = s.ss.matches.slice().reverse(), shown = ms.filter(m => v.all || m.played);
+  const ms = s.ss.matches.slice().reverse(), shown = ms.filter(m => v.all || m.played || m.bench);
   const pro = ms.filter(m => m.played && !['youth'].includes(m.comp)), t = C.totalAgg(pro);
-  const starts = pro.filter(m => m.start).length, unused = ms.filter(m => !m.played && m.comp !== 'youth').length;
-  return h('div', { class: 'panel' }, h('div', { class: 'ph', style: { padding: '12px 16px' } }, h('b', null, '이번 시즌 내 경기'), h('div', { style: { display: 'flex', gap: '6px' } }, seg([[false, '출전만'], [true, '전체']], v.all, k => { v.all = k; U.stay(); }), h('button', { class: 'btn ghost sm', onclick: () => U.setTab('mx') }, '전체 기록'))),
-    h('div', { class: 'wcmsum' }, ...[['출전', `${pro.length}`], ['선발', `${starts}`], ['미출전', `${unused}`], ['골', t.goals], ['도움', t.assists], ['평균 평점', t.rated ? C.avgRating(t).toFixed(2) : '-']].map(([l, x]) => h('div', null, h('span', { class: 'lbl' }, l), h('b', null, x)))),
+  const starts = pro.filter(m => m.start).length, bench = ms.filter(m => !m.played && m.bench).length, unused = ms.filter(m => !m.played && !m.bench && m.comp !== 'youth').length;
+  return h('div', { class: 'panel' }, h('div', { class: 'ph', style: { padding: '12px 16px' } }, h('b', null, '이번 시즌 내 경기'), h('div', { style: { display: 'flex', gap: '6px' } }, seg([[false, '명단 포함'], [true, '전체']], v.all, k => { v.all = k; U.stay(); }), h('button', { class: 'btn ghost sm', onclick: () => U.setTab('mx') }, '전체 기록'))),
+    h('div', { class: 'wcmsum' }, ...[['출전', `${pro.length}`], ['선발', `${starts}`], ['벤치', `${bench}`], ['명단 제외', `${unused}`], ['골', t.goals], ['도움', t.assists], ['평균 평점', t.rated ? C.avgRating(t).toFixed(2) : '-']].map(([l, x]) => h('div', null, h('span', { class: 'lbl' }, l), h('b', null, x)))),
     shown.length ? h('div', { class: 'wcml' }, ...shown.slice(0, 12).map(m => U.wcMyRow(m, openMine(m)))) : h('div', { class: 'mute', style: { padding: '4px 16px 14px', fontSize: '13px' } }, ms.length ? '아직 출전한 경기가 없습니다.' : '아직 치른 경기가 없습니다.'),
     shown.length > 12 ? h('div', { class: 'mute', style: { padding: '0 16px 12px', fontSize: '12px' } }, `최근 12경기 · 전체 ${shown.length}경기는 '전체 기록'에서`) : null);
 }
@@ -586,7 +586,7 @@ U.wcLive = async function (m) {
   let ms = null; try { ms = U.matchMs(o); } catch (e) { console.error(e); }
   const d = o.d, side = o.a === s.ss.club ? 0 : 1;
   const nameOf = id => C.MD && C.MD.nameOf ? C.MD.nameOf(id, s) : String(id);
-  const meIn = d.ln ? (d.ln[side] || []).find(x => x.id === 'ME') : null;
+  const meIn = d.ln ? (d.ln[side] || []).find(x => x.id === 'ME') : null, meBench = !meIn && d.bn && (d.bn[side] || []).includes('ME');
   // 타임라인
   const T = [];
   for (const e of d.ev || []) {
@@ -614,6 +614,17 @@ U.wcLive = async function (m) {
     return { sh: sh.length, sot: sh.filter(x => x.res === '골' || x.res === '선방').length, xg: sh.reduce((a, x) => a + (x.xg || 0), 0), corn: part('corn'), foul: part('foul'), pos, half };
   };
   const score = t => { let a = 0, b = 0; for (const x of T) if (x.k === 'goal' && x.m <= t) { if (x.s === 0) a++; else b++; } return [a, b]; };
+  // 내 활약 수치 (실시간): 골·도움·슈팅은 그 순간에, 나머지(패스·드리블·경합·수비)는 뛴 시간에 비례해 쌓인다
+  const ST = m.played && m.st ? m.st : null, myShots = shots.filter(x => x.p === 'ME');
+  const myLine = t => {
+    if (!meIn || !ST || t < on0) return null;
+    const fr = clamp01((Math.min(t, off0) - on0) / Math.max(1, off0 - on0)), q = k => Math.round((ST[k] || 0) * fr);
+    const gl = T.filter(x => x.me && x.k === 'goal' && x.m <= t && x.t.startsWith(s.p.name)).length, as = T.filter(x => x.me && x.k === 'goal' && x.m <= t && !x.t.startsWith(s.p.name)).length;
+    const shN = Math.max(myShots.filter(x => x.m <= t).length, gl), sotN = Math.max(myShots.filter(x => x.m <= t && (x.res === '골' || x.res === '선방')).length, gl);
+    const pa = q('passAtt'), po = Math.min(pa, q('passOk')), gk = s.p.pos === 'GK';
+    const items = [['출전', `${Math.max(0, Math.round(Math.min(t, off0) - on0))}'`], ['골', gl], ['도움', as], ['슈팅', `${shN}${sotN ? ` (${sotN})` : ''}`], ['패스', pa ? `${po}/${pa}` : '0'], ['키패스', q('chances')], ['드리블', `${q('dribOk')}/${q('dribAtt')}`], ['경합 승리', `${q('duelW')}/${q('duelA')}`], gk ? ['선방', q('saves')] : ['태클·차단', q('tackles') + q('ints')], ['터치', q('touches')]];
+    return h('div', { class: 'lvmyst' }, ...items.map(([l, v]) => h('div', null, h('span', { class: 'lbl' }, l), h('b', null, String(v)))));
+  };
   const cA = w.clubs[o.a], cB = w.clubs[o.b];
   const col = [U.teamColor ? U.teamColor(o.a, null, 0) : '#4a8', U.teamColor ? U.teamColor(o.b, null, 1) : '#a48'];
   { const rgb = x => { const c = String(x || '#888').replace('#', '').padEnd(6, '0'); return [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) || 0); }, dist = (a, b) => { const A = rgb(a), B = rgb(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
@@ -637,7 +648,9 @@ U.wcLive = async function (m) {
       stats.replaceChildren(row('점유율', A.pos, B.pos, v => v + '%'), row('슈팅', A.sh, B.sh), row('유효 슈팅', A.sot, B.sot), row('기대 득점 (xG)', +A.xg.toFixed(2), +B.xg.toFixed(2), v => v.toFixed(2)), row('코너킥', A.corn, B.corn), row('파울', A.foul, B.foul));
       const r = rAt(t);
       const on = meIn && t >= on0 && t <= off0;
-      me.replaceChildren(...[h('span', { class: 'lbl' }, '내 선수'), h('b', null, s.p.name), h('span', { class: 'mute' }, !meIn ? (m.why || '출전하지 않음') : t < on0 ? `벤치 · ${on0}분 투입 예정` : on ? '출전 중' : `${Math.min(off0, 90)}분까지 출전`), r ? (U.rt1 ? U.rt1(Math.round(r * 10) / 10) : h('b', null, r.toFixed(1))) : null].filter(Boolean));
+      // 상태: 벤치에 있는 동안은 투입 여부를 미리 알리지 않는다
+      const stTxt = !meIn ? (meBench ? (done ? '벤치 · 출전하지 않음' : '벤치 대기') : (m.why || '명단 제외')) : t < on0 ? '벤치 대기' : on ? (meIn.start ? '선발 출전 중' : `${on0}분 교체 투입 · 출전 중`) : `${meIn.start ? '선발' : on0 + '분 투입'} · ${Math.min(off0, 90)}분까지`;
+      me.replaceChildren(h('div', { class: 'lvmeh' }, ...[h('span', { class: 'lbl' }, '내 선수'), h('b', null, s.p.name), h('span', { class: 'mute' }, stTxt), r ? (U.rt1 ? U.rt1(Math.round(r * 10) / 10) : h('b', null, r.toFixed(1))) : null].filter(Boolean)), ...[myLine(t)].filter(Boolean));
     };
     const step = () => {
       if (!playing || done) return;

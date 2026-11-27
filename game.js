@@ -109,6 +109,7 @@ GM.decideWindow = function (S, d) {
     else { car.parent = null; car.status = 'first'; car.contract = w.year + o.years - 1; car.wage = o.wage; if (o.fee) { S.feeLog = (S.feeLog || []).concat({ y: w.year, from: prev, to: clubId, fee: o.fee }); } }
     car.club = clubId; car.years = 0; car.joined = w.year;
     car.trust = { key: 62, starter: 56, rotation: 50, backup: 45, reserve: 42 }[o.role] || 50;
+    car.prom = ['key', 'starter', 'rotation'].includes(o.role) ? { club: clubId, role: o.role, n: 0, y: w.year } : null; // 제안서의 역할: 입단 뒤 한동안 실제로 보장 (부진하면 끝)
     S.clubsJoined.push({ club: clubId, y: w.year, type, fee: o.fee || 0 });
     C.news(S, type === 'loan' ? `${S.p.name}, ${C.jo(c.name, '으로', '로')} 임대 이적` : o.fee ? `${S.p.name}, 이적료 ${C.fmtEUR(o.fee)}에 ${c.name} 입단` : `${S.p.name}, 자유 계약으로 ${c.name} 입단`, 'transfer', true);
   };
@@ -183,6 +184,8 @@ GM.winterMove = function (S, i) {
   else { car.parent = null; car.status = 'first'; car.contract = w.year + o.years - 1; car.wage = o.wage; S.feeLog = (S.feeLog || []).concat({ y: w.year, from: car.club, to: o.club, fee: o.fee }); }
   C.materialize(w, w.clubs[o.club]);
   car.club = o.club; car.years = 0; car.trust = { key: 62, starter: 56, rotation: 50, backup: 45, reserve: 42 }[o.role] || 50;
+  car.prom = ['key', 'starter', 'rotation'].includes(o.role) ? { club: o.club, role: o.role, n: 0, y: w.year } : null;
+  ss.xs = null; ss.cu = 0; ss.keep = 0; ss.chance = 0;
   S.clubsJoined.push({ club: o.club, y: w.year, type: o.type, fee: o.fee || 0, winter: true });
   const lg = C.leagueOf(S);
   ss.club = o.club; ss.lgId = lg ? lg.id : null; ss.tables = {}; if (lg && w.cal.lg[lg.id]) ss.tables[lg.id] = w.cal.lg[lg.id].tb;
@@ -219,7 +222,7 @@ GM.endSeason = function (S) {
   if (bdOk && ss.ballon.rank && ss.ballon.rank <= 10) C.news(S, `발롱도르 순위 ${ss.ballon.rank}위`, 'award', ss.ballon.rank <= 3);
   // 성장
   const o0 = C.ovrOf(p), effBefore = C.effOvr(p);
-  const g = C.seasonGrowth(p, { minShare: Math.max(ss.minShare, yShare * .55), rating: ss.total.rated >= 5 ? rating : ss.youthTot.rated >= 5 ? yRating - .25 : 6.6, focus: car.focus, intensity: car.intensity, clubLv: w.clubs[ss.club].str });
+  const g = C.seasonGrowth(p, { minShare: Math.max(ss.minShare, yShare * .55), rating: ss.total.rated >= 5 ? rating : ss.youthTot.rated >= 5 ? yRating - .25 : 6.6, focus: car.focus, intensity: car.intensity, clubLv: w.clubs[ss.club].str, ygb: ss.ygb || 0 });
   // 일시 보정 감소
   p.mods = p.mods.filter(m => --m.seasons > 0);
   ss.growth = { before: g.before, after: { ...p.a }, o0, o1: C.ovrOf(p) };

@@ -72,7 +72,13 @@ C.pickLineup = function (sq, opt) {
   const top = src.filter(x => norm(x.pos) !== 'GK').sort((a, b) => b.ovr - a.ovr).slice(0, 6).map(x => x.id);
   // 골키퍼는 흔들림 없이 주전 고정 (피로 영향도 작다). 컵 대회 로테이션(gkRot)이면 세컨드 키퍼가 나온다
   const gks = src.filter(x => norm(x.pos) === 'GK').sort((a, b) => b.ovr - a.ovr), gk2 = opt.gkRot && gks[1] && gks[1].ovr >= gks[0].ovr - 14 ? gks[1].id : null;
-  const base = new Map(src.map(x => [x.id, norm(x.pos) === 'GK' ? (x.id === gk2 ? 30 : 0) - (opt.fat ? opt.fat(x) * .3 : 0) : (opt.noise == null ? N(0, 1.2 + rot * 3.2) : opt.noise) - (opt.fat ? opt.fat(x) * (.6 + rot * .9) : 0) + (x.yb || 0) * rot * 2.2 - (top.includes(x.id) && R() < rot * rot * .7 ? 7 : 0)]));
+  // v43: 대회별 선발 성향. lg = 시즌 주전 위주(작은 흔들림 + 직전 선발 관성), cont = 정예, cup = 실험·로테이션. kind 없음(과거 시즌 생성 등) = 예전 방식
+  const K = opt.kind, prev = opt.prev, moF = opt.mo, prefF = opt.pref;
+  const sd = K === 'lg' ? .45 : K === 'cont' ? .35 : K === 'cup' ? 1 + rot * 2.6 : 1.2 + rot * 3.2;
+  const inc = K === 'lg' ? 1.7 : K === 'cont' ? 1.9 : K === 'cup' ? .5 : 0; // 직전 선발 관성
+  const restP = K === 'lg' ? rot * rot * .35 : K === 'cont' ? rot * rot * .15 : K === 'cup' ? rot * rot * 1.1 : rot * rot * .7;
+  const extra = x => (K ? (prefF ? prefF(x.id) : 0) + (moF ? moF(x.id) * .75 : 0) + (prev ? (prev.get(x.id) || 0) * inc : 0) : 0);
+  const base = new Map(src.map(x => [x.id, norm(x.pos) === 'GK' ? (x.id === gk2 ? 30 : 0) - (opt.fat ? opt.fat(x) * .3 : 0) + (K && prev ? (prev.get(x.id) || 0) * 2.5 : 0) : (opt.noise == null ? N(0, sd) : opt.noise) + extra(x) - (opt.fat ? opt.fat(x) * (.6 + rot * .9) : 0) + (x.yb || 0) * rot * 2.2 - (top.includes(x.id) && R() < restP ? 7 : 0)]));
   const used = new Set(), xi = new Array(S.length);
   const order = S.map((s, i) => i).sort((a, b) => SLOTORD.indexOf(S[a][0]) - SLOTORD.indexOf(S[b][0]));
   for (const i of order) {

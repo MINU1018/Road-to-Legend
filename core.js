@@ -247,6 +247,8 @@ function seasonGrowth(p, ctx) {
   if (o0 + g > h.pot + 1.5) g = Math.max(0, h.pot + 1.5 - o0) + N(0, .4);
   if (g > 0) g *= C.diff().g;
   g = Math.min(g, af * 1.25 + .8); // 한 시즌 성장 상한 (16~18세 약 +7)
+  // v43: 1군에서 능력치 대비 기대 이상 활약한 유망주 (경기마다 쌓인 보너스, 최대 +4)
+  if (ctx.ygb > 0) { g += ctx.ygb * .8; h.pot = Math.max(h.pot, o0 + g + ctx.ygb * .5); }
   const foc = focusMap(p, ctx.focus);
   applyOvrDelta(p, g, foc);
   // 집중 훈련 보너스 (나이 들수록 효과 감소)

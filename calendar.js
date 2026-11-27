@@ -108,7 +108,7 @@ C.calStore = curStore; C.calArch = curArch;
 const resAdd = (w, id, v) => { const r = w.cal.resAdj || (w.cal.resAdj = {}); r[id] = (r[id] || 0) + v; };
 // 내 선수가 뛰는 중인가 (커리어 모드, 시즌 진행 단계)
 function meClub(S) { const ss = S.ss; return S.mode !== 'world' && ss && ss.on && ss.club ? ss.club : null; }
-function uArg(S, side, rec) { return rec && rec.played ? { side, rec, pos: S.p.pos, ovr: C.effOvr(S.p) } : null; }
+function uArg(S, side, rec) { return rec && (rec.played || rec.bench) ? { side, rec, pos: S.p.pos, ovr: C.effOvr(S.p) } : null; } // 벤치(미출전)도 교체 명단에 남긴다
 // 선수별 대회 기록 (P.c): "시즌|대회|경기|골|도움|평점×100|출전 분|클린시트;"
 function writeC(w, key, agg) {
   const yOff = w.year - 2000;
@@ -1221,7 +1221,7 @@ function faTick(S, d) {
 C.faTick = faTick;
 // 연속 우승 구단은 동기·분위기가 조금 떨어지기 쉽다 (2연패 이상부터)
 const titleStreak = (w, c) => { const H = c.lg && w.hist.lg[c.lg]; if (!H) return 0; let n = 0; for (let i = H.length - 1; i >= 0 && H[i].c === c.id; i--) n++; return n; };
-C.newSeasonForm = w => { for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite || !c.sq) continue; const st = titleStreak(w, c); c.fm = clamp(N(st >= 5 ? -1.5 : st >= 3 ? -1.1 : st === 2 ? -.6 : st === 1 ? -.2 : 0, .9), -2.6, 2.6); c.injd = 0; for (const e of c.sq) if (e[14]) { c.injd = Math.min(0, C.xiStrength(c.sq.filter(x => !x[14])) - c.str); break; } } };
+C.newSeasonForm = w => { if (C.MD && C.MD.flowReset) C.MD.flowReset(w); for (const id in w.clubs) { const c = w.clubs[id]; if (c.lite || !c.sq) continue; const st = titleStreak(w, c); c.fm = clamp(N(st >= 5 ? -1.5 : st >= 3 ? -1.1 : st === 2 ? -.6 : st === 1 ? -.2 : 0, .9), -2.6, 2.6); c.injd = 0; for (const e of c.sq) if (e[14]) { c.injd = Math.min(0, C.xiStrength(c.sq.filter(x => !x[14])) - c.str); break; } } };
 function dayEvents(S, d) {
   const w = S.w, [y, m, dd] = ymd(d);
   if (w.cal.started && C.toDate(d).getUTCDay() === 1) { injTick(S, d); faTick(S, d); }

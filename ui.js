@@ -1206,7 +1206,7 @@ async function runTo(target) {
   const tick = h('div', { class: 'ticker' });
   const txTk = h('div', { class: 'txtick', style: { display: 'none' } });
   // 월드 커리어: 내가 뛴 경기는 따로 (출전 시간·평점이 바로 보이게), 팀 전체 결과는 그 아래
-  const mineQ = [], mine = S.wc && U.wcMyRow ? h('div', { class: 'wcml live' }) : null, mineH = mine ? h('div', { class: 'lbl', style: { display: 'none' } }, '내가 뛴 경기') : null;
+  const mineQ = [], mine = S.wc && U.wcMyRow ? h('div', { class: 'wcml live' }) : null, mineH = mine ? h('div', { class: 'lbl', style: { display: 'none' } }, '내 경기 (교체 명단 포함)') : null;
   live.append(dayTxt, prog, ...(pro ? [pro] : []), yth, txTk, stage, ...(mine ? [mineH, mine, h('div', { class: 'lbl' }, '팀 경기 결과 (미출전 포함)')] : []), tick);
   const ss = S.ss, w = S.w, d0 = w.cal.d, span = Math.max(1, target - d0);
   const total = C.userFixtures(S).filter(f => !f.done && f.d <= target).length;
@@ -1232,7 +1232,7 @@ async function runTo(target) {
     match: async m => {
       if (S.newsQ && S.newsQ.length) { const big = S.newsQ.filter(x => x.big && x.k !== 'transfer'); S.newsQ = []; for (const x of big) { toast(x.t); if (x.k === 'mile' || x.k === 'hat') confetti(50); } }
       n++; tick.prepend(tickRow(m)); upd();
-      if (mine && m.played) mineQ.push(m); // 골·도움 시간은 경기 기록이 저장된 뒤(그날 진행 끝)에 붙인다
+      if (mine && (m.played || m.bench)) mineQ.push(m); // 골·도움 시간은 경기 기록이 저장된 뒤(그날 진행 끝)에 붙인다
       // 월드 커리어: 관계 반영, 중계할 경기·대화 사건은 그날 진행이 끝난 뒤 (경기 기록이 저장된 다음) 보여 준다
       if (S.wc && U.wcAfterMatch) { U.wcAfterMatch(m); if (U.wcPending()) return; }
       const sp = normSpeed(st.speed);

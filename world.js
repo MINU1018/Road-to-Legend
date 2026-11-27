@@ -703,7 +703,8 @@ function quickMatch(sA, sB, home) { const [a, b] = lambdas(sA, sB, home); return
 function koWinner(sA, sB, ga, gb) { if (ga !== gb) return ga > gb ? 0 : 1; return R() < 1 / (1 + Math.exp(-(sA - sB) * .05)) ? 0 : 1; }
 C.quickMatch = quickMatch; C.koWinner = koWinner;
 // 경기 당일 전력: 스쿼드 전력 + 시즌 폼(감독·분위기, 달마다 조금씩 변함) + 부상자 공백
-C.mstr = (w, id) => { const c = typeof id === 'object' ? id : w.clubs[id]; return c ? (c.str || 60) + (c.fm || 0) + (c.injd || 0) + (c.tac || 0) : 60; };
+// v43: + 흐름(c.mo, 숨은 값) — 기대 이상 성적이 이어지면 오르고, 기대 이하가 이어지면 내려간다
+C.mstr = (w, id) => { const c = typeof id === 'object' ? id : w.clubs[id]; return c ? (c.str || 60) + (c.fm || 0) + (c.injd || 0) + (c.tac || 0) + (c.mo || 0) : 60; };
 
 // 리그 일정 (더블 라운드 로빈, 홈/원정)
 function roundRobin(ids) {
@@ -988,6 +989,8 @@ C.mgrJudge = (S, LS, d) => {
 // 성적이 좋으면 정식 감독이 될 수 있지만, 구단이 원하는 이름값(명성)과 차이가 크면 성적이 좋아도 새 감독을 데려온다
 C.mgrSack = (w, id, d, left) => {
   const c = w.clubs[id], M = C.mgrOf(w, id, d); if (!c || !M) return null;
+  // v43: 감독 교체 효과 — 가라앉던 흐름이 끊기고 분위기가 조금 살아난다
+  if (c.mo != null || c.moE != null) { c.mo = Math.round((Math.max(0, c.mo || 0) * .3 + .5) * 100) / 100; c.moE = .15; }
   const mw = C.mgrWant(w, c);
   // 대행 확률: 남은 경기가 적으면 대행으로 시즌을 마치는 쪽, 빅클럽은 빨리 새 감독을 데려오는 편
   const pCt = clamp(.62 + (left != null && left <= 10 ? .2 : 0) - (mw >= 75 ? .2 : 0), .2, .9);

@@ -184,6 +184,13 @@ function matchRating(p, st, res) {
   if (['CB', 'FB', 'DM', 'GK'].includes(role)) { if (st.cs) r += role === 'GK' ? .55 : .35; r -= st.concOn * (role === 'GK' ? .2 : .12); }
   if (role === 'GK') r += st.saves * .17 + st.gPrev * .35 + st.claims * .04;
   r += N(0, .2);
+  // 짧게 뛴 교체(45분 미만): FotMob처럼 큰 실수가 없으면 6점대 초반. 기준점을 올리고 플러스·마이너스 폭을 줄인다
+  if (st.min < 45) {
+    const b0 = 6.05 + .25 * f, b1 = 6.3 - (st.min - 10) / 35 * (6.3 - 6.175), k = .6 + .4 * st.min / 45;
+    r = b1 + (r - b0) * k;
+    const blunder = st.yellow || st.red || (st.penTaken - st.penGoals) > 0 || (['CB', 'FB', 'DM', 'GK'].includes(role) && st.concOn > 0);
+    if (!blunder) r = Math.max(r, 6.0);
+  }
   return +clamp(r, 3.2, 10).toFixed(1);
 }
 C.matchRating = matchRating;
@@ -276,7 +283,11 @@ function updateRole(S) {
     if (ss.breakout == null) { ss.breakout = gap > -17 && R() < .22 && !(S.wc && S.p.age <= 15); if (ss.breakout) { S.p.mods.push({ ovr: 5, seasons: 1, why: '겁 없는 신예' }); if (C.news) C.news(S, `감독, "${S.p.name}은 이번 시즌 1군에서 기회를 받을 것"`, 'youth', true); } }
     if (ss.breakout) ss.fteam = clamp(ss.fteam * 2.6 + .12, 0, .8);
     if (S.wc && S.p.age <= 15) { ss.fteam = 0; ss.breakout = false; } // 월드 커리어 아카데미(14·15세): 1군 기회 없음
-  } else { const sr = squadRole(S, S.car.club); ss.role = sr.role; ss.sr = sr; }
+  } else {
+    const sr = squadRole(S, S.car.club); ss.role = sr.role; ss.sr = sr;
+    // 약속받은 역할이 살아 있으면 그 역할 (입단 직후 서열이 낮게 나와도)
+    const P = S.car.prom; if (P && P.club === S.car.club && !P.off && (P.n || 0) < 34 && (!P.lb || P.lb === ss.label || (P.n || 0) < 8) && (RKI[P.role] || 0) > (RKI[ss.role] || 0)) ss.role = P.role;
+  }
 }
 C.updateRole = updateRole;
 function isPenTaker(S) { const a = S.p.a, r = roleOf(S.p); return a.penalties >= (['ST', 'AM', 'W'].includes(r) ? 68 : 80) && ['key', 'starter'].includes(S.ss.role); }
@@ -336,9 +347,9 @@ C.userFixtures = userFixtures;
 
 function teamStr(S, clubId, withMe) {
   const c = S.w.clubs[clubId];
-  const adj = (c.fm || 0) + (c.injd || 0); // 시즌 폼·부상 공백 (세계 달력과 같은 기준)
+  const adj = (c.fm || 0) + (c.injd || 0) + (c.mo || 0); // 시즌 폼·부상 공백·흐름 (세계 달력과 같은 기준)
   if (!withMe) return c.str + adj;
-  return C.xiStrength(c.sq.filter(e => !e[14]), ['me', S.p.pos, C.effOvr(S.p), S.p.age]) + (c.fm || 0);
+  return C.xiStrength(c.sq.filter(e => !e[14]), ['me', S.p.pos, C.effOvr(S.p) + clamp(((S.ss && S.ss.mo) || [0, 0])[1], -5, 5), S.p.age]) + (c.fm || 0) + (c.mo || 0);
 }
 // 이번 시즌 1군 출전 현황 (유스·대표팀 제외)
 function proForm(ss) {
@@ -350,33 +361,118 @@ function proForm(ss) {
   return { apps: pl.length, avg: rated.length ? rated.reduce((a, m) => a + m.rating, 0) / rated.length : 0, recent: last };
 }
 C.proForm = proForm;
+// ---------- 출전 판단 (v43) ----------
+// 경기마다 새로 굴리는 확률이 아니라 '팀 안에서의 위치'로 정한다:
+//  같은 자리 경쟁자들과 비교한 서열(능력치 + 흐름 + 최근 평점 + 감독 시각 + 직전 경기 선발 관성)이 n번째 안이면 선발, 그다음 한두 명은 교체 명단, 나머지는 명단 제외
+//  · 리그는 주전이 잘 바뀌지 않고(관성), 대륙 대회는 정예, 국내 컵은 로테이션
+//  · 한 번 교체 명단에 들면 한동안 명단에 남는다(콜업 기간) · 좋은 활약 뒤에는 기회가 이어진다
+//  · 이적할 때 약속받은 역할, 감독이 약속한 기회는 실제로 지킨다 (부진하면 약속도 끝난다)
+const RKI = { reserve: 0, backup: 1, rotation: 2, starter: 3, key: 4 };
+function moOf(S) { return clamp(((S.ss && S.ss.mo) || [0, 0])[1], -5, 5); }
+function standing(S, kind) {
+  const ss = S.ss, p = S.p, w = S.w, c = w.clubs[ss.club], slot = C.SLOT[p.pos], n = C.SLOTN[slot] || 1, MD = C.MD;
+  const prev = MD && MD.prevXI ? MD.prevXI(w, c.id) : null, SU = w.susp || {};
+  const nz = () => N(0, .35);
+  let riv;
+  if (c.lite || !c.sq) riv = C.liteRivals(c, slot, w.year).map(v => v + nz());
+  else riv = c.sq.filter(e => C.SLOT[e[1]] === slot && !e[14] && !SU[String(e[0])]).map(e => { const id = String(e[0]); return e[2] + (MD ? MD.moOf(w, id) * .75 + MD.prefOf(c.id, id, w.year) + (prev ? (prev.get(id) || 0) * 1.7 : 0) : 0) + nz(); });
+  riv.sort((a, b) => b - a);
+  const car = S.car;
+  const me = C.effOvr(p) + moOf(S) * .75 + (car.trust - 50) * .05 + (car.formAdj || 0) * .6 * Math.min(1, (ss.recent || []).length / 4) + (car.bias || 0) * .5 + (S.wc ? clamp(S.wc.rb || 0, -3, 3) : 0) + (ss.xs === 'S' ? 1.7 : ss.xs === 'R' ? 1 : 0) + nz();
+  return { rank: riv.filter(v => v > me).length, n, me, riv };
+}
+C.standing = standing;
+// 이적 때 약속받은 역할이 지금 살아 있는가: 최근 5경기 평균 평점 6.25 미만이면 약속도 끝난다
+function promAlive(S) {
+  // 약속은 입단한 그 시즌 동안 (다음 시즌부터는 다시 경쟁). 부진하면 그 전에 끝난다
+  const P = S.car.prom, ss = S.ss; if (!P || P.club !== ss.club || P.n >= 34 || P.off) return null;
+  if (!P.lb) P.lb = ss.label; else if (P.lb !== ss.label && P.n >= 8) { P.off = 1; return null; }
+  const rt = ss.matches.filter(m => m.played && m.rating && !['youth', 'nt', 'ntY'].includes(m.comp)).slice(-5).map(m => m.rating);
+  if (rt.length >= 5 && rt.reduce((a, b) => a + b, 0) / rt.length < 6.25) { P.off = 1; return null; }
+  return P;
+}
+C.promAlive = promAlive;
+const subMin = () => Math.round(clamp(N(21, 9), 3, 45)); // 교체 투입: 대부분 60~85분
+const startMin = (S, rotate) => (R() < (S.p.a.stamina > 75 ? .72 : .58) * (rotate ? .8 : 1) ? 90 : rint(58, 88));
 function selection(S, kind, imp) {
   const ss = S.ss;
   if (ss.inj > 0 || ss.susp > 0) { if (ss.susp > 0 && kind !== 'N') ss.susp--; return null; }
-  let ps, pb;
   const pro = proForm(ss);
+  const cup = kind === 'C' || kind === 'LC', cupLow = cup && (imp || 0) < 2, cont = kind === 'E';
+  const START = (rot) => ({ start: true, minutes: startMin(S, rot) }), BENCH = sp => (R() < sp ? { start: false, minutes: subMin() } : { bench: true });
+  // 유스 리그
+  if (kind === 'Y') {
+    if (ss.role === 'youth') {
+      if (pro.apps >= 12 || pro.recent >= 3 || (ss.cu > 0 && R() < .6)) return null; // 1군 명단에 있는 동안은 유스 경기를 자주 거른다
+      return R() < (pro.apps >= 6 ? .2 : .88) ? { start: true, minutes: startMin(S) } : R() < .8 ? { start: false, minutes: subMin() } : null;
+    }
+    if (!ss.reserve || pro.apps >= 10 || pro.recent >= 3) return null;
+    return R() < (['backup', 'reserve'].includes(ss.role) ? (pro.apps >= 5 ? .35 : .8) : .1) ? { start: true, minutes: startMin(S) } : R() < .3 ? { start: false, minutes: subMin() } : null;
+  }
+  // 감독이 약속한 기회: 다음 몇 경기는 선발
+  if (ss.chance > 0) { ss.chance--; return START(); }
+  const sd = standing(S, kind), { rank, n } = sd, bs = 2;
+  // 유스 선수: 콜업 기간(몇 경기 연속 1군 명단) 단위로
   if (ss.role === 'youth') {
-    if (kind === 'Y') {
-      // 1군에 자리 잡으면 유스 리그는 뛰지 않는다
-      if (pro.apps >= 12 || pro.recent >= 3) return null;
-      if (pro.apps >= 6) { ps = .2; pb = .1; } else { ps = .88; pb = .8; }
-    } else {
-      // 유스에서 잘하면 1군 기회가 늘고, 1군에서 잘하면 더 늘어난다
+    if (!(ss.cu > 0)) {
       const yb = ss.yth.n >= 4 ? clamp((ss.yth.avg - 6.85) * 1.5, -.6, 1.6) : 0;
       const pb2 = pro.apps >= 2 ? clamp((pro.avg - 6.6) * 1.2, -.5, 1.2) : 0;
-      const f = clamp(ss.fteam * (1 + yb + pb2) + (pro.apps >= 4 ? .12 : 0) + (pro.apps >= 3 && pro.avg >= 7 ? .15 : 0), 0, .92) * (kind === 'C' || kind === 'LC' ? 1.6 : 1);
-      ps = f * (ss.breakout ? .68 : .4); pb = f * .85;
+      const f = clamp(ss.fteam * (1 + yb + pb2) + (pro.apps >= 4 ? .12 : 0) + (pro.apps >= 3 && pro.avg >= 7 ? .15 : 0), 0, .92);
+      const pc = clamp(f * .3 * (cup ? 1.9 : 1) + (rank < n + bs ? .25 : 0), 0, .6);
+      if (R() >= pc) return null;
+      ss.cu = ss.breakout ? rint(6, 11) : rint(3, 7); ss.cuN = (ss.cuN || 0) + 1;
     }
-  } else {
-    ps = STARTP[ss.role]; pb = SUBP[ss.role];
-    if (kind === 'C' || kind === 'LC') { if (ss.role === 'key' || ss.role === 'starter') ps *= imp >= 2 ? 1 : .62; else ps = Math.min(.85, ps + .45); }
-    if (kind === 'Y') { if (!ss.reserve || pro.apps >= 10 || pro.recent >= 3) return null; ps = ['backup', 'reserve'].includes(ss.role) ? (pro.apps >= 5 ? .35 : .8) : .1; pb = .3; }
+    ss.cu--;
+    if (rank < n) return START();
+    if (cupLow && R() < (ss.breakout ? .55 : .35)) return START(true);
+    return BENCH(clamp(.22 + ss.fteam * .5 + (ss.breakout ? .15 : 0) + (pro.avg >= 7 && pro.apps >= 2 ? .1 : 0), .15, .62));
   }
-  const form = clamp((S.car.formAdj || 0) * .03, -.12, .12);
-  if (R() < clamp(ps + form, 0, .97)) { const full = R() < (S.p.a.stamina > 75 ? .72 : .58); return { start: true, minutes: full ? 90 : rint(58, 88) }; }
-  if (R() < pb) return { start: false, minutes: rint(4, 34) };
+  // 1군: 약속받은 역할
+  const P = promAlive(S);
+  if (P) {
+    P.n++;
+    const pr = RKI[P.role] || 0;
+    if (pr >= 3) { if ((cupLow && R() < .35) || R() < .04) return BENCH(.6); return START(); }
+    if (pr === 2) { if (rank < n || R() < (cupLow ? .75 : .5)) return START(); return BENCH(.75); }
+  }
+  // 1군: 서열
+  if (rank < n) {
+    const rest = cupLow ? (ss.role === 'key' ? .38 : .5) : cont ? .02 : .05;
+    if (R() < rest) return BENCH(.45);
+    return START();
+  }
+  if (rank < n + bs) {
+    if (cupLow && R() < .6) return START(true);
+    return BENCH(rank === n ? .62 : .42);
+  }
+  // 서열 밖: 좋은 활약 뒤(keep) · 콜업 기간(cu) · 컵 로테이션이면 명단에
+  if (ss.keep > 0) { ss.keep--; return cupLow && R() < .45 ? START(true) : BENCH(.32); }
+  if (cupLow && R() < .35) return R() < .5 ? START(true) : BENCH(.5);
+  if (!(ss.cu > 0)) { const gap = sd.me - (sd.riv[n + bs - 1] != null ? sd.riv[n + bs - 1] : sd.me); if (R() < clamp(.1 + gap * .03, .02, .25)) ss.cu = rint(3, 6); }
+  if (ss.cu > 0) { ss.cu--; return BENCH(.25); }
   return null;
 }
+C.selection = selection;
+// 경기 뒤: 선발 관성·명단 유지·흐름·유망주 성장 보너스
+function afterSel(S, rec, sel, o) {
+  const ss = S.ss, p = S.p, pro1 = !['youth', 'nt', 'ntY'].includes(rec.comp) && o.kind !== 'Y';
+  if (!pro1) return;
+  if (o.kind === 'L' || o.kind === 'E') ss.xs = !sel ? 'O' : sel.start ? 'S' : 'B'; // 컵 로테이션은 리그 주전 구상을 바꾸지 않는다
+  if (!rec.played) { ss.mo = ss.mo ? [ss.mo[0] * .97, ss.mo[1] * .97] : [0, 0]; return; }
+  const r = rec.rating || 0;
+  if (r >= 7.3) ss.keep = Math.max(ss.keep || 0, rec.motm ? 5 : 3);
+  if (rec.motm && !rec.start) ss.xs = 'R'; // 교체로 들어가 MOM → 다음 경기 선발 후보
+  if (ss.role === 'youth' && ss.cu >= 0) { if (rec.motm) ss.cu += 4; else if (r >= 7.0) ss.cu += 2; }
+  if (!r || rec.min < 15) return;
+  // 흐름: 기대 평점(능력치·팀 수준) 대비. 비선형·점진적 (최대 약 ±5)
+  const c = S.w.clubs[ss.club], eff = C.effOvr(p), gap = eff - ((c && c.str) || eff);
+  const expR = 6.68 + clamp(gap, -15, 12) * .028;
+  const perf = clamp(r - expR, -1.6, 2);
+  ss.mo = C.MD && C.MD.moStep ? C.MD.moStep(ss.mo || [0, 0], perf, Math.min(1, rec.min / 90), 5, .5) : [0, 0];
+  // 유망주(21세 이하)가 1군 전력보다 낮은 능력치로 기대 이상 활약 → 시즌 끝 성장 보너스
+  if (p.age <= 21 && gap < 0 && perf > 0) ss.ygb = Math.min(4, (ss.ygb || 0) + perf * clamp(-gap / 10, .3, 1.5) * Math.min(1, rec.min / 90) * .35);
+}
+C.afterSel = afterSel;
 
 // 경기 하나 처리 (본인 팀)
 async function userMatch(S, o, hooks) {
@@ -387,8 +483,8 @@ async function userMatch(S, o, hooks) {
   const home = o.home === null ? 0 : o.home ? 1 : -1;
   let [lamT, lamO] = C.lambdas(myStr, o.oppStr, home);
   let rec = { d: o.d, comp: o.compKey, compName: o.compName, stage: o.stage || '', opp: o.opp, oppName: o.oppName, home: o.home, gf: 0, ga: 0, played: false };
-  if (sel) {
-    const r = playerMatch(p, { adj: o.adj || (ss.breakout && ss.role === 'youth' ? 4 : 0), lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
+  if (sel && !sel.bench) {
+    const r = playerMatch(p, { adj: (o.adj || (ss.breakout && ss.role === 'youth' ? 4 : 0)) + (o.kind === 'Y' ? 0 : moOf(S)), lamT, lamO, minutes: sel.minutes, start: sel.start, sT: myStr, sO: o.oppStr, penTaker: ss.penTaker && sel.start, fkTaker: ss.fkTaker && sel.start, comp: o.kind });
     rec.gf = r.gf; rec.ga = r.ga; rec.st = r.st; rec.shots = r.shots; rec.played = true; rec.start = sel.start; rec.min = sel.minutes;
     // 결정적 순간
     // 결정적 순간: 유스·친선전·대승/대패 경기는 제외하고, 승부가 걸린 접전에서만
@@ -424,8 +520,10 @@ async function userMatch(S, o, hooks) {
     injuryRoll(S, rec, sel.minutes);
   } else {
     const [a, b] = C.quickMatch(myStr, o.oppStr, home); rec.gf = a; rec.ga = b;
-    rec.why = ss.inj > 0 ? '부상' : ss.susp > 0 ? '징계' : '미출전';
+    if (sel && sel.bench) { rec.bench = true; rec.why = '벤치'; }
+    else rec.why = ss.inj > 0 ? '부상' : ss.susp > 0 ? '징계' : o.kind === 'Y' ? '미출전' : '명단 제외';
   }
+  try { afterSel(S, rec, sel, o); } catch (e) { console.error(e); }
   ss.matches.push(rec);
   if (C.extras) C.extras.onMatch(S, rec);
   if (hooks && hooks.match) await hooks.match(rec);
